@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { slugify, zonedDateTimeToUtc } from "@ticketera/core";
+import { formatDateTime, normalizeImageUrl, slugify, zonedDateTimeToUtc } from "@ticketera/core";
 import { EventCategory, prisma } from "@ticketera/db";
 import { formObject, intField, moneyField, zodErrors, type FormState } from "@/lib/forms";
 import { ROLES, requireStaff } from "@/lib/session";
@@ -18,8 +18,11 @@ const eventSchema = z.object({
   title: z.string({ error: "Ingresa un título." }).min(3, "El título es muy corto.").max(120),
   description: z.string().max(5000).optional(),
   category: z.enum(Object.values(EventCategory) as [EventCategory, ...EventCategory[]]),
+  // Si pegan el enlace de la página de Google/Bing Imágenes, se guarda la imagen real.
   imageUrl: z
-    .url({ protocol: /^https?$/, error: "La imagen debe ser una URL que empiece con http:// o https://" })
+    .string()
+    .transform(normalizeImageUrl)
+    .pipe(z.url({ protocol: /^https?$/, error: "La imagen debe ser una URL que empiece con http:// o https://" }))
     .optional(),
 });
 
@@ -127,7 +130,14 @@ export async function createSessionAction(_prev: FormState, formData: FormData):
     return { fieldErrors: { startsAt: "Fecha inválida." } };
   }
   if (starts <= new Date()) return { fieldErrors: { startsAt: "La función debe ser en el futuro." } };
-  if (doors && doors > starts) return { fieldErrors: { doorsOpenAt: "Las puertas deben abrir antes de la función." } };
+  if (doors && doors > starts) {
+    const fmt = (d: Date) => formatDateTime(d, venue.timezone);
+    return {
+      fieldErrors: {
+        doorsOpenAt: `La apertura de puertas (${fmt(doors)}) es después de la función (${fmt(starts)}). Debe ser antes, o déjala vacía.`,
+      },
+    };
+  }
 
   const session = await prisma.eventSession.create({
     data: { eventId, venueId, startsAt: starts, doorsOpenAt: doors },

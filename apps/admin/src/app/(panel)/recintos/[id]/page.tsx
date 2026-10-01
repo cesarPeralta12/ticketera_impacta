@@ -2,14 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { SECTION_COLORS } from "@ticketera/core";
+import { SECTION_COLORS, type SectionShape } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { addAccessPointAction, addGeneralSectionAction, deleteSectionAction } from "@/lib/actions/venues";
 import { positioned } from "@/components/seat-map-preview";
 import { SEATING_LABEL } from "@/lib/labels";
 import { ROLES, requireStaff } from "@/lib/session";
-import { SeatDesigner } from "./seat-designer";
+import { SeatDesigner, type DesignerSection } from "./seat-designer";
 
 export const metadata: Metadata = { title: "Recinto" };
 
@@ -23,14 +23,33 @@ export default async function VenuePage({ params }: Props) {
     include: {
       sections: {
         orderBy: { sortOrder: "asc" },
-        include: { seats: { select: { x: true, y: true } }, _count: { select: { ticketTypes: true } } },
+        include: {
+          seats: { select: { x: true, y: true } },
+          ticketTypes: { select: { _count: { select: { orderItems: true } } } },
+        },
       },
       accessPoints: { orderBy: { name: "asc" } },
     },
   });
   if (!venue) notFound();
 
-  const seated = venue.sections.filter((s) => s.seatingMode === "RESERVED");
+  // Con ventas (cualquier orden, incluso vencida) la sección no se puede borrar ni rehacer.
+  const sections = venue.sections.map((s) => ({
+    ...s,
+    sold: s.ticketTypes.some((t) => t._count.orderItems > 0),
+    priced: s.ticketTypes.length,
+  }));
+  const seated: DesignerSection[] = sections
+    .filter((s) => s.seatingMode === "RESERVED")
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      color: s.color,
+      layout: (s.layout as SectionShape | null) ?? null,
+      seats: positioned(s.seats),
+      sold: s.sold,
+      priced: s.priced,
+    }));
 
   return (
     <div className="space-y-8">
@@ -50,22 +69,25 @@ export default async function VenuePage({ params }: Props) {
           <p className="mb-4 text-sm text-[var(--ink-muted)]">Todavía no hay secciones.</p>
         ) : (
           <ul className="mb-5 divide-y divide-[var(--border)] text-sm">
-            {venue.sections.map((s) => (
+            {sections.map((s) => (
               <li key={s.id} className="flex items-center gap-3 py-2.5">
                 <span className="h-3 w-3 rounded-full" style={{ background: s.color }} />
                 <span className="flex-1 font-medium">{s.name}</span>
                 <span className="text-[var(--ink-muted)]">
                   {SEATING_LABEL[s.seatingMode]} · {s.seatingMode === "RESERVED" ? `${s.seats.length} butacas` : `aforo ${s.capacity}`}
                 </span>
-                {s._count.ticketTypes === 0 ? (
-                  <ActionForm action={deleteSectionAction} confirm={`¿Borrar la sección "${s.name}"?`}>
+                {!s.sold ? (
+                  <ActionForm
+                    action={deleteSectionAction}
+                    confirm={`¿Borrar la sección "${s.name}"?${s.priced ? ` También se quitará su precio en ${s.priced} función(es).` : ""}`}
+                  >
                     <input type="hidden" name="sectionId" value={s.id} />
                     <button type="submit" className="text-xs text-[var(--danger)] hover:underline">
                       Borrar
                     </button>
                   </ActionForm>
                 ) : (
-                  <span className="eyebrow">en uso</span>
+                  <span className="eyebrow" title="Tiene entradas vendidas o reservadas">con ventas</span>
                 )}
               </li>
             ))}
@@ -103,7 +125,7 @@ export default async function VenuePage({ params }: Props) {
         <h2 className="eyebrow">Mapa de butacas numeradas</h2>
         <SeatDesigner
           venueId={venue.id}
-          existingSections={seated.map((s) => ({ id: s.id, name: s.name, color: s.color, seats: positioned(s.seats) }))}
+          existingSections={seated}
         />
       </section>
 

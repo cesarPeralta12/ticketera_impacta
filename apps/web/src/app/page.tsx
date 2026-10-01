@@ -2,6 +2,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { CATEGORY_COLOR, CATEGORY_LABEL, formatDate, formatMoney } from "@ticketera/core";
 import { EventCategory } from "@ticketera/db";
+import { EventImage } from "@/components/event-image";
 import { listPublishedEvents } from "@/lib/events";
 
 type Props = { searchParams: Promise<{ categoria?: string }> };
@@ -53,20 +54,12 @@ export default async function HomePage({ searchParams }: Props) {
                   style={{ animation: `fade-up 0.5s ease-out ${i * 60}ms both` }}
                 >
                   <div className="relative aspect-[4/3] w-full overflow-hidden bg-[var(--bg-raised-2)]">
-                    {event.imageUrl ? (
-                      // <img> y no next/image: el organizador puede pegar la URL de cualquier sitio.
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={event.imageUrl}
-                        alt=""
-                        loading={i < 3 ? "eager" : "lazy"}
-                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center font-display text-4xl text-[var(--ink-dim)]">
-                        {event.title.slice(0, 1)}
-                      </div>
-                    )}
+                    <EventImage
+                      src={event.imageUrl}
+                      title={event.title}
+                      eager={i < 3}
+                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[var(--bg-raised)] via-transparent to-transparent" />
                     <span
                       className="absolute left-3 top-3 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide"

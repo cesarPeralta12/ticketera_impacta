@@ -138,16 +138,21 @@ export default async function EventDetailPage({ params }: Props) {
               </select>
             </label>
             <label className="label">
-              Fecha y hora (hora del recinto)
+              Inicio del evento
               <input type="datetime-local" name="startsAt" required className="field" />
             </label>
             <label className="label">
-              Apertura de puertas
+              Apertura de puertas (opcional)
               <input type="datetime-local" name="doorsOpenAt" className="field" />
             </label>
             <button type="submit" className="btn btn-dark">
               Agregar función
             </button>
+            <p className="basis-full text-xs text-[var(--ink-dim)]">
+              <strong>Inicio del evento:</strong> cuando empieza el show. <strong>Apertura de puertas:</strong> desde
+              qué hora puede entrar la gente (antes del inicio). Ambas en la hora local del recinto. La venta de
+              entradas se abre al publicar el evento.
+            </p>
           </ActionForm>
         )}
       </section>

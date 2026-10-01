@@ -1,5 +1,6 @@
 import { CATEGORY_LABEL } from "@ticketera/core";
 import { EventCategory } from "@ticketera/db";
+import { ImageUrlField } from "./image-url-field";
 
 /** Campos del evento (formulario del prototipo), compartidos por "nuevo" y "editar". */
 export function EventFields({
@@ -28,10 +29,7 @@ export function EventFields({
             ))}
           </select>
         </label>
-        <label className="label">
-          Imagen (URL)
-          <input name="imageUrl" type="url" placeholder="https://…" defaultValue={defaults?.imageUrl ?? ""} className="field" />
-        </label>
+        <ImageUrlField defaultValue={defaults?.imageUrl} />
       </div>
     </>
   );

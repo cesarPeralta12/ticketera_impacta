@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { CATEGORY_COLOR, CATEGORY_LABEL, formatDate, formatMoney } from "@ticketera/core";
 import { getSessionAvailability } from "@ticketera/db";
+import { EventImage } from "@/components/event-image";
 import { getPublishedEvent } from "@/lib/events";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -39,8 +40,9 @@ export default async function EventPage({ params }: Props) {
     <main className="pb-16">
       <div className="relative h-[42vh] min-h-[280px] w-full overflow-hidden bg-[var(--bg-raised)]">
         {event.imageUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={event.imageUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <div className="absolute inset-0">
+            <EventImage src={event.imageUrl} title={event.title} eager className="h-full w-full object-cover" />
+          </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg)] via-[var(--bg)]/40 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-[var(--bg)]/70 via-transparent to-transparent" />

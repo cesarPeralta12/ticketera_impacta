@@ -135,16 +135,88 @@ export async function addSeatSectionAction(_prev: FormState, formData: FormData)
   return { ok: true };
 }
 
-/** Se puede borrar una sección mientras ninguna función la use. */
+/** Entradas vendidas o reservadas (en cualquier estado) de una sección. */
+async function sectionSales(sectionId: string) {
+  return prisma.orderItem.count({ where: { ticketType: { sectionId } } });
+}
+
+/**
+ * Borra una sección con sus butacas. Si tenía precio en funciones pero ninguna venta,
+ * también se quitan esos tipos de entrada. Con ventas no se puede: hay entradas emitidas
+ * o reservas que apuntan a sus butacas.
+ */
 export async function deleteSectionAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireStaff(ROLES.manage);
   const section = await prisma.section.findFirst({
     where: { id: String(formData.get("sectionId")), venue: { organizationId: staff.organization.id } },
-    include: { _count: { select: { ticketTypes: true } } },
   });
   if (!section) return { error: "Sección no encontrada." };
-  if (section._count.ticketTypes > 0) return { error: `"${section.name}" ya se usa en funciones: no se puede borrar.` };
-  await prisma.section.delete({ where: { id: section.id } });
+  if ((await sectionSales(section.id)) > 0) {
+    return { error: `"${section.name}" ya tiene entradas vendidas o reservadas: no se puede borrar.` };
+  }
+  await prisma.$transaction([
+    prisma.ticketType.deleteMany({ where: { sectionId: section.id } }),
+    prisma.section.delete({ where: { id: section.id } }),
+  ]);
+  await prisma.auditLog.create({
+    data: { actorType: "staff", actorId: staff.id, action: "section.delete", entity: "Section", entityId: section.id },
+  });
+  revalidatePath(`/recintos/${section.venueId}`);
+  return { ok: true };
+}
+
+/**
+ * Edita una sección numerada: nombre y color siempre; la forma (posición, filas, butacas)
+ * solo si no tiene ventas, porque cambiarla vuelve a crear las butacas.
+ */
+export async function updateSeatSectionAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireStaff(ROLES.manage);
+  const section = await prisma.section.findFirst({
+    where: { id: String(formData.get("sectionId")), venue: { organizationId: staff.organization.id } },
+  });
+  if (!section || section.seatingMode !== "RESERVED") return { error: "Sección no encontrada." };
+
+  const name = String(formData.get("name") ?? "").trim();
+  const color = String(formData.get("color") ?? "");
+  if (name.length < 2) return { error: "Ponle un nombre a la sección." };
+  if (!/^#[0-9a-fA-F]{6}$/.test(color)) return { error: "Color inválido." };
+  const shape = parseShape(String(formData.get("shape") ?? ""));
+  if (!shape) return { error: "La forma de la sección no es válida." };
+
+  const shapeChanged = JSON.stringify(shape) !== JSON.stringify(section.layout);
+  if (shapeChanged && (await sectionSales(section.id)) > 0) {
+    return {
+      error: `"${section.name}" ya tiene entradas vendidas o reservadas: solo puedes cambiar su nombre y color.`,
+    };
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.section.update({ where: { id: section.id }, data: { name, color } });
+      if (!shapeChanged) return;
+      const positions = computeSeatPositions(shape);
+      await tx.seat.deleteMany({ where: { sectionId: section.id } });
+      await tx.seat.createMany({
+        data: positions.map((p) => ({ ...p, sectionId: section.id, label: `Fila ${p.row} · ${p.number}` })),
+      });
+      await tx.section.update({ where: { id: section.id }, data: { layout: shape, capacity: positions.length } });
+      // En una sección numerada el cupo de cada precio es su cantidad de butacas.
+      await tx.ticketType.updateMany({ where: { sectionId: section.id }, data: { capacity: positions.length } });
+    });
+  } catch (error) {
+    if (isUnique(error)) return { error: "Ya existe una sección con ese nombre." };
+    throw error;
+  }
+  await prisma.auditLog.create({
+    data: {
+      actorType: "staff",
+      actorId: staff.id,
+      action: "section.update",
+      entity: "Section",
+      entityId: section.id,
+      data: { shapeChanged },
+    },
+  });
   revalidatePath(`/recintos/${section.venueId}`);
   return { ok: true };
 }
