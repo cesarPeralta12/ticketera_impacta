@@ -1,0 +1,23 @@
+# Servicios locales. Postgres es necesario desde el día 1; Redis recién para la cola virtual.
+#   docker compose up -d            -> solo Postgres
+#   docker compose --profile redis up -d   -> Postgres + Redis
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ticketera
+      POSTGRES_PASSWORD: ticketera
+      POSTGRES_DB: ticketera
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    profiles: ["redis"]
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:

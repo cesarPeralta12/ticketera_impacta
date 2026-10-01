@@ -1,0 +1,31 @@
+{
+  "name": "ticketera",
+  "private": true,
+  "packageManager": "npm@11.6.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:integration": "npm run test:integration -w @ticketera/db",
+    "check": "turbo run typecheck lint test",
+    "db:local": "npm run db:local -w @ticketera/db",
+    "db:generate": "npm run db:generate -w @ticketera/db",
+    "db:migrate": "npm run db:migrate -w @ticketera/db",
+    "db:deploy": "npm run db:deploy -w @ticketera/db",
+    "db:seed": "npm run db:seed -w @ticketera/db",
+    "db:studio": "npm run db:studio -w @ticketera/db"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.5",
+    "typescript": "~6.0.3"
+  }
+}

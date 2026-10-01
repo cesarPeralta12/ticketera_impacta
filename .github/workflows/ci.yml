@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ticketera
+          POSTGRES_PASSWORD: ticketera
+          POSTGRES_DB: ticketera
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ticketera:ticketera@localhost:5432/ticketera
+      # Valores de prueba: el CI no maneja secretos reales.
+      WEB_URL: http://localhost:3000
+      TICKET_QR_SECRET: ci-qr-secret
+      PAYMENT_PROVIDER: mock
+      PAYMENT_MOCK_SECRET: ci-mock-secret
+      WEB_AUTH_SECRET: ci-web-auth-secret
+      ADMIN_AUTH_SECRET: ci-admin-auth-secret
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Verifica que las migraciones versionadas se aplican limpias sobre una BD vacía.
+      - run: npm run db:deploy
+      - run: npm run check
+      # Concurrencia, pagos y acceso contra Postgres real (crea su propia base de pruebas).
+      - run: npm run test:integration
+      - run: npm run build

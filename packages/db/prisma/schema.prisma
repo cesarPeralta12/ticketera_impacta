@@ -1,0 +1,480 @@
+// Modelo de datos — Plataforma de Ticketing Impacta
+//
+// Convenciones:
+// - Montos: enteros en la unidad mínima de la moneda (ver @ticketera/core/money).
+// - Fechas: siempre UTC. La zona horaria del recinto está en Venue.timezone.
+// - Estados de orden/pago/entrada: deben coincidir con @ticketera/core/status
+//   (src/core-sync.ts falla el typecheck si divergen).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────── Organizadores y staff ─────────────────────────
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  currency  String   @db.Char(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members Membership[]
+  venues  Venue[]
+  events  Event[]
+}
+
+/// Usuario del panel: organizador, administrador u operador de puerta.
+/// Separado de Customer para que las sesiones de comprador y organizador nunca se mezclen.
+model StaffUser {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  /// bcrypt. Las cuentas del panel las crea un OWNER/ADMIN: no hay registro público.
+  passwordHash  String
+  active        Boolean  @default(true)
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  memberships Membership[]
+  scans       AccessScan[]
+}
+
+enum StaffRole {
+  OWNER
+  ADMIN
+  OPERATOR
+}
+
+model Membership {
+  id             String    @id @default(cuid())
+  organizationId String
+  userId         String
+  role           StaffRole
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         StaffUser    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+}
+
+// ───────────────────────────── Compradores ──────────────────────────────
+
+model Customer {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  /// bcrypt. Comprar no exige cuenta: la cuenta sirve para ver "Mis entradas".
+  passwordHash  String
+  emailVerified Boolean  @default(false)
+  image         String?
+  /// RUT / DNI, solo si las entradas son nominativas.
+  documentId    String?
+  phone         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  orders  Order[]
+  tickets Ticket[]
+}
+
+// ─────────────────────────────── Recintos ───────────────────────────────
+
+model Venue {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  address        String?
+  city           String?
+  /// Zona horaria IANA. Bolivia: "America/La_Paz".
+  timezone       String   @default("America/La_Paz")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id])
+  sections     Section[]
+  sessions     EventSession[]
+  accessPoints AccessPoint[]
+}
+
+enum SeatingMode {
+  GENERAL_ADMISSION
+  RESERVED
+}
+
+/// Área física del recinto: "Cancha", "Platea Baja", "Palco 3".
+model Section {
+  id          String      @id @default(cuid())
+  venueId     String
+  name        String
+  seatingMode SeatingMode
+  /// GENERAL_ADMISSION: aforo. RESERVED: cantidad de asientos.
+  capacity    Int
+  sortOrder   Int         @default(0)
+  color       String      @default("#F5B700")
+  /// Receta de la forma (grilla o arco) con la que el editor generó las butacas.
+  layout      Json?
+
+  venue       Venue        @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  seats       Seat[]
+  ticketTypes TicketType[]
+
+  @@unique([venueId, name])
+}
+
+model Seat {
+  id        String @id @default(cuid())
+  sectionId String
+  row       String
+  /// String porque existen asientos como "12A".
+  number    String
+  /// Texto para mostrar, ej. "Fila F · 12".
+  label     String
+  /// Posición en el plano, para el mapa de asientos.
+  x         Float?
+  y         Float?
+
+  section    Section     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+  tickets    Ticket[]
+
+  @@unique([sectionId, row, number])
+}
+
+// ──────────────────────────────── Eventos ───────────────────────────────
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
+enum EventCategory {
+  CONCIERTO
+  TEATRO
+  FESTIVAL
+  DEPORTES
+  CONFERENCIA
+  FIESTA
+  ARTE
+  OTRO
+}
+
+model Event {
+  id             String        @id @default(cuid())
+  organizationId String
+  slug           String        @unique
+  title          String
+  description    String?
+  imageUrl       String?
+  category       EventCategory @default(OTRO)
+  status         EventStatus   @default(DRAFT)
+  publishedAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id])
+  sessions     EventSession[]
+
+  @@index([organizationId, status])
+}
+
+/// Una función (fecha y hora) de un evento. El inventario se vende por función.
+model EventSession {
+  id                     String    @id @default(cuid())
+  eventId                String
+  venueId                String
+  startsAt               DateTime
+  endsAt                 DateTime?
+  doorsOpenAt            DateTime?
+  salesStartAt           DateTime?
+  salesEndAt             DateTime?
+  cancelledAt            DateTime?
+  /// Sala de espera para ventas de alta demanda.
+  queueEnabled           Boolean   @default(false)
+  /// Cuántos compradores pueden estar comprando a la vez cuando la cola está activa.
+  maxConcurrentCheckouts Int?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  event       Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  venue       Venue        @relation(fields: [venueId], references: [id])
+  ticketTypes TicketType[]
+  tickets     Ticket[]
+  scans       AccessScan[]
+  queue       QueueEntry[]
+
+  @@index([eventId, startsAt])
+}
+
+/// Tipo de entrada a la venta en una función: "General", "VIP", "Preventa 1".
+///
+/// Disponibilidad = capacity − entradas emitidas − ítems de órdenes PENDING_PAYMENT
+/// no expiradas. La reserva debe ser atómica (UPDATE condicional o lock de fila):
+/// se diseña en Sprint 0 y se implementa en Sprint 2, antes de vender nada.
+model TicketType {
+  id           String    @id @default(cuid())
+  sessionId    String
+  /// Sección física asociada. Obligatoria si la sección es RESERVED.
+  sectionId    String?
+  name         String
+  description  String?
+  unitAmount   Int
+  currency     String    @db.Char(3)
+  capacity     Int
+  maxPerOrder  Int       @default(10)
+  salesStartAt DateTime?
+  salesEndAt   DateTime?
+  sortOrder    Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  session    EventSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  section    Section?     @relation(fields: [sectionId], references: [id])
+  orderItems OrderItem[]
+  tickets    Ticket[]
+
+  @@index([sessionId])
+}
+
+// ─────────────────────────── Órdenes y pagos ────────────────────────────
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  EXPIRED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+/// Una orden PENDING_PAYMENT con expiresAt futuro ES la reserva temporal de inventario.
+model Order {
+  id             String      @id @default(cuid())
+  /// Código legible para soporte (ver @ticketera/core/codes).
+  code           String      @unique
+  customerId     String?
+  buyerEmail     String
+  buyerName      String
+  buyerDocument  String?
+  status         OrderStatus @default(PENDING_PAYMENT)
+  currency       String      @db.Char(3)
+  subtotalAmount Int
+  feeAmount      Int         @default(0)
+  totalAmount    Int
+  expiresAt      DateTime
+  paidAt         DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  customer Customer?   @relation(fields: [customerId], references: [id])
+  items    OrderItem[]
+  payments Payment[]
+  tickets  Ticket[]
+
+  @@index([status, expiresAt])
+  @@index([buyerEmail])
+}
+
+model OrderItem {
+  id           String  @id @default(cuid())
+  orderId      String
+  ticketTypeId String
+  seatId       String?
+  quantity     Int
+  /// Precio congelado al crear la orden: un cambio de precio posterior no la afecta.
+  unitAmount   Int
+  /// Nombre del tipo de entrada congelado al crear la orden.
+  name         String
+
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  ticketType TicketType @relation(fields: [ticketTypeId], references: [id])
+  seat       Seat?      @relation(fields: [seatId], references: [id])
+  tickets    Ticket[]
+
+  @@index([orderId])
+  @@index([ticketTypeId])
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  REFUNDED
+  CHARGED_BACK
+}
+
+/// Un intento de pago. El estado solo cambia por confirmación server-side
+/// (webhook verificado + consulta a la API de la pasarela), nunca por el navegador.
+model Payment {
+  id                String        @id @default(cuid())
+  orderId           String
+  /// "mercadopago", "webpay", ... se define en Sprint 0.
+  provider          String
+  providerPaymentId String?
+  status            PaymentStatus @default(PENDING)
+  /// Estado crudo informado por la pasarela, para auditoría.
+  providerStatus    String?
+  amount            Int
+  currency          String        @db.Char(3)
+  approvedAt        DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@unique([provider, providerPaymentId])
+  @@index([orderId])
+}
+
+/// Registro crudo de cada notificación de la pasarela: idempotencia y trazabilidad.
+/// Si el mismo webhook llega dos veces, el @@unique impide procesarlo dos veces.
+model WebhookEvent {
+  id          String    @id @default(cuid())
+  provider    String
+  externalId  String
+  topic       String?
+  payload     Json
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+  error       String?
+
+  @@unique([provider, externalId])
+  @@index([processedAt])
+}
+
+// ─────────────────────────── Entradas y acceso ──────────────────────────
+
+enum TicketStatus {
+  VALID
+  USED
+  CANCELLED
+}
+
+model Ticket {
+  id           String       @id @default(cuid())
+  /// Identificador público que viaja en el QR.
+  code         String       @unique
+  orderId      String
+  orderItemId  String
+  ticketTypeId String
+  sessionId    String
+  seatId       String?
+  customerId   String?
+  holderName   String?
+  status       TicketStatus @default(VALID)
+  issuedAt     DateTime     @default(now())
+  usedAt       DateTime?
+  cancelledAt  DateTime?
+
+  order      Order        @relation(fields: [orderId], references: [id])
+  orderItem  OrderItem    @relation(fields: [orderItemId], references: [id])
+  ticketType TicketType   @relation(fields: [ticketTypeId], references: [id])
+  session    EventSession @relation(fields: [sessionId], references: [id])
+  seat       Seat?        @relation(fields: [seatId], references: [id])
+  customer   Customer?    @relation(fields: [customerId], references: [id])
+  scans      AccessScan[]
+
+  // Para asientos numerados se agregará un índice único parcial
+  // (sessionId, seatId) WHERE status <> 'CANCELLED' mediante SQL en la migración:
+  // es la última barrera contra la doble venta.
+  @@index([sessionId, status])
+  @@index([orderId])
+}
+
+/// Puerta o punto de control: "Puerta 1", "Acceso VIP".
+model AccessPoint {
+  id      String @id @default(cuid())
+  venueId String
+  name    String
+
+  venue Venue        @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  scans AccessScan[]
+
+  @@unique([venueId, name])
+}
+
+enum ScanResult {
+  ACCEPTED
+  ALREADY_USED
+  NOT_FOUND
+  CANCELLED
+  WRONG_SESSION
+  INVALID
+}
+
+/// Cada lectura en puerta, aceptada o rechazada: es el historial de auditoría del acceso.
+model AccessScan {
+  id            String     @id @default(cuid())
+  sessionId     String
+  ticketId      String?
+  accessPointId String?
+  operatorId    String?
+  result        ScanResult
+  rawCode       String
+  deviceId      String?
+  /// Hora del dispositivo (relevante si la lectura se hizo offline).
+  scannedAt     DateTime   @default(now())
+  /// Se completa cuando la lectura llega por sincronización offline.
+  syncedAt      DateTime?
+
+  session     EventSession @relation(fields: [sessionId], references: [id])
+  ticket      Ticket?      @relation(fields: [ticketId], references: [id])
+  accessPoint AccessPoint? @relation(fields: [accessPointId], references: [id])
+  operator    StaffUser?   @relation(fields: [operatorId], references: [id])
+
+  @@index([sessionId, scannedAt])
+  @@index([ticketId])
+}
+
+// ──────────────────────────── Cola virtual ──────────────────────────────
+
+/// Un lugar en la sala de espera de una función. Vive en Postgres para que la cola sea
+/// la misma en todos los servidores (la versión en memoria solo funciona con uno).
+/// El token es aleatorio, lo genera el servidor y viaja en una cookie httpOnly.
+model QueueEntry {
+  id          String    @id @default(cuid())
+  sessionId   String
+  token       String
+  joinedAt    DateTime  @default(now())
+  /// Cuándo se le permitió pasar a comprar.
+  admittedAt  DateTime?
+  /// Fin del turno para comprar; después debe volver a la fila.
+  expiresAt   DateTime?
+  /// Terminó (creó su orden): libera su lugar para el siguiente.
+  completedAt DateTime?
+
+  session EventSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, token])
+  @@index([sessionId, admittedAt, joinedAt])
+}
+
+// ─────────────────────────────── Auditoría ──────────────────────────────
+
+/// Operaciones sensibles: publicar evento, cambiar precios, reembolsar, anular entrada...
+model AuditLog {
+  id        String   @id @default(cuid())
+  /// "staff" | "customer" | "system"
+  actorType String
+  actorId   String?
+  /// Ej. "event.publish", "order.refund", "ticket.cancel".
+  action    String
+  entity    String
+  entityId  String
+  data      Json?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+}

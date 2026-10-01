@@ -1,0 +1,24 @@
+node_modules/
+.next/
+.turbo/
+out/
+build/
+dist/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Cliente Prisma generado (se regenera con `npm run db:generate`)
+packages/db/src/generated/
+
+# Variables de entorno: nunca se versionan
+.env
+.env*.local
+!.env.example
+
+*.log
+.DS_Store
+Thumbs.db
+
+# Datos del Postgres local (npm run db:local)
+packages/db/.pgdata/
