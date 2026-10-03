@@ -236,3 +236,45 @@ export async function addAccessPointAction(_prev: FormState, formData: FormData)
   revalidatePath(`/recintos/${venue.id}`);
   return { ok: true };
 }
+
+/**
+ * Qué secciones entran por esta puerta. Sin ninguna marcada, la puerta acepta todas. Así,
+ * sin internet, dos puertas no pueden aceptar la misma entrada: cada una tiene sus secciones.
+ */
+export async function updateAccessPointSectionsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireStaff(ROLES.manage);
+  const gate = await prisma.accessPoint.findFirst({
+    where: { id: String(formData.get("accessPointId")), venue: { organizationId: staff.organization.id } },
+  });
+  if (!gate) return { error: "Puerta no encontrada." };
+  const requested = formData.getAll("sectionIds").map(String);
+  const sections = await prisma.section.findMany({ where: { id: { in: requested }, venueId: gate.venueId }, select: { id: true } });
+
+  await prisma.accessPoint.update({ where: { id: gate.id }, data: { sections: { set: sections } } });
+  await prisma.auditLog.create({
+    data: {
+      actorType: "staff",
+      actorId: staff.id,
+      action: "access_point.sections",
+      entity: "AccessPoint",
+      entityId: gate.id,
+      data: { sections: sections.map((s) => s.id) },
+    },
+  });
+  revalidatePath(`/recintos/${gate.venueId}`);
+  return { ok: true };
+}
+
+export async function deleteAccessPointAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireStaff(ROLES.manage);
+  const gate = await prisma.accessPoint.findFirst({
+    where: { id: String(formData.get("accessPointId")), venue: { organizationId: staff.organization.id } },
+    include: { _count: { select: { scans: true } } },
+  });
+  if (!gate) return { error: "Puerta no encontrada." };
+  // Las lecturas guardan por qué puerta entró cada persona: esa historia no se borra.
+  if (gate._count.scans > 0) return { error: `"${gate.name}" ya registró lecturas: no se puede borrar.` };
+  await prisma.accessPoint.delete({ where: { id: gate.id } });
+  revalidatePath(`/recintos/${gate.venueId}`);
+  return { ok: true };
+}

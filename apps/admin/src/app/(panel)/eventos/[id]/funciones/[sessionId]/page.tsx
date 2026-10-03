@@ -34,9 +34,17 @@ export default async function SessionPage({ params }: Props) {
   });
   if (!session) notFound();
 
-  const remaining = await getSessionAvailability(session.id);
+  const [remaining, guests] = await Promise.all([
+    getSessionAvailability(session.id),
+    prisma.ticket.count({ where: { sessionId: session.id, order: { channel: "GUEST" }, status: { in: ["VALID", "USED"] } } }),
+  ]);
+  const guestList = session.event.mode === "GUEST_LIST";
   const pricedSections = new Set(session.ticketTypes.map((t) => t.sectionId));
   const seatedSections = session.venue.sections.filter((s) => s.seatingMode === "RESERVED");
+  // Secciones del recinto que no se venden en esta función: no aparecen en el sitio.
+  const unpriced = session.venue.sections.filter((s) => !pricedSections.has(s.id));
+  // En el selector, primero las que faltan por cargar.
+  const sectionOptions = [...unpriced, ...session.venue.sections.filter((s) => pricedSections.has(s.id))];
   const tz = session.venue.timezone;
 
   return (
@@ -51,6 +59,21 @@ export default async function SessionPage({ params }: Props) {
           {session.doorsOpenAt && ` · puertas ${formatDateTime(session.doorsOpenAt, tz)}`}
         </p>
       </div>
+
+      <Link
+        href={`/eventos/${id}/funciones/${session.id}/invitados`}
+        className={`card flex flex-wrap items-center justify-between gap-3 p-5 transition-colors hover:border-[var(--accent)] ${guestList ? "border-[var(--accent)]" : ""}`}
+      >
+        <span>
+          <span className="block font-medium">{guestList ? "Lista de invitados" : "Invitaciones / cortesías"}</span>
+          <span className="text-sm text-[var(--ink-muted)]">
+            {guestList
+              ? "Este evento no tiene venta: carga aquí a los invitados (Excel, CSV o a mano) y cada uno recibe su QR."
+              : "Entradas sin cobro con QR propio; ocupan el cupo del tipo de entrada elegido."}
+          </span>
+        </span>
+        <span className="font-mono text-sm text-[var(--accent)]">{guests} invitado(s) →</span>
+      </Link>
 
       <section className="card p-6">
         <h2 className="eyebrow mb-4">Tipos de entrada</h2>
@@ -96,6 +119,24 @@ export default async function SessionPage({ params }: Props) {
           </div>
         )}
 
+        {unpriced.length > 0 && session.venue.sections.length > 0 && (
+          <div className="mb-4 rounded-md bg-[var(--warn-soft)] px-3 py-2.5 text-sm text-[var(--warn)]">
+            <p className="font-medium">
+              {unpriced.length === 1 ? "1 sección no se vende" : `${unpriced.length} secciones no se venden`} en esta
+              función y no aparecen en el sitio:
+            </p>
+            <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+              {unpriced.map((s) => (
+                <span key={s.id} className="inline-flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: s.color }} />
+                  {s.name}
+                </span>
+              ))}
+            </p>
+            <p className="mt-1 text-xs">Para venderlas, agrégales un precio aquí abajo (una por vez).</p>
+          </div>
+        )}
+
         {session.venue.sections.length === 0 ? (
           <p className="text-sm">
             El recinto no tiene secciones.{" "}
@@ -110,9 +151,10 @@ export default async function SessionPage({ params }: Props) {
             <label className="label">
               Sección
               <select name="sectionId" required className="field">
-                {session.venue.sections.map((s) => (
+                {sectionOptions.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name} — {s.seatingMode === "RESERVED" ? `${s.seats.length} butacas` : `aforo ${s.capacity}`}
+                    {pricedSections.has(s.id) ? " (ya tiene precio)" : " (sin precio)"}
                   </option>
                 ))}
               </select>
@@ -159,33 +201,35 @@ export default async function SessionPage({ params }: Props) {
         </section>
       )}
 
-      <section className="card p-6">
-        <h2 className="eyebrow mb-4">Cola virtual</h2>
-        <ActionForm action={updateQueueSettingsAction} successMessage="Configuración guardada." className="flex flex-col gap-3">
-          <input type="hidden" name="sessionId" value={session.id} />
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="queueEnabled" defaultChecked={session.queueEnabled} className="accent-[var(--accent)]" />
-            Activar sala de espera para esta función
-          </label>
-          <label className="label">
-            Compradores comprando a la vez
-            <input
-              name="maxConcurrentCheckouts"
-              type="number"
-              min={1}
-              defaultValue={session.maxConcurrentCheckouts ?? undefined}
-              placeholder="ej. 50"
-              className="field w-40"
-            />
-          </label>
-          <p className="text-xs text-[var(--ink-dim)]">
-            Para ventas de alta demanda: los compradores esperan en una fila y entran a comprar por turnos de 10 minutos.
-          </p>
-          <button type="submit" className="btn w-fit">
-            Guardar
-          </button>
-        </ActionForm>
-      </section>
+      {!guestList && (
+        <section className="card p-6">
+          <h2 className="eyebrow mb-4">Cola virtual</h2>
+          <ActionForm action={updateQueueSettingsAction} successMessage="Configuración guardada." className="flex flex-col gap-3">
+            <input type="hidden" name="sessionId" value={session.id} />
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="queueEnabled" defaultChecked={session.queueEnabled} className="accent-[var(--accent)]" />
+              Activar sala de espera para esta función
+            </label>
+            <label className="label">
+              Compradores comprando a la vez
+              <input
+                name="maxConcurrentCheckouts"
+                type="number"
+                min={1}
+                defaultValue={session.maxConcurrentCheckouts ?? undefined}
+                placeholder="ej. 50"
+                className="field w-40"
+              />
+            </label>
+            <p className="text-xs text-[var(--ink-dim)]">
+              Para ventas de alta demanda: los compradores esperan en una fila y entran a comprar por turnos de 10 minutos.
+            </p>
+            <button type="submit" className="btn w-fit">
+              Guardar
+            </button>
+          </ActionForm>
+        </section>
+      )}
 
       <ActionForm action={deleteSessionAction} confirm="¿Borrar esta función? No se puede deshacer.">
         <input type="hidden" name="sessionId" value={session.id} />

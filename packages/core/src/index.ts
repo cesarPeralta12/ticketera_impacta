@@ -2,6 +2,7 @@ export * from "./accounts";
 export * from "./categories";
 export * from "./checkout";
 export * from "./codes";
+export * from "./guests";
 export * from "./images";
 export * from "./inventory";
 export * from "./locale";

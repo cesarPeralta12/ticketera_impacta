@@ -41,7 +41,8 @@ type TransitionMap<S extends string> = Readonly<Record<S, readonly S[]>>;
 export const ORDER_TRANSITIONS: TransitionMap<OrderStatus> = {
   PENDING_PAYMENT: ["PAID", "EXPIRED", "CANCELLED"],
   EXPIRED: ["PAID"],
-  PAID: ["REFUNDED", "PARTIALLY_REFUNDED"],
+  // CANCELLED: anulación de una invitación/cortesía o de una venta de boletería anulada en caja.
+  PAID: ["REFUNDED", "PARTIALLY_REFUNDED", "CANCELLED"],
   PARTIALLY_REFUNDED: ["REFUNDED"],
   CANCELLED: [],
   REFUNDED: [],

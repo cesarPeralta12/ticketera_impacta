@@ -11,11 +11,11 @@ export default async function LoginPage({ searchParams }: Props) {
     <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-8 px-6">
       <div className="flex items-center gap-2.5">
         <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--accent)] font-mono text-sm font-medium text-[var(--accent-ink)]">
-          T
+          I
         </span>
         <div>
           <p className="eyebrow">Panel de organizador</p>
-          <h1 className="text-xl font-semibold tracking-tight">Tremor</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Impacta</h1>
         </div>
       </div>
       <div className="card p-6">

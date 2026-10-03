@@ -6,3 +6,5 @@ export * from "./operations/accounts";
 export * from "./operations/orders";
 export * from "./operations/payments";
 export * from "./operations/queue";
+export * from "./operations/report";
+export * from "./operations/sales";

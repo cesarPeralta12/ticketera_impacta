@@ -13,7 +13,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: { signIn: "/login" },
   cookies: {
     sessionToken: {
-      name: "tremor-session",
+      name: "impacta-session",
       options: { httpOnly: true, sameSite: "lax", path: "/", secure: process.env.NODE_ENV === "production" },
     },
   },

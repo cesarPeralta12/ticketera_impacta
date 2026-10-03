@@ -8,7 +8,7 @@ export function LoginForm({ next }: { next?: string }) {
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
-      <input type="hidden" name="next" value={next ?? "/"} />
+      <input type="hidden" name="next" value={next ?? ""} />
       <label className="label">
         Email
         <input type="email" name="email" required autoComplete="username" className="field" />

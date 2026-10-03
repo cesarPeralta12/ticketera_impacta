@@ -29,7 +29,13 @@ export default async function BuyPage({ params }: Props) {
       },
     },
   });
-  if (!session || session.event.status !== "PUBLISHED" || session.cancelledAt || session.startsAt <= new Date()) {
+  if (
+    !session ||
+    session.event.status !== "PUBLISHED" ||
+    session.event.mode !== "TICKETING" ||
+    session.cancelledAt ||
+    session.startsAt <= new Date()
+  ) {
     notFound();
   }
 

@@ -13,6 +13,7 @@ const staffSchema = z.object({
   password: z
     .string({ error: "Ingresa una contraseña temporal." })
     .min(MIN_PASSWORD_LENGTH, `Mínimo ${MIN_PASSWORD_LENGTH} caracteres.`),
+  clientId: z.string().optional(),
 });
 
 /** Reemplaza el registro público de organizadores del prototipo: las cuentas las crea el staff. */
@@ -23,8 +24,17 @@ export async function createStaffAction(_prev: FormState, formData: FormData): P
   if (parsed.data.role === "OWNER" && staff.role !== "OWNER") {
     return { fieldErrors: { role: "Solo un dueño puede crear otro dueño." } };
   }
+  // Solo la cuenta de un cliente queda atada a un cliente: es lo que limita qué eventos ve.
+  let clientId: string | undefined;
+  if (parsed.data.role === "CLIENT") {
+    const client = parsed.data.clientId
+      ? await prisma.client.findFirst({ where: { id: parsed.data.clientId, organizationId: staff.organization.id } })
+      : null;
+    if (!client) return { fieldErrors: { clientId: "Elige el cliente al que pertenece esta cuenta." } };
+    clientId = client.id;
+  }
 
-  const created = await createStaffUser({ organizationId: staff.organization.id, ...parsed.data });
+  const created = await createStaffUser({ organizationId: staff.organization.id, ...parsed.data, clientId });
   if (!created) return { fieldErrors: { email: "Ya existe una cuenta con ese email." } };
   await prisma.auditLog.create({
     data: { actorType: "staff", actorId: staff.id, action: "staff.create", entity: "StaffUser", entityId: created.id, data: { role: parsed.data.role } },

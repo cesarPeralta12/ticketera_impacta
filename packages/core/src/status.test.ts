@@ -15,6 +15,11 @@ describe("máquinas de estado", () => {
     expect(canTransition(ORDER_TRANSITIONS, "PENDING_PAYMENT", "REFUNDED")).toBe(false);
   });
 
+  it("una orden pagada (invitación o boletería) se puede anular", () => {
+    expect(canTransition(ORDER_TRANSITIONS, "PAID", "CANCELLED")).toBe(true);
+    expect(canTransition(ORDER_TRANSITIONS, "CANCELLED", "PAID")).toBe(false);
+  });
+
   it("permite el pago tardío de una orden expirada", () => {
     expect(canTransition(ORDER_TRANSITIONS, "EXPIRED", "PAID")).toBe(true);
   });

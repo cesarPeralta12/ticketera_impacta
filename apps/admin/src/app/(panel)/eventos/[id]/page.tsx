@@ -2,16 +2,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { CATEGORY_LABEL, formatDateTime, sellableCapacity } from "@ticketera/core";
-import { prisma } from "@ticketera/db";
+import { CATEGORY_LABEL, DEFAULT_TIMEZONE, formatDateTime, sellableCapacity, utcToZonedInput } from "@ticketera/core";
+import { clientAccessOpen, defaultClientAccessUntil, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
+import { updateClientAccessAction } from "@/lib/actions/clients";
 import {
   createSessionAction,
   publishEventAction,
   unpublishEventAction,
   updateEventAction,
 } from "@/lib/actions/events";
-import { EVENT_STATUS } from "@/lib/labels";
+import { EVENT_STATUS, MODE_LABEL } from "@/lib/labels";
 import { ROLES, requireStaff } from "@/lib/session";
 import { EventFields } from "../event-fields";
 
@@ -25,6 +26,7 @@ export default async function EventDetailPage({ params }: Props) {
   const event = await prisma.event.findFirst({
     where: { id: (await params).id, organizationId: staff.organization.id },
     include: {
+      client: true,
       sessions: {
         where: { cancelledAt: null },
         orderBy: { startsAt: "asc" },
@@ -38,13 +40,24 @@ export default async function EventDetailPage({ params }: Props) {
   });
   if (!event) notFound();
 
-  const venues = await prisma.venue.findMany({
-    where: { organizationId: staff.organization.id },
-    orderBy: { name: "asc" },
-    select: { id: true, name: true, city: true },
-  });
+  const [venues, clients, suggestedUntil] = await Promise.all([
+    prisma.venue.findMany({
+      where: { organizationId: staff.organization.id },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, city: true },
+    }),
+    prisma.client.findMany({
+      where: { organizationId: staff.organization.id },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    defaultClientAccessUntil(event.id),
+  ]);
   const status = EVENT_STATUS[event.status];
+  const guestList = event.mode === "GUEST_LIST";
   const ready = event.sessions.length > 0 && event.sessions.every((s) => s.ticketTypes.length > 0);
+  const tz = event.sessions[0]?.venue.timezone ?? DEFAULT_TIMEZONE;
+  const accessOpen = clientAccessOpen(event);
 
   return (
     <div className="space-y-8">
@@ -55,10 +68,22 @@ export default async function EventDetailPage({ params }: Props) {
           </Link>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">{event.title}</h1>
           <p className="text-sm text-[var(--ink-muted)]">
-            {CATEGORY_LABEL[event.category]} · <span className="font-mono">/{event.slug}</span>
+            {CATEGORY_LABEL[event.category]} · {MODE_LABEL[event.mode]} ·{" "}
+            {event.client ? `Cliente: ${event.client.name}` : "Evento propio"}
+            {!guestList && (
+              <>
+                {" "}
+                · <span className="font-mono">/{event.slug}</span>
+              </>
+            )}
           </p>
         </div>
-        <span className={`badge ${status.className}`}>{status.text}</span>
+        <div className="flex items-center gap-2">
+          <Link href={`/eventos/${event.id}/reporte`} className="btn text-xs">
+            Reporte
+          </Link>
+          <span className={`badge ${status.className}`}>{status.text}</span>
+        </div>
       </div>
 
       <section className="card p-6">
@@ -66,7 +91,11 @@ export default async function EventDetailPage({ params }: Props) {
         {event.status === "PUBLISHED" ? (
           <ActionForm action={unpublishEventAction} className="flex flex-wrap items-center gap-3">
             <input type="hidden" name="eventId" value={event.id} />
-            <p className="text-sm text-[var(--ink-muted)]">El evento está a la venta en el sitio público.</p>
+            <p className="text-sm text-[var(--ink-muted)]">
+              {guestList
+                ? "El evento está activo. Con lista de invitados no aparece en el sitio público: se entra solo con invitación."
+                : "El evento está a la venta en el sitio público."}
+            </p>
             <button type="submit" className="btn">
               Pasar a borrador
             </button>
@@ -79,7 +108,9 @@ export default async function EventDetailPage({ params }: Props) {
             </button>
             {!ready && (
               <p className="text-sm text-[var(--ink-dim)]">
-                Cada función necesita al menos un tipo de entrada antes de publicar.
+                {guestList
+                  ? "Cada función necesita invitados cargados antes de activar el evento."
+                  : "Cada función necesita al menos un tipo de entrada antes de publicar."}
               </p>
             )}
           </ActionForm>
@@ -108,9 +139,13 @@ export default async function EventDetailPage({ params }: Props) {
                       {s.queueEnabled && <span className="badge ml-2 bg-[var(--warn-soft)] text-[var(--warn)]">cola</span>}
                     </span>
                     <span className={s.ticketTypes.length ? "text-[var(--accent)]" : "text-[var(--warn)]"}>
-                      {s.ticketTypes.length
-                        ? `${s._count.tickets} / ${capacity} vendidas`
-                        : "Falta cargar entradas"}
+                      {guestList
+                        ? s.ticketTypes.length
+                          ? `${s._count.tickets} invitado(s)`
+                          : "Falta cargar invitados"
+                        : s.ticketTypes.length
+                          ? `${s._count.tickets} / ${capacity} vendidas`
+                          : "Falta cargar entradas"}
                     </span>
                   </Link>
                 </li>
@@ -157,11 +192,55 @@ export default async function EventDetailPage({ params }: Props) {
         )}
       </section>
 
+      <section className="card p-6">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="eyebrow">Espacio del cliente</h2>
+          {event.client &&
+            (accessOpen ? (
+              <span className="badge bg-[var(--accent-soft)] text-[var(--accent)]">
+                Abierto hasta {formatDateTime(event.clientAccessUntil!, tz)}
+              </span>
+            ) : (
+              <span className="badge bg-[var(--surface-2)] text-[var(--ink-dim)]">Cerrado</span>
+            ))}
+        </div>
+        {!event.client ? (
+          <p className="text-sm text-[var(--ink-muted)]">
+            Es un evento propio. Para que un organizador lo siga, asígnale un cliente en &ldquo;Editar datos del
+            evento&rdquo;.
+          </p>
+        ) : (
+          <ActionForm action={updateClientAccessAction} successMessage="Guardado." className="flex flex-wrap items-end gap-4">
+            <input type="hidden" name="eventId" value={event.id} />
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="enabled" defaultChecked={event.clientAccessEnabled} className="h-4 w-4" />
+              {event.client.name} puede ver ventas, ingresos y reportes de este evento
+            </label>
+            <label className="label">
+              Hasta
+              <input
+                type="datetime-local"
+                name="until"
+                defaultValue={utcToZonedInput(event.clientAccessUntil ?? suggestedUntil, tz)}
+                className="field"
+              />
+            </label>
+            <button type="submit" className="btn btn-dark">
+              Guardar
+            </button>
+            <p className="basis-full text-xs text-[var(--ink-dim)]">
+              Es temporal: se cierra sola en esa fecha (por defecto, 24 h después de la última función). Las cuentas del
+              cliente se crean en Usuarios con el rol &ldquo;Cliente / organizador&rdquo;.
+            </p>
+          </ActionForm>
+        )}
+      </section>
+
       <details className="card p-6">
         <summary className="cursor-pointer text-sm font-medium">Editar datos del evento</summary>
         <ActionForm action={updateEventAction} successMessage="Cambios guardados." className="mt-5 flex flex-col gap-5">
           <input type="hidden" name="eventId" value={event.id} />
-          <EventFields defaults={event} />
+          <EventFields defaults={event} clients={clients} />
           <button type="submit" className="btn btn-primary w-fit">
             Guardar cambios
           </button>

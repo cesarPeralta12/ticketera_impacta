@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { createEventAction } from "@/lib/actions/events";
 import { ROLES, requireStaff } from "@/lib/session";
@@ -8,7 +9,12 @@ import { EventFields } from "../event-fields";
 export const metadata: Metadata = { title: "Nuevo evento" };
 
 export default async function NewEventPage() {
-  await requireStaff(ROLES.manage);
+  const staff = await requireStaff(ROLES.manage);
+  const clients = await prisma.client.findMany({
+    where: { organizationId: staff.organization.id },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
   return (
     <div className="max-w-2xl space-y-6">
       <div>
@@ -21,7 +27,7 @@ export default async function NewEventPage() {
         </p>
       </div>
       <ActionForm action={createEventAction} className="card flex flex-col gap-5 p-6">
-        <EventFields />
+        <EventFields clients={clients} />
         <button type="submit" className="btn btn-primary w-fit">
           Crear evento
         </button>

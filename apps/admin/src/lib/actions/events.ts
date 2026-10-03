@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { formatDateTime, normalizeImageUrl, slugify, zonedDateTimeToUtc } from "@ticketera/core";
-import { EventCategory, prisma } from "@ticketera/db";
+import { EventCategory, EventMode, prisma } from "@ticketera/db";
 import { formObject, intField, moneyField, zodErrors, type FormState } from "@/lib/forms";
 import { ROLES, requireStaff } from "@/lib/session";
 
@@ -24,7 +24,16 @@ const eventSchema = z.object({
     .transform(normalizeImageUrl)
     .pipe(z.url({ protocol: /^https?$/, error: "La imagen debe ser una URL que empiece con http:// o https://" }))
     .optional(),
+  mode: z.enum(Object.values(EventMode) as [EventMode, ...EventMode[]]).default("TICKETING"),
+  clientId: z.string().optional(),
 });
+
+/** El cliente elegido tiene que ser de la organización; vacío = evento propio de IMPACTA. */
+async function checkClient(organizationId: string, clientId: string | undefined) {
+  if (!clientId) return { ok: true as const, clientId: null };
+  const client = await prisma.client.findFirst({ where: { id: clientId, organizationId } });
+  return client ? { ok: true as const, clientId: client.id } : { ok: false as const };
+}
 
 async function uniqueSlug(title: string, excludeId?: string) {
   const base = slugify(title) || "evento";
@@ -44,12 +53,15 @@ export async function createEventAction(_prev: FormState, formData: FormData): P
   const staff = await requireStaff(ROLES.manage);
   const parsed = eventSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
+  const client = await checkClient(staff.organization.id, parsed.data.clientId);
+  if (!client.ok) return { fieldErrors: { clientId: "Cliente no encontrado." } };
 
   const event = await prisma.event.create({
     data: {
       organizationId: staff.organization.id,
       slug: await uniqueSlug(parsed.data.title),
       ...parsed.data,
+      clientId: client.clientId,
     },
   });
   await audit(staff.id, "event.create", "Event", event.id);
@@ -62,10 +74,26 @@ export async function updateEventAction(_prev: FormState, formData: FormData): P
   if (!event) return { error: "Evento no encontrado." };
   const parsed = eventSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
+  const client = await checkClient(staff.organization.id, parsed.data.clientId);
+  if (!client.ok) return { fieldErrors: { clientId: "Cliente no encontrado." } };
+  if (parsed.data.mode !== event.mode) {
+    // Cambiar de venta a invitados (o al revés) con entradas emitidas mezclaría los dos flujos.
+    const issued = await prisma.ticket.count({ where: { session: { eventId: event.id }, status: { in: ["VALID", "USED"] } } });
+    if (issued > 0) {
+      return { fieldErrors: { mode: `No se puede cambiar la modalidad: el evento ya tiene ${issued} entrada(s) emitida(s).` } };
+    }
+  }
 
   await prisma.event.update({
     where: { id: event.id },
-    data: { ...parsed.data, description: parsed.data.description ?? null, imageUrl: parsed.data.imageUrl ?? null },
+    data: {
+      ...parsed.data,
+      description: parsed.data.description ?? null,
+      imageUrl: parsed.data.imageUrl ?? null,
+      clientId: client.clientId,
+      // Sin cliente no hay espacio de cliente que mantener abierto.
+      ...(client.clientId ? {} : { clientAccessEnabled: false, clientAccessUntil: null }),
+    },
   });
   await audit(staff.id, "event.update", "Event", event.id);
   revalidatePath(`/eventos/${event.id}`);

@@ -8,7 +8,7 @@ export async function Nav() {
     <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--bg)]/85 backdrop-blur-md">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
         <Link href="/" className="font-display text-2xl leading-none tracking-wide text-[var(--ink)]">
-          Tremor<span className="text-[var(--accent)]">.</span>
+          Impacta<span className="text-[var(--accent)]">.</span>
         </Link>
         <nav className="flex items-center gap-5 text-sm">
           <Link href="/" className="text-[var(--ink-muted)] transition-colors hover:text-[var(--ink)]">
@@ -16,8 +16,8 @@ export async function Nav() {
           </Link>
           {session?.user ? (
             <>
-              <Link href="/mis-entradas" className="text-[var(--ink-muted)] transition-colors hover:text-[var(--ink)]">
-                Mis entradas
+              <Link href="/mis-eventos" className="text-[var(--ink-muted)] transition-colors hover:text-[var(--ink)]">
+                Mis eventos
               </Link>
               <form
                 action={async () => {

@@ -7,7 +7,7 @@ type Params = { params: Promise<{ sessionId: string }> };
 
 async function queueSession(sessionId: string) {
   return prisma.eventSession.findFirst({
-    where: { id: sessionId, cancelledAt: null, event: { status: "PUBLISHED" } },
+    where: { id: sessionId, cancelledAt: null, event: { status: "PUBLISHED", mode: "TICKETING" } },
     select: { id: true, queueEnabled: true },
   });
 }

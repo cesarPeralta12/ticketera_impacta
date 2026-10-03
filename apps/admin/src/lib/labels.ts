@@ -6,3 +6,31 @@ export const EVENT_STATUS = {
 } as const;
 
 export const SEATING_LABEL = { GENERAL_ADMISSION: "Entrada general", RESERVED: "Butacas numeradas" } as const;
+
+export const ROLE_LABEL = {
+  OWNER: "Dueño",
+  ADMIN: "Administrador",
+  OPERATOR: "Operador de puerta",
+  CASHIER: "Cajero (boletería)",
+  CLIENT: "Cliente / organizador",
+} as const;
+
+export const MODE_LABEL = { TICKETING: "Venta de entradas", GUEST_LIST: "Lista de invitados" } as const;
+
+export const CHANNEL_LABEL = { ONLINE: "Online", POS: "Boletería", GUEST: "Invitaciones" } as const;
+
+export const SCAN_LABEL = {
+  ACCEPTED: "Aceptada",
+  ALREADY_USED: "Ya usada",
+  NOT_FOUND: "No existe",
+  CANCELLED: "Anulada",
+  WRONG_SESSION: "Otra función",
+  WRONG_GATE: "Puerta equivocada",
+  INVALID: "QR inválido",
+} as const;
+
+export const TICKET_STATUS = {
+  VALID: { text: "Válida", className: "bg-[var(--accent-soft)] text-[var(--accent)]" },
+  USED: { text: "Ingresó", className: "bg-[var(--surface-2)] text-[var(--ink)]" },
+  CANCELLED: { text: "Anulada", className: "bg-[var(--danger-soft)] text-[var(--danger)]" },
+} as const;

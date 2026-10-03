@@ -5,12 +5,29 @@
 | Hito del plan | Estado |
 |---|---|
 | Base técnica (monorepo, modelo de datos, CI) | ✅ |
-| Sprint 1 · Login, roles, crear/editar eventos | ✅ NextAuth (staff y compradores), roles OWNER/ADMIN/OPERATOR, eventos, funciones, precios, publicación, usuarios |
+| Sprint 1 · Login, roles, crear/editar eventos | ✅ NextAuth (staff y compradores), roles OWNER/ADMIN/OPERATOR/CASHIER/CLIENT, eventos, funciones, precios, publicación, usuarios |
 | Sprint 2 · Marketplace, carrito, reserva temporal, orden | ✅ Entrada general y butacas, compra como invitado o con cuenta |
 | Sprint 3 · Pago, webhooks, idempotencia, emisión, QR | ✅ Con pasarela **simulada**. Falta: pasarela real, email real |
 | Sprint 4 · Asientos, concurrencia, cola virtual | ✅ Editor de recintos, mapa del comprador, cola en Postgres. Falta: rate limiting, pruebas de carga |
-| Sprint 5 · Validación en puerta, doble ingreso, auditoría | ✅ Online, lector USB o código manual, operador registrado. Falta: cámara del celular, offline |
-| Sprint 6 · Reportes, exportaciones, conciliación | ⏳ Pendiente |
+| Sprint 5 · Validación en puerta, doble ingreso, auditoría | ✅ App de puerta instalable: cámara, NFC (Android), lector USB, manual; offline con sincronización; puertas por sección; equipo registrado en cada lectura |
+| Sprint 6 · Reportes, exportaciones, conciliación | 🟡 Reporte por evento (canales, ingresados, ausentes, rechazos, boletería) y CSV de asistentes. Falta: conciliación con la pasarela real |
+
+## Documento de arquitectura IMPACTA (2026-10-02)
+
+Aplicado completo:
+
+- **Varios clientes/organizadores** bajo IMPACTA (`Client`); cada evento se asigna a uno.
+- **Espacio temporal del cliente**: IMPACTA lo habilita por evento y se cierra solo (por defecto 24 h
+  después de la última función). El cliente ve solo sus eventos: reporte en vivo, CSV y su lista de invitados.
+- **Modalidad 2: lista de invitados** (`GUEST_LIST`): sin venta y fuera del sitio público; invitados
+  desde Excel (pegar), CSV o a mano; QR único por invitado; anular; hoja de QRs para imprimir.
+  En eventos con venta, las cortesías salen del cupo de un tipo de entrada.
+- **Boletería (POS)** con rol cajero: efectivo/QR/tarjeta (declarado, sin banco), ticket térmico 80 mm o
+  A4, vende durante el evento, arqueo "Mi caja de hoy".
+- **App de puerta** (`/puerta`, PWA instalable): cámara (nativa en Android, jsQR en iPhone), NFC en
+  Android, lector USB/manual, offline con IndexedDB y sincronización idempotente, puertas por sección.
+- **Registro del dispositivo** en cada lectura; **reportes** de ausentes y rechazos.
+- "Mis entradas" → **"Mis eventos"** (el enlace viejo redirige).
 
 ## Integración con el prototipo del compañero (2026-10-01)
 
@@ -47,7 +64,10 @@
 | Reserva de **10 minutos**; turno de cola de **10 minutos** | **Confirmar con el cliente.** |
 | Cargo por servicio = 0 | **Confirmar con el cliente.** |
 | Pasarela simulada detrás de una interfaz | Permite probar todo el flujo antes de tener la real. |
-| QR firmado con HMAC (`TK1`) | Validación online. Si se requiere offline → Ed25519 (`TK2`). |
+| QR firmado con HMAC (`TK1`) | El servidor verifica la firma. Offline el celular valida contra la lista descargada (no lleva el secreto). |
+| Espacio del cliente: 24 h después de la última función | Editable por evento. **Confirmar con el cliente.** |
+| Boletería: el medio de pago se declara | Sin conexión al banco ni al POS de tarjetas. Vende hasta el fin de la función (o 4 h después del inicio). |
+| Doble ingreso offline: se evita asignando secciones a puertas | Dos equipos sin internet en la misma puerta podrían aceptar la misma entrada; queda registrado al sincronizar. |
 
 ## Pendientes (cerrar con el cliente)
 
@@ -56,8 +76,9 @@
 - [ ] **Email transaccional**: proveedor y dominio (SPF/DKIM). Hoy se escribe en la consola.
 - [ ] **Rate limiting** en login, registro, cola y compra (hoy no hay límites por IP).
 - [ ] **Pruebas de carga** de la cola y la compra con volúmenes reales.
-- [ ] **Lector con cámara del celular** (y si hace falta, offline).
-- [ ] **Reportes**, exportaciones y conciliación con la pasarela.
+- [ ] **Conciliación** de pagos con la pasarela real.
+- [ ] **https** en el entorno de pruebas: la cámara del celular no funciona por http en la red local.
+- [ ] **Excel nativo (.xlsx)** para invitados, si pegar o CSV no alcanza.
 - [ ] **Editor de butacas**: editar/mover secciones existentes, zoom, deshacer (mejoras ya conversadas con el cliente; propuesta: Konva.js).
 - [ ] **Recuperar contraseña** y verificación de email.
 - [ ] **Hosting**: Vercel + Postgres administrado con pooler de conexiones.

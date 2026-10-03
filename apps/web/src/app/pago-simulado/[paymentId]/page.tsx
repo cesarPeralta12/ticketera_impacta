@@ -58,7 +58,7 @@ export default async function MockGatewayPage({ params }: Props) {
           <p className="text-sm opacity-80">PagoSimulado</p>
           <p className="text-3xl font-semibold tabular-nums">{formatMoney(payment.amount, payment.currency)}</p>
           <p className="text-sm opacity-80">
-            Tremor · Orden {formatCode(payment.order.code)}
+            Impacta · Orden {formatCode(payment.order.code)}
           </p>
         </div>
 

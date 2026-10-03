@@ -9,7 +9,7 @@ export type AuthState = { error?: string } | undefined;
 /** Solo rutas internas del sitio, para no redirigir a otro dominio. */
 function safeNext(value: FormDataEntryValue | null) {
   const next = typeof value === "string" ? value : "";
-  return next.startsWith("/") && !next.startsWith("//") ? next : "/mis-entradas";
+  return next.startsWith("/") && !next.startsWith("//") ? next : "/mis-eventos";
 }
 
 export async function loginAction(_prev: AuthState, formData: FormData): Promise<AuthState> {

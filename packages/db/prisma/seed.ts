@@ -8,9 +8,11 @@
  *   Panel   admin@impacta.test      / Impacta2026!    (OWNER)
  *   Puerta  puerta@impacta.test     / Puerta2026!     (OPERATOR: solo control de acceso)
  *   Sitio   comprador@impacta.test  / Comprador2026!
+ *   + cliente y cajero: ver seed-demo.ts
  */
 import path from "node:path";
 import { config } from "dotenv";
+import { seedArchitectureDemo } from "./seed-demo";
 import {
   DEFAULT_CURRENCY,
   DEFAULT_TIMEZONE,
@@ -237,7 +239,8 @@ async function main() {
   }
 
   // Import dinámico: el cliente lee DATABASE_URL al cargarse, después de dotenv.
-  const { prisma, hashPassword } = await import("../src/index");
+  const db = await import("../src/index");
+  const { prisma, hashPassword } = db;
 
   await prisma.$transaction([
     prisma.accessScan.deleteMany(),
@@ -256,6 +259,7 @@ async function main() {
     prisma.accessPoint.deleteMany(),
     prisma.venue.deleteMany(),
     prisma.membership.deleteMany(),
+    prisma.client.deleteMany(),
     prisma.staffUser.deleteMany(),
     prisma.customer.deleteMany(),
     prisma.organization.deleteMany(),
@@ -370,6 +374,9 @@ async function main() {
       },
     });
   }
+
+  // ── Cliente, cajero, puertas por sección y evento con lista de invitados ──
+  await seedArchitectureDemo(db, org.id);
 
   const counts = {
     eventos: await prisma.event.count(),

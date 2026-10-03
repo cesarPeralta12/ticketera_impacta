@@ -8,6 +8,7 @@ import {
   type CheckoutInput,
 } from "@ticketera/core";
 import { prisma } from "../client";
+import type { OrderChannel } from "../generated/prisma/client";
 import { completeTurn, hasActiveTurn } from "./queue";
 import { DomainError, findTakenSeats, loadInventory, lockInventory } from "./shared";
 
@@ -34,6 +35,18 @@ export async function getTakenSeatIds(sessionId: string, now = new Date()) {
   return new Set(items.map((i) => i.seatId!));
 }
 
+/** Horas que la boletería sigue vendiendo después del inicio si la función no tiene hora de fin. */
+export const BOX_OFFICE_HOURS_AFTER_START = 4;
+
+/**
+ * Hasta cuándo se vende una función: online, hasta que empieza; en boletería, también
+ * durante el evento (en puerta), hasta que termina.
+ */
+export function salesCutoff(session: { startsAt: Date; endsAt: Date | null }, channel: OrderChannel) {
+  if (channel !== "POS") return session.startsAt;
+  return session.endsAt ?? new Date(session.startsAt.getTime() + BOX_OFFICE_HOURS_AFTER_START * 60 * 60_000);
+}
+
 /**
  * Crea una orden PENDING_PAYMENT, que es la reserva temporal del inventario.
  *
@@ -42,13 +55,21 @@ export async function getTakenSeatIds(sessionId: string, now = new Date()) {
  * se atienden en fila y solo la primera la obtiene.
  *
  * Si la función tiene cola virtual, exige un turno vigente (queueToken) y lo da por
- * terminado al crear la orden, para que pase el siguiente de la fila.
+ * terminado al crear la orden, para que pase el siguiente de la fila. La boletería
+ * (canal POS) no pasa por la cola: atiende a quien está en la fila física.
  */
 export async function createPendingOrder(
   input: CheckoutInput,
-  options: { now?: Date; queueToken?: string; customerId?: string } = {},
+  options: {
+    now?: Date;
+    queueToken?: string;
+    customerId?: string;
+    channel?: OrderChannel;
+    issuedById?: string;
+  } = {},
 ) {
   const now = options.now ?? new Date();
+  const channel = options.channel ?? "ONLINE";
   const data = checkoutSchema.parse(input);
   const ids = data.items.map((i) => i.ticketTypeId);
 
@@ -57,7 +78,11 @@ export async function createPendingOrder(
       where: { id: data.sessionId },
       select: { queueEnabled: true },
     });
-    if (session?.queueEnabled && !(await hasActiveTurn(tx, data.sessionId, options.queueToken, now))) {
+    if (
+      channel === "ONLINE" &&
+      session?.queueEnabled &&
+      !(await hasActiveTurn(tx, data.sessionId, options.queueToken, now))
+    ) {
       throw new DomainError("QUEUE_REQUIRED", "Tu turno en la fila virtual no está vigente. Vuelve a la fila.");
     }
 
@@ -78,8 +103,11 @@ export async function createPendingOrder(
       if (type.sessionId !== data.sessionId) {
         throw new DomainError("INVALID_ITEMS", "Las entradas deben ser de una misma función.");
       }
-      if (session.cancelledAt || session.event.status !== "PUBLISHED" || session.startsAt <= now) {
+      if (session.cancelledAt || session.event.status !== "PUBLISHED" || salesCutoff(session, channel) <= now) {
         throw new DomainError("NOT_ON_SALE", "Esta función no está a la venta.");
+      }
+      if (session.event.mode === "GUEST_LIST") {
+        throw new DomainError("NOT_ON_SALE", "Este evento es solo con lista de invitados: no tiene venta.");
       }
       const opens = [type.salesStartAt, session.salesStartAt].filter((d): d is Date => d !== null);
       const closes = [type.salesEndAt, session.salesEndAt].filter((d): d is Date => d !== null);
@@ -148,6 +176,8 @@ export async function createPendingOrder(
     return tx.order.create({
       data: {
         code: randomCode(),
+        channel,
+        issuedById: options.issuedById,
         customerId: options.customerId,
         buyerName: data.buyer.name,
         buyerEmail: data.buyer.email,

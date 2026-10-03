@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseTicketPayload, signTicketPayload } from "./qr";
+import { extractTicketCode, parseTicketPayload, signTicketPayload } from "./qr";
 
 const SECRET = "secreto-de-prueba";
 
@@ -35,5 +35,15 @@ describe("QR de entradas", () => {
   it("rechaza basura", async () => {
     expect(await parseTicketPayload("hola", SECRET)).toEqual({ ok: false, reason: "FORMAT" });
     expect(await parseTicketPayload("TK1.K7Q3MXPA2B", SECRET)).toEqual({ ok: false, reason: "FORMAT" });
+  });
+});
+
+describe("extractTicketCode (puerta sin conexión)", () => {
+  it("saca el código del QR o de lo tipeado, sin necesitar el secreto", async () => {
+    const qr = await signTicketPayload("K7Q3MXPA2B", "secreto");
+    expect(extractTicketCode(qr)).toBe("K7Q3MXPA2B");
+    expect(extractTicketCode(" k7q3m-xpa2b ")).toBe("K7Q3MXPA2B");
+    expect(extractTicketCode("https://otra-cosa.com")).toBeNull();
+    expect(extractTicketCode("TK1.K7Q3MXPA2B")).toBeNull();
   });
 });

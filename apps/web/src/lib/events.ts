@@ -1,10 +1,13 @@
 import { prisma, type EventCategory } from "@ticketera/db";
 
-/** Eventos publicados con al menos una función futura, ordenados por la próxima función. */
+/**
+ * Eventos publicados con venta y al menos una función futura, ordenados por la próxima.
+ * Los eventos con lista de invitados no se publican en el sitio: se entra solo con invitación.
+ */
 export async function listPublishedEvents(category?: EventCategory) {
   const now = new Date();
   const events = await prisma.event.findMany({
-    where: { status: "PUBLISHED", ...(category ? { category } : {}) },
+    where: { status: "PUBLISHED", mode: "TICKETING", ...(category ? { category } : {}) },
     include: {
       sessions: {
         where: { cancelledAt: null, startsAt: { gte: now } },
@@ -43,7 +46,7 @@ export async function listPublishedEvents(category?: EventCategory) {
 
 export async function getPublishedEvent(slug: string) {
   return prisma.event.findFirst({
-    where: { slug, status: "PUBLISHED" },
+    where: { slug, status: "PUBLISHED", mode: "TICKETING" },
     include: {
       sessions: {
         where: { cancelledAt: null },

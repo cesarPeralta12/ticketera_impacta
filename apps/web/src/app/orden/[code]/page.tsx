@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import QRCode from "qrcode";
 import { formatCode, formatDateTime, formatMoney, signTicketPayload } from "@ticketera/core";
-import { expireStaleOrders, getOrderByCode, requireEnv } from "@ticketera/db";
+import { BOX_OFFICE_BUYER, expireStaleOrders, getOrderByCode, requireEnv } from "@ticketera/db";
 import { payOrderAction } from "./actions";
 import { AutoRefresh, Countdown } from "./live";
 
@@ -24,13 +24,18 @@ export default async function OrderPage({ params }: Props) {
   if (!order) notFound();
 
   const session = order.items[0]?.ticketType.session;
+  const guest = order.channel === "GUEST";
+  // En boletería el email es opcional: si no lo dieron, no se muestra el de relleno.
+  const email = order.buyerEmail && order.buyerEmail !== BOX_OFFICE_BUYER.email ? order.buyerEmail : null;
   const latestPayment = order.payments[0];
   const approvedPayments = order.payments.filter((p) => p.status === "APPROVED").length;
 
   return (
     <main className="mx-auto w-full max-w-2xl space-y-6 px-6 py-10">
       <header>
-        <p className="eyebrow">Orden {formatCode(order.code)}</p>
+        <p className="eyebrow">
+          {guest ? "Invitación" : "Orden"} {formatCode(order.code)}
+        </p>
         <h1 className="font-display text-3xl sm:text-4xl">{session?.event.title}</h1>
         {session && (
           <p className="capitalize text-[var(--ink-muted)]">
@@ -83,8 +88,9 @@ export default async function OrderPage({ params }: Props) {
       {(order.status === "REFUNDED" || order.status === "CANCELLED") && (
         <section className="card p-5">
           <p className="font-semibold">
-            {order.status === "REFUNDED" ? "Esta orden fue reembolsada." : "Esta orden fue cancelada."} Las entradas ya no
-            son válidas.
+            {guest
+              ? "Esta invitación fue anulada y ya no es válida."
+              : `${order.status === "REFUNDED" ? "Esta orden fue reembolsada." : "Esta orden fue cancelada."} Las entradas ya no son válidas.`}
           </p>
         </section>
       )}
@@ -92,36 +98,44 @@ export default async function OrderPage({ params }: Props) {
       {order.status === "PAID" && (
         <section className="space-y-4">
           <div className="rounded-xl border border-[var(--green)]/40 bg-[var(--green)]/10 p-5">
-            <p className="font-display text-xl text-[var(--green)]">¡Compra confirmada!</p>
+            <p className="font-display text-xl text-[var(--green)]">
+              {guest ? `¡${order.buyerName}, estás en la lista!` : order.channel === "POS" ? "Compra en boletería" : "¡Compra confirmada!"}
+            </p>
             <p className="text-sm text-[var(--ink-muted)]">
-              Te enviamos las entradas a {order.buyerEmail}. Presenta el QR en la puerta.
+              {guest
+                ? "Presenta este QR en la puerta. Es personal y vale para un ingreso."
+                : email && order.channel === "ONLINE"
+                  ? `Te enviamos las entradas a ${email}. Presenta el QR en la puerta.`
+                  : "Presenta el QR en la puerta. Cada entrada vale para un ingreso."}
             </p>
           </div>
-          <TicketList tickets={order.tickets} />
+          <TicketList tickets={order.tickets} guest={guest} />
         </section>
       )}
 
-      <section className="card">
-        <h2 className="border-b border-[var(--border)] px-5 py-3 font-display text-lg">Resumen</h2>
-        <ul className="divide-y divide-[var(--border)] text-sm">
-          {order.items.map((item) => (
-            <li key={item.id} className="flex justify-between px-5 py-3">
-              <span>
-                {item.quantity} × {item.name}
-                {item.seat && <span className="text-[var(--ink-dim)]"> · {item.seat.label}</span>}
-              </span>
-              <span className="tabular-nums">{formatMoney(item.unitAmount * item.quantity, order.currency)}</span>
+      {!guest && (
+        <section className="card">
+          <h2 className="border-b border-[var(--border)] px-5 py-3 font-display text-lg">Resumen</h2>
+          <ul className="divide-y divide-[var(--border)] text-sm">
+            {order.items.map((item) => (
+              <li key={item.id} className="flex justify-between px-5 py-3">
+                <span>
+                  {item.quantity} × {item.name}
+                  {item.seat && <span className="text-[var(--ink-dim)]"> · {item.seat.label}</span>}
+                </span>
+                <span className="tabular-nums">{formatMoney(item.unitAmount * item.quantity, order.currency)}</span>
+              </li>
+            ))}
+            <li className="flex justify-between px-5 py-3 font-semibold">
+              <span>Total</span>
+              <span className="tabular-nums">{formatMoney(order.totalAmount, order.currency)}</span>
             </li>
-          ))}
-          <li className="flex justify-between px-5 py-3 font-semibold">
-            <span>Total</span>
-            <span className="tabular-nums">{formatMoney(order.totalAmount, order.currency)}</span>
-          </li>
-        </ul>
-        <p className="border-t border-[var(--border)] px-5 py-3 text-xs text-[var(--ink-dim)]">
-          {order.buyerName} · {order.buyerEmail}
-        </p>
-      </section>
+          </ul>
+          <p className="border-t border-[var(--border)] px-5 py-3 text-xs text-[var(--ink-dim)]">
+            {[order.buyerName, email].filter(Boolean).join(" · ")}
+          </p>
+        </section>
+      )}
     </main>
   );
 }
@@ -130,11 +144,12 @@ type TicketForList = {
   id: string;
   code: string;
   status: string;
+  holderName: string | null;
   ticketType: { name: string };
   seat: { label: string; section: { name: string } } | null;
 };
 
-async function TicketList({ tickets }: { tickets: TicketForList[] }) {
+async function TicketList({ tickets, guest }: { tickets: TicketForList[]; guest: boolean }) {
   const secret = requireEnv("TICKET_QR_SECRET");
   const rendered = await Promise.all(
     tickets.map(async (ticket) => ({
@@ -153,8 +168,9 @@ async function TicketList({ tickets }: { tickets: TicketForList[] }) {
         // Boleto claro: el QR se lee mejor con fondo blanco, también en pantallas con poco brillo.
         <li key={ticket.id} className="rounded-2xl bg-[#f5f3ef] p-5 text-center text-[#14181b]">
           <p className="text-xs uppercase tracking-wide text-[#6b687a]">
-            Entrada {i + 1} de {rendered.length}
+            {guest ? "Invitación" : `Entrada ${i + 1} de ${rendered.length}`}
           </p>
+          {ticket.holderName && <p className="text-sm font-semibold">{ticket.holderName}</p>}
           <p className="font-display text-xl">{ticket.ticketType.name}</p>
           {ticket.seat && (
             <p className="text-sm font-semibold">

@@ -16,7 +16,7 @@ export const authConfig = {
   providers: [],
   cookies: {
     sessionToken: {
-      name: "tremor-admin-session",
+      name: "impacta-admin-session",
       options: { httpOnly: true, sameSite: "lax", path: "/", secure: process.env.NODE_ENV === "production" },
     },
   },

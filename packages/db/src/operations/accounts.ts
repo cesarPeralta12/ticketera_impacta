@@ -60,6 +60,7 @@ export async function verifyStaffCredentials(email: string, password: string) {
     email: staff.email,
     role: membership.role,
     organizationId: membership.organizationId,
+    clientId: membership.clientId,
   };
 }
 
@@ -69,6 +70,8 @@ export async function createStaffUser(input: {
   email: string;
   password: string;
   role: StaffRole;
+  /** Obligatorio para el rol CLIENT: el cliente cuyos eventos podrá ver. */
+  clientId?: string;
 }) {
   try {
     return await prisma.staffUser.create({
@@ -76,7 +79,9 @@ export async function createStaffUser(input: {
         name: input.name.trim(),
         email: input.email.trim().toLowerCase(),
         passwordHash: await hashPassword(input.password),
-        memberships: { create: { organizationId: input.organizationId, role: input.role } },
+        memberships: {
+          create: { organizationId: input.organizationId, role: input.role, clientId: input.clientId ?? null },
+        },
       },
     });
   } catch (error) {

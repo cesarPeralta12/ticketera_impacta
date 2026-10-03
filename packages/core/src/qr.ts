@@ -68,3 +68,18 @@ export async function parseTicketPayload(raw: string, secret: string): Promise<P
     ? { ok: true, code, source: "qr" }
     : { ok: false, reason: "SIGNATURE" };
 }
+
+/**
+ * Código de entrada de un QR o de lo tipeado a mano, sin verificar la firma. Lo usa la app
+ * de puerta sin conexión (no tiene el secreto): compara el código contra la lista
+ * descargada. Los códigos son aleatorios, así que inventar uno que exista no es viable.
+ */
+export function extractTicketCode(raw: string): string | null {
+  const input = raw.trim();
+  if (input.startsWith(`${PREFIX}.`)) {
+    const [, code, signature, ...rest] = input.split(".");
+    return code && signature && rest.length === 0 && isValidCode(code) ? code : null;
+  }
+  const manual = input.replace(/-/g, "").toUpperCase();
+  return isValidCode(manual) ? manual : null;
+}

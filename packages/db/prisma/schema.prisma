@@ -28,6 +28,26 @@ model Organization {
   members Membership[]
   venues  Venue[]
   events  Event[]
+  clients Client[]
+}
+
+/// Cliente u organizador de IMPACTA: dueño de uno o varios eventos. Sus usuarios (rol CLIENT)
+/// solo ven sus propios eventos, y solo mientras IMPACTA les habilita el acceso.
+model Client {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  /// NIT, para facturación.
+  taxId          String?
+  contactEmail   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  events       Event[]
+  memberships  Membership[]
+
+  @@unique([organizationId, name])
 }
 
 /// Usuario del panel: organizador, administrador u operador de puerta.
@@ -44,14 +64,21 @@ model StaffUser {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  memberships Membership[]
-  scans       AccessScan[]
+  memberships  Membership[]
+  scans        AccessScan[]
+  issuedOrders Order[]
 }
 
 enum StaffRole {
+  /// IMPACTA: todo el ecosistema.
   OWNER
   ADMIN
+  /// Puerta: solo la aplicación de control de acceso.
   OPERATOR
+  /// Boletería: solo el POS.
+  CASHIER
+  /// Organizador/cliente: solo sus eventos, mientras su acceso temporal esté abierto.
+  CLIENT
 }
 
 model Membership {
@@ -59,10 +86,13 @@ model Membership {
   organizationId String
   userId         String
   role           StaffRole
+  /// Solo para rol CLIENT: el cliente cuyos eventos puede ver.
+  clientId       String?
   createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         StaffUser    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client       Client?      @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, userId])
 }
@@ -124,9 +154,10 @@ model Section {
   /// Receta de la forma (grilla o arco) con la que el editor generó las butacas.
   layout      Json?
 
-  venue       Venue        @relation(fields: [venueId], references: [id], onDelete: Cascade)
-  seats       Seat[]
-  ticketTypes TicketType[]
+  venue        Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  seats        Seat[]
+  ticketTypes  TicketType[]
+  accessPoints AccessPoint[]
 
   @@unique([venueId, name])
 }
@@ -158,6 +189,13 @@ enum EventStatus {
   CANCELLED
 }
 
+/// TICKETING: venta online/POS con precios. GUEST_LIST: evento chico con lista de invitados,
+/// sin venta ni marketplace.
+enum EventMode {
+  TICKETING
+  GUEST_LIST
+}
+
 enum EventCategory {
   CONCIERTO
   TEATRO
@@ -170,22 +208,30 @@ enum EventCategory {
 }
 
 model Event {
-  id             String        @id @default(cuid())
-  organizationId String
-  slug           String        @unique
-  title          String
-  description    String?
-  imageUrl       String?
-  category       EventCategory @default(OTRO)
-  status         EventStatus   @default(DRAFT)
-  publishedAt    DateTime?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  id                  String        @id @default(cuid())
+  organizationId      String
+  slug                String        @unique
+  title               String
+  description         String?
+  imageUrl            String?
+  category            EventCategory @default(OTRO)
+  status              EventStatus   @default(DRAFT)
+  mode                EventMode     @default(TICKETING)
+  /// Cliente/organizador dueño del evento (null = evento propio de IMPACTA).
+  clientId            String?
+  /// Espacio temporal del cliente: IMPACTA lo habilita y se cierra solo en clientAccessUntil.
+  clientAccessEnabled Boolean       @default(false)
+  clientAccessUntil   DateTime?
+  publishedAt         DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   organization Organization   @relation(fields: [organizationId], references: [id])
+  client       Client?        @relation(fields: [clientId], references: [id])
   sessions     EventSession[]
 
   @@index([organizationId, status])
+  @@index([clientId])
 }
 
 /// Una función (fecha y hora) de un evento. El inventario se vende por función.
@@ -257,32 +303,46 @@ enum OrderStatus {
   PARTIALLY_REFUNDED
 }
 
+/// Por dónde se emitió la orden. Todas descuentan del mismo inventario.
+enum OrderChannel {
+  ONLINE
+  /// Boletería presencial.
+  POS
+  /// Invitación o cortesía (sin cobro).
+  GUEST
+}
+
 /// Una orden PENDING_PAYMENT con expiresAt futuro ES la reserva temporal de inventario.
 model Order {
-  id             String      @id @default(cuid())
+  id             String       @id @default(cuid())
   /// Código legible para soporte (ver @ticketera/core/codes).
-  code           String      @unique
+  code           String       @unique
   customerId     String?
   buyerEmail     String
   buyerName      String
   buyerDocument  String?
-  status         OrderStatus @default(PENDING_PAYMENT)
-  currency       String      @db.Char(3)
+  status         OrderStatus  @default(PENDING_PAYMENT)
+  channel        OrderChannel @default(ONLINE)
+  /// Staff que vendió en boletería o emitió la invitación.
+  issuedById     String?
+  currency       String       @db.Char(3)
   subtotalAmount Int
-  feeAmount      Int         @default(0)
+  feeAmount      Int          @default(0)
   totalAmount    Int
   expiresAt      DateTime
   paidAt         DateTime?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   customer Customer?   @relation(fields: [customerId], references: [id])
+  issuedBy StaffUser?  @relation(fields: [issuedById], references: [id])
   items    OrderItem[]
   payments Payment[]
   tickets  Ticket[]
 
   @@index([status, expiresAt])
   @@index([buyerEmail])
+  @@index([channel])
 }
 
 model OrderItem {
@@ -393,13 +453,18 @@ model Ticket {
 }
 
 /// Puerta o punto de control: "Puerta 1", "Acceso VIP".
+///
+/// Si tiene secciones asignadas, solo acepta entradas de esas secciones. Además de ordenar
+/// el ingreso, evita el doble ingreso sin conexión: una misma entrada no puede ser aceptada
+/// por dos puertas distintas que estén offline a la vez.
 model AccessPoint {
   id      String @id @default(cuid())
   venueId String
   name    String
 
-  venue Venue        @relation(fields: [venueId], references: [id], onDelete: Cascade)
-  scans AccessScan[]
+  venue    Venue        @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  scans    AccessScan[]
+  sections Section[]
 
   @@unique([venueId, name])
 }
@@ -410,6 +475,8 @@ enum ScanResult {
   NOT_FOUND
   CANCELLED
   WRONG_SESSION
+  /// La entrada es de una sección que no entra por esta puerta.
+  WRONG_GATE
   INVALID
 }
 
@@ -427,6 +494,10 @@ model AccessScan {
   scannedAt     DateTime   @default(now())
   /// Se completa cuando la lectura llega por sincronización offline.
   syncedAt      DateTime?
+  /// La validó el dispositivo sin conexión (contra la lista sincronizada).
+  offline       Boolean    @default(false)
+  /// Id que genera la app de puerta por lectura: si reenvía la misma al sincronizar, no se duplica.
+  clientScanId  String?    @unique
 
   session     EventSession @relation(fields: [sessionId], references: [id])
   ticket      Ticket?      @relation(fields: [ticketId], references: [id])
