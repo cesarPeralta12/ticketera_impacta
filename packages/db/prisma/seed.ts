@@ -12,7 +12,7 @@
  */
 import path from "node:path";
 import { config } from "dotenv";
-import { seedArchitectureDemo } from "./seed-demo";
+import { seedArchitectureDemo, seedPassword } from "./seed-demo";
 import {
   DEFAULT_CURRENCY,
   DEFAULT_TIMEZONE,
@@ -234,8 +234,14 @@ const EVENTS: EventSeed[] = [
 ];
 
 async function main() {
+  // En un servidor (NODE_ENV=production) solo con permiso explícito y contraseña propia: la
+  // semilla borra todo y las contraseñas de prueba son públicas. Para un entorno de demo nuevo.
   if (process.env.NODE_ENV === "production") {
-    throw new Error("La semilla borra datos: no se ejecuta en producción.");
+    if (process.env.SEED_ALLOW !== "si" || !process.env.SEED_PASSWORD) {
+      throw new Error(
+        "La semilla BORRA todos los datos. En un servidor, solo sobre una base nueva y con SEED_ALLOW=si y SEED_PASSWORD=<tu contraseña>.",
+      );
+    }
   }
 
   // Import dinámico: el cliente lee DATABASE_URL al cargarse, después de dotenv.
@@ -273,7 +279,7 @@ async function main() {
     data: {
       email: "admin@impacta.test",
       name: "Admin Impacta",
-      passwordHash: await hashPassword("Impacta2026!"),
+      passwordHash: await hashPassword(seedPassword("Impacta2026!")),
       emailVerified: true,
       memberships: { create: { organizationId: org.id, role: "OWNER" } },
     },
@@ -282,12 +288,12 @@ async function main() {
     data: {
       email: "puerta@impacta.test",
       name: "Control de Puerta",
-      passwordHash: await hashPassword("Puerta2026!"),
+      passwordHash: await hashPassword(seedPassword("Puerta2026!")),
       memberships: { create: { organizationId: org.id, role: "OPERATOR" } },
     },
   });
   await prisma.customer.create({
-    data: { email: "comprador@impacta.test", name: "Comprador Demo", passwordHash: await hashPassword("Comprador2026!") },
+    data: { email: "comprador@impacta.test", name: "Comprador Demo", passwordHash: await hashPassword(seedPassword("Comprador2026!")) },
   });
 
   // ── Recintos ──

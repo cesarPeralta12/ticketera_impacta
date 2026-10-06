@@ -123,12 +123,39 @@ Cada rol entra directo a su pantalla y no puede abrir las de los demás.
   internet no acepten la misma entrada, cada puerta tiene sus secciones; si igual ocurre, queda
   registrado como doble ingreso. La cámara necesita https (o localhost).
 
+## Despliegue (Coolify u otro servidor con Nixpacks)
+
+Dos aplicaciones desde este mismo repo (Base Directory `/`) y una base PostgreSQL:
+
+| | Web | Panel |
+|---|---|---|
+| Port | 3000 | 3001 |
+| Build Command | `npx turbo run build --filter=@ticketera/web` | `npx turbo run build --filter=@ticketera/admin` |
+| Start Command | `npm run start -w @ticketera/web` | `npm run start -w @ticketera/admin` |
+| Pre-deployment | `npm run db:deploy` (migraciones) | — |
+
+Variables en las dos: `DATABASE_URL`, `WEB_URL` (URL pública de la web), `PAYMENT_PROVIDER=mock`,
+`NIXPACKS_NODE_VERSION=22` y un secreto aleatorio distinto para `TICKET_QR_SECRET`,
+`PAYMENT_MOCK_SECRET`, `WEB_AUTH_SECRET` y `ADMIN_AUTH_SECRET`.
+
+Datos de demostración en un servidor nuevo (la semilla **borra todo**; sin `SEED_PASSWORD` se
+niega, porque las contraseñas de prueba de arriba son públicas). Desde la terminal de la app web:
+
+```bash
+SEED_ALLOW=si SEED_PASSWORD='una-contraseña-propia' npm run db:seed
+```
+
+Todas las cuentas de la tabla quedan con esa contraseña.
+
 ## Problemas comunes
 
 - **Todas las páginas dan 404 salvo la portada** tras agregar rutas: caché de Turbopack
   desactualizada. Detén `npm run dev`, borra `apps/web/.next` y `apps/admin/.next`, y vuelve a levantar.
 - **No se puede mover o borrar una carpeta** en Windows: el servidor de desarrollo la tiene abierta. Detenlo primero.
 - **`db:local` falla al iniciar**: revisa que el puerto 5433 esté libre.
+- **Dos cuentas del panel a la vez** (ej. admin y puerta): el navegador guarda una sola sesión por
+  sitio. Abre la segunda en `http://puerta.localhost:3001` (otro sitio para el navegador, misma app).
+  `127.0.0.1` no sirve: Next.js bloquea en desarrollo los orígenes que no sean `localhost`.
 
 ## Estado
 

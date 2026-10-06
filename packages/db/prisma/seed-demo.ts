@@ -8,10 +8,31 @@
  * Cuentas de prueba (solo desarrollo local):
  *   Cliente  cliente@impacta.test  / Cliente2026!   (CLIENT: Producciones Andinas)
  *   Cajero   caja@impacta.test     / Caja2026!      (CASHIER: solo boletería)
+ * Con SEED_PASSWORD definida, todas las cuentas usan esa contraseña (ver seedPassword).
  */
-import { DEFAULT_CURRENCY, DEFAULT_TIMEZONE, slugify, utcToZonedInput, zonedDateTimeToUtc } from "@ticketera/core";
+import {
+  DEFAULT_CURRENCY,
+  DEFAULT_TIMEZONE,
+  MIN_PASSWORD_LENGTH,
+  slugify,
+  utcToZonedInput,
+  zonedDateTimeToUtc,
+} from "@ticketera/core";
 
 type Db = typeof import("../src/index");
+
+/**
+ * Contraseña de las cuentas de demostración. Las de prueba están publicadas en el README:
+ * en un servidor accesible desde internet se usa SEED_PASSWORD para no dejarlas abiertas.
+ */
+export function seedPassword(localDefault: string) {
+  const custom = process.env.SEED_PASSWORD?.trim();
+  if (!custom) return localDefault;
+  if (custom.length < MIN_PASSWORD_LENGTH) {
+    throw new Error(`SEED_PASSWORD debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.`);
+  }
+  return custom;
+}
 
 /** Fecha en hora de La Paz, a N días de hoy. */
 function laPaz(daysFromNow: number, hour: number): Date {
@@ -66,14 +87,14 @@ export async function seedArchitectureDemo(db: Db, orgId: string) {
     await ensureStaff(db, orgId, {
       email: "cliente@impacta.test",
       name: "Lucía Andrade (Producciones Andinas)",
-      password: "Cliente2026!",
+      password: seedPassword("Cliente2026!"),
       role: "CLIENT",
       clientId: client.id,
     })
   ) {
     log.push("cuenta del cliente");
   }
-  if (await ensureStaff(db, orgId, { email: "caja@impacta.test", name: "Cajero Demo", password: "Caja2026!", role: "CASHIER" })) {
+  if (await ensureStaff(db, orgId, { email: "caja@impacta.test", name: "Cajero Demo", password: seedPassword("Caja2026!"), role: "CASHIER" })) {
     log.push("cuenta de cajero");
   }
 
