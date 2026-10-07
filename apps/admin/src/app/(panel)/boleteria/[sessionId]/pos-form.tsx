@@ -7,7 +7,7 @@ import { SeatPicker, type PickerSection } from "@/components/seat-picker";
 import { sellAction, type PosState } from "@/lib/actions/pos";
 
 export type PosGeneralType = { id: string; name: string; detail: string | null; unitAmount: number; currency: string; max: number };
-export type PosSeatedType = PickerSection & { unitAmount: number; currency: string; maxPerOrder: number };
+export type PosSeatedType = PickerSection & { maxPerOrder: number };
 
 const METHODS = [
   { value: "EFECTIVO", label: "Efectivo" },

@@ -16,7 +16,7 @@ export type GeneralType = {
   max: number;
 };
 
-export type SeatedType = PickerSection & { unitAmount: number; currency: string; maxPerOrder: number };
+export type SeatedType = PickerSection & { maxPerOrder: number };
 
 export function CheckoutForm({
   sessionId,

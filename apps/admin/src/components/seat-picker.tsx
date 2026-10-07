@@ -1,10 +1,17 @@
 "use client";
 
 import type { KeyboardEvent } from "react";
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@ticketera/core";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, formatMoney } from "@ticketera/core";
 
 export type PickerSeat = { id: string; label: string; x: number; y: number; taken: boolean };
-export type PickerSection = { ticketTypeId: string; name: string; color: string; seats: PickerSeat[] };
+export type PickerSection = {
+  ticketTypeId: string;
+  name: string;
+  color: string;
+  unitAmount: number;
+  currency: string;
+  seats: PickerSeat[];
+};
 
 /**
  * Mapa de butacas para la boletería (el mismo dibujo que ve el comprador en la web, en el
@@ -26,7 +33,10 @@ export function SeatPicker({
     const tolerance = Math.max(15, (maxX - minX) * 0.05);
     const middle = s.seats.filter((seat) => Math.abs(seat.x - midX) <= tolerance);
     const y = Math.min(...(middle.length ? middle : s.seats).map((seat) => seat.y));
-    return { name: s.name, color: s.color, x: midX, y: y - 16 };
+    // Nombre, precio y butacas libres sobre el total, encima de la sección.
+    const free = s.seats.filter((seat) => !seat.taken).length;
+    const detail = free === 0 ? "AGOTADO" : `${formatMoney(s.unitAmount, s.currency)} · ${free}/${s.seats.length} libres`;
+    return { name: s.name, color: s.color, x: midX, y: y - 36, detail };
   });
 
   function onKey(event: KeyboardEvent, ticketTypeId: string, seatId: string) {
@@ -49,9 +59,14 @@ export function SeatPicker({
           ESCENARIO
         </text>
         {labels.map((l) => (
-          <text key={l.name} x={l.x} y={l.y} textAnchor="middle" fontSize="12" fontWeight="700" fill={l.color}>
-            {l.name.toUpperCase()}
-          </text>
+          <g key={l.name}>
+            <text x={l.x} y={l.y} textAnchor="middle" fontSize="15" fontWeight="700" fill={l.color}>
+              {l.name.toUpperCase()}
+            </text>
+            <text x={l.x} y={l.y + 18} textAnchor="middle" fontSize="14" fontWeight="600" fill="#62655f">
+              {l.detail}
+            </text>
+          </g>
         ))}
         {sections.map((section) =>
           section.seats.map((seat) => {
