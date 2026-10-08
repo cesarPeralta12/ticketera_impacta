@@ -6,7 +6,7 @@ import { formatDateTime } from "@ticketera/core";
 import { getLiveAccess, prisma } from "@ticketera/db";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { LiveAccessBoard } from "@/components/live-access";
-import { ROLES, requireStaff } from "@/lib/session";
+import { ROLES, eventScope, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Ingreso en vivo" };
 
@@ -18,7 +18,8 @@ export default async function LiveAccessPage({ params }: Props) {
   const staff = await requireStaff(ROLES.manage);
   const { id, sessionId } = await params;
   const owned = await prisma.eventSession.findFirst({
-    where: { id: sessionId, eventId: id, event: { organizationId: staff.organization.id } },
+    // Impacta en vista general también abre los eventos de los organizadores (eventScope).
+    where: { id: sessionId, eventId: id, event: eventScope(staff) },
     select: { id: true },
   });
   if (!owned) notFound();

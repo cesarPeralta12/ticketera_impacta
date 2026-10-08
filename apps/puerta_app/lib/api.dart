@@ -11,10 +11,15 @@ import 'models.dart';
 
 /// Error de la API con un mensaje que se puede mostrar al portero.
 class ApiException implements Exception {
-  const ApiException(this.message, {this.status, this.offline = false});
+  const ApiException(this.message, {this.status, this.offline = false, this.code});
 
   final String message;
   final int? status;
+
+  /// Código de la API, por ejemplo PASSWORD_CHANGE_REQUIRED.
+  final String? code;
+
+  bool get passwordChangeRequired => code == 'PASSWORD_CHANGE_REQUIRED';
 
   /// No se pudo llegar al servidor (sin internet, servidor caído).
   final bool offline;
@@ -27,11 +32,14 @@ class ApiException implements Exception {
 }
 
 class LoginResult {
-  const LoginResult({required this.token, required this.name, required this.role});
+  const LoginResult({required this.token, required this.name, required this.role, this.mustChangePassword = false});
 
   final String token;
   final String name;
   final String role;
+
+  /// Cuenta con contraseña temporal: debe cambiarla antes de usar la app.
+  final bool mustChangePassword;
 }
 
 /// Resultado oficial de una lectura subida al servidor.
@@ -68,11 +76,13 @@ class ApiClient {
       final response = await request().timeout(timeout);
       if (response.statusCode >= 400) {
         String message = 'Error del servidor (${response.statusCode}).';
+        String? code;
         try {
           final body = jsonDecode(utf8.decode(response.bodyBytes));
           if (body is Map && body['error'] is String) message = body['error'] as String;
+          if (body is Map && body['code'] is String) code = body['code'] as String;
         } catch (_) {}
-        throw ApiException(message, status: response.statusCode);
+        throw ApiException(message, status: response.statusCode, code: code);
       }
       return response;
     } on TimeoutException {
@@ -97,7 +107,16 @@ class ApiClient {
     );
     final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     final staff = body['staff'] as Map<String, dynamic>;
-    return LoginResult(token: body['token'] as String, name: staff['name'] as String, role: staff['role'] as String);
+    return LoginResult(
+      token: body['token'] as String,
+      name: staff['name'] as String,
+      role: staff['role'] as String,
+      mustChangePassword: staff['mustChangePassword'] as bool? ?? false,
+    );
+  }
+
+  Future<void> changePassword({required String current, required String next}) async {
+    await _send(() => _http.post(_uri('/auth/password'), headers: _headers, body: jsonEncode({'current': current, 'next': next})));
   }
 
   Future<void> logout() async {

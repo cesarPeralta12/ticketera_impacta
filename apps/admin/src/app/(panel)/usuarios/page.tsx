@@ -5,13 +5,15 @@ import { MIN_PASSWORD_LENGTH, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { createStaffAction, toggleStaffActiveAction } from "@/lib/actions/users";
 import { ROLE_LABEL } from "@/lib/labels";
-import { ROLES, requireStaff } from "@/lib/session";
+import { requirePlatform } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Usuarios" };
 
 export default async function UsersPage() {
   await connection();
-  const staff = await requireStaff(ROLES.users);
+  const staff = await requirePlatform();
+  // En un organizador solo hay administradores, operadores de puerta y cajeros.
+  const organizer = !staff.organization.isPlatform;
   const [members, clients] = await Promise.all([
     prisma.membership.findMany({
       where: { organizationId: staff.organization.id },
@@ -24,10 +26,15 @@ export default async function UsersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Usuarios del panel</h1>
+        {organizer && <p className="eyebrow">{staff.organization.name}</p>}
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {organizer ? "Cuentas del organizador" : "Usuarios de Impacta"}
+        </h1>
         <p className="text-sm text-[var(--ink-muted)]">
-          No hay registro público: las cuentas se crean aquí. Cada rol ve solo lo suyo: el portero, la app móvil de
-          puerta; el cajero, la boletería; el cliente, sus eventos mientras su espacio esté abierto.
+          {organizer
+            ? "Solo Impacta crea cuentas. Cada una ve únicamente los eventos de este organizador: el administrador, todo lo suyo; el portero, la app móvil de puerta; el cajero, la boletería."
+            : "No hay registro público: las cuentas se crean aquí. Cada rol ve solo lo suyo: el portero, la app móvil de puerta; el cajero, la boletería; el cliente, sus eventos mientras su espacio esté abierto."}{" "}
+          La contraseña es temporal: la persona la cambia al entrar por primera vez.
         </p>
       </div>
 
@@ -51,6 +58,7 @@ export default async function UsersPage() {
                 <td className="px-5 py-3">
                   {ROLE_LABEL[m.role]}
                   {m.client && <p className="text-xs text-[var(--ink-dim)]">{m.client.name}</p>}
+                  {m.user.mustChangePassword && <p className="text-xs text-[var(--warn)]">Contraseña temporal</p>}
                 </td>
                 <td className="px-5 py-3">
                   <span
@@ -96,22 +104,24 @@ export default async function UsersPage() {
             <select name="role" defaultValue="OPERATOR" className="field">
               <option value="OPERATOR">{ROLE_LABEL.OPERATOR}</option>
               <option value="CASHIER">{ROLE_LABEL.CASHIER}</option>
-              <option value="CLIENT">{ROLE_LABEL.CLIENT}</option>
-              <option value="ADMIN">{ROLE_LABEL.ADMIN}</option>
-              {staff.role === "OWNER" && <option value="OWNER">{ROLE_LABEL.OWNER}</option>}
+              {!organizer && <option value="CLIENT">{ROLE_LABEL.CLIENT}</option>}
+              <option value="ADMIN">{organizer ? "Administrador del organizador" : ROLE_LABEL.ADMIN}</option>
+              {!organizer && staff.role === "OWNER" && <option value="OWNER">{ROLE_LABEL.OWNER}</option>}
             </select>
           </label>
-          <label className="label">
-            Cliente (solo para el rol cliente)
-            <select name="clientId" defaultValue="" className="field">
-              <option value="">—</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {!organizer && (
+            <label className="label">
+              Cliente (solo para el rol cliente)
+              <select name="clientId" defaultValue="" className="field">
+                <option value="">—</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="label">
             Contraseña temporal
             <input name="password" type="text" required minLength={MIN_PASSWORD_LENGTH} autoComplete="off" className="field" />

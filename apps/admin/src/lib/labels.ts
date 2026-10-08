@@ -1,6 +1,7 @@
 /** Etiquetas de estado del panel. */
 export const EVENT_STATUS = {
   PUBLISHED: { text: "Publicado", className: "bg-[var(--accent-soft)] text-[var(--accent)]" },
+  PENDING_REVIEW: { text: "En revisión", className: "bg-[#e8eefc] text-[#3b5bb5]" },
   DRAFT: { text: "Borrador", className: "bg-[var(--warn-soft)] text-[var(--warn)]" },
   CANCELLED: { text: "Cancelado", className: "bg-[var(--surface-2)] text-[var(--ink-dim)]" },
 } as const;

@@ -16,7 +16,8 @@ export function EventFields({
     mode: string;
     clientId: string | null;
   };
-  clients: { id: string; name: string }[];
+  /** Clientes de Impacta (null: no aplica, por ejemplo en el panel de un organizador). */
+  clients: { id: string; name: string }[] | null;
 }) {
   return (
     <>
@@ -52,20 +53,22 @@ export function EventFields({
             Con lista de invitados no hay venta: se cargan los invitados y cada uno recibe su QR.
           </span>
         </label>
-        <label className="label">
-          Cliente / organizador
-          <select name="clientId" defaultValue={defaults?.clientId ?? ""} className="field">
-            <option value="">IMPACTA (evento propio)</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <span className="text-xs font-normal text-[var(--ink-dim)]">
-            Sus cuentas podrán ver este evento mientras su espacio esté abierto.
-          </span>
-        </label>
+        {clients && (
+          <label className="label">
+            Cliente (Impacta opera el evento)
+            <select name="clientId" defaultValue={defaults?.clientId ?? ""} className="field">
+              <option value="">IMPACTA (evento propio)</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <span className="text-xs font-normal text-[var(--ink-dim)]">
+              Sus cuentas podrán ver este evento mientras su espacio esté abierto.
+            </span>
+          </label>
+        )}
       </div>
     </>
   );

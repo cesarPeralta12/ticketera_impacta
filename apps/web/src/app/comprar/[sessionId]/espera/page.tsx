@@ -11,7 +11,7 @@ type Props = { params: Promise<{ sessionId: string }> };
 export default async function WaitingRoomPage({ params }: Props) {
   await connection();
   const session = await prisma.eventSession.findFirst({
-    where: { id: (await params).sessionId, cancelledAt: null, event: { status: "PUBLISHED", mode: "TICKETING" } },
+    where: { id: (await params).sessionId, cancelledAt: null, event: { status: "PUBLISHED", mode: "TICKETING", organization: { status: "ACTIVE" } } },
     select: { id: true, event: { select: { title: true } } },
   });
   if (!session) notFound();

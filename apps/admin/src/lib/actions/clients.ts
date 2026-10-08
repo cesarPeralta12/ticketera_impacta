@@ -5,7 +5,7 @@ import { z } from "zod";
 import { zonedDateTimeToUtc } from "@ticketera/core";
 import { defaultClientAccessUntil, prisma } from "@ticketera/db";
 import { formObject, zodErrors, type FormState } from "@/lib/forms";
-import { ROLES, requireStaff } from "@/lib/session";
+import { requirePlatform } from "@/lib/session";
 
 const clientSchema = z.object({
   name: z.string({ error: "Ingresa el nombre del cliente." }).min(2).max(120),
@@ -14,7 +14,7 @@ const clientSchema = z.object({
 });
 
 export async function createClientAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requirePlatform();
   const parsed = clientSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
   const exists = await prisma.client.findFirst({
@@ -34,7 +34,7 @@ export async function createClientAction(_prev: FormState, formData: FormData): 
  * cuándo, queda abierto hasta 24 h después de la última función.
  */
 export async function updateClientAccessAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requirePlatform();
   const event = await prisma.event.findFirst({
     where: { id: String(formData.get("eventId")), organizationId: staff.organization.id },
     include: { sessions: { take: 1, include: { venue: { select: { timezone: true } } } } },

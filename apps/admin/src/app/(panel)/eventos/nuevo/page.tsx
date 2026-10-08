@@ -27,7 +27,7 @@ export default async function NewEventPage() {
         </p>
       </div>
       <ActionForm action={createEventAction} className="card flex flex-col gap-5 p-6">
-        <EventFields clients={clients} />
+        <EventFields clients={staff.organization.isPlatform ? clients : null} />
         <button type="submit" className="btn btn-primary w-fit">
           Crear evento
         </button>

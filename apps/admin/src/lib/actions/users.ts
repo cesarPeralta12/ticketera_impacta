@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { MIN_PASSWORD_LENGTH, StaffRole, createStaffUser, prisma } from "@ticketera/db";
 import { formObject, zodErrors, type FormState } from "@/lib/forms";
-import { ROLES, requireStaff } from "@/lib/session";
+import { requirePlatform } from "@/lib/session";
 
 const staffSchema = z.object({
   name: z.string({ error: "Ingresa el nombre." }).min(3).max(120),
@@ -16,11 +16,22 @@ const staffSchema = z.object({
   clientId: z.string().optional(),
 });
 
-/** Reemplaza el registro público de organizadores del prototipo: las cuentas las crea el staff. */
+/** Roles que se pueden dar en la cuenta de un organizador: ahí no hay dueños ni clientes. */
+const ORGANIZER_ROLES: StaffRole[] = ["ADMIN", "OPERATOR", "CASHIER"];
+
+/**
+ * Solo IMPACTA crea cuentas: las suyas, o las de un organizador cuando entró en él. La
+ * contraseña es temporal: la persona la cambia al entrar por primera vez.
+ */
 export async function createStaffAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.users);
+  const staff = await requirePlatform();
   const parsed = staffSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
+  const organization = staff.organization;
+
+  if (!organization.isPlatform && !ORGANIZER_ROLES.includes(parsed.data.role)) {
+    return { fieldErrors: { role: "Para un organizador: administrador, operador de puerta o cajero." } };
+  }
   if (parsed.data.role === "OWNER" && staff.role !== "OWNER") {
     return { fieldErrors: { role: "Solo un dueño puede crear otro dueño." } };
   }
@@ -28,16 +39,28 @@ export async function createStaffAction(_prev: FormState, formData: FormData): P
   let clientId: string | undefined;
   if (parsed.data.role === "CLIENT") {
     const client = parsed.data.clientId
-      ? await prisma.client.findFirst({ where: { id: parsed.data.clientId, organizationId: staff.organization.id } })
+      ? await prisma.client.findFirst({ where: { id: parsed.data.clientId, organizationId: organization.id } })
       : null;
     if (!client) return { fieldErrors: { clientId: "Elige el cliente al que pertenece esta cuenta." } };
     clientId = client.id;
   }
 
-  const created = await createStaffUser({ organizationId: staff.organization.id, ...parsed.data, clientId });
+  const created = await createStaffUser({
+    organizationId: organization.id,
+    ...parsed.data,
+    clientId,
+    mustChangePassword: true,
+  });
   if (!created) return { fieldErrors: { email: "Ya existe una cuenta con ese email." } };
   await prisma.auditLog.create({
-    data: { actorType: "staff", actorId: staff.id, action: "staff.create", entity: "StaffUser", entityId: created.id, data: { role: parsed.data.role } },
+    data: {
+      actorType: "staff",
+      actorId: staff.id,
+      action: "staff.create",
+      entity: "StaffUser",
+      entityId: created.id,
+      data: { role: parsed.data.role, organizationId: organization.id },
+    },
   });
   revalidatePath("/usuarios");
   return { ok: true };
@@ -45,7 +68,7 @@ export async function createStaffAction(_prev: FormState, formData: FormData): P
 
 /** Desactivar corta el acceso de inmediato: requireStaff() lo verifica en cada request. */
 export async function toggleStaffActiveAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.users);
+  const staff = await requirePlatform();
   const userId = String(formData.get("userId"));
   if (userId === staff.id) return { error: "No puedes desactivar tu propia cuenta." };
 

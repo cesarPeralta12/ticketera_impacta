@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'door_service.dart';
+import 'screens/change_password_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'storage.dart';
@@ -38,7 +39,11 @@ class PuertaApp extends StatelessWidget {
       ),
       home: ListenableBuilder(
         listenable: service,
-        builder: (context, _) => service.loggedIn ? HomeScreen(service: service) : LoginScreen(service: service),
+        builder: (context, _) => !service.loggedIn
+            ? LoginScreen(service: service)
+            : service.mustChangePassword
+                ? ChangePasswordScreen(service: service)
+                : HomeScreen(service: service),
       ),
     );
   }

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { canControlSession, prisma, scanTicket } from "@ticketera/db";
-import { json, mobileStaff } from "@/lib/mobile-auth";
+import { json, mobileStaff, passwordChangeRequired } from "@/lib/mobile-auth";
 
 const REJECTIONS = [
   "ALREADY_USED",
@@ -47,6 +47,7 @@ function clampScanTime(iso: string, now: Date) {
 export async function POST(req: Request) {
   const staff = await mobileStaff(req);
   if (!staff) return json({ error: "Sesión vencida." }, 401);
+  if (staff.mustChangePassword) return passwordChangeRequired();
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return json({ error: "Datos inválidos." }, 400);
   const body = parsed.data;

@@ -1,5 +1,5 @@
 import { canControlSession, getDoorDownload } from "@ticketera/db";
-import { json, mobileStaff } from "@/lib/mobile-auth";
+import { json, mobileStaff, passwordChangeRequired } from "@/lib/mobile-auth";
 
 /**
  * Descarga de datos para validar sin internet. `?gate=<id>` elige la puerta (si el portero
@@ -8,6 +8,7 @@ import { json, mobileStaff } from "@/lib/mobile-auth";
 export async function GET(req: Request, { params }: { params: Promise<{ sessionId: string }> }) {
   const staff = await mobileStaff(req);
   if (!staff) return json({ error: "Sesión vencida." }, 401);
+  if (staff.mustChangePassword) return passwordChangeRequired();
   const { sessionId } = await params;
   const allowed = await canControlSession(staff, sessionId);
   if (!allowed) return json({ error: "Función no disponible para tu cuenta." }, 403);

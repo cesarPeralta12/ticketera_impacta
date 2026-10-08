@@ -34,6 +34,9 @@ class DoorService extends ChangeNotifier {
 
   bool get loggedIn => _api?.token != null;
 
+  /// La cuenta tiene contraseña temporal: la app pide cambiarla antes de seguir.
+  bool mustChangePassword = false;
+
   /// Cuántas lecturas esperan subirse (para mostrarlo en pantalla).
   int pendingCount = 0;
   int conflictCount = 0;
@@ -73,7 +76,14 @@ class DoorService extends ChangeNotifier {
     await sessionStore.save(server: url, token: result.token, email: email.trim(), name: result.name);
     serverUrl = url;
     staffName = result.name;
+    mustChangePassword = result.mustChangePassword;
     _api = ApiClient(baseUrl: url, token: result.token);
+    notifyListeners();
+  }
+
+  Future<void> changePassword({required String current, required String next}) async {
+    await _guard((api) => api.changePassword(current: current, next: next));
+    mustChangePassword = false;
     notifyListeners();
   }
 
@@ -83,6 +93,7 @@ class DoorService extends ChangeNotifier {
     await sessionStore.clearSession();
     await db.clearAll();
     _api = ApiClient(baseUrl: serverUrl);
+    mustChangePassword = false;
     assignments = const [];
     pendingCount = 0;
     notifyListeners();
@@ -94,6 +105,10 @@ class DoorService extends ChangeNotifier {
     try {
       return await call(api);
     } on ApiException catch (e) {
+      if (e.passwordChangeRequired) {
+        mustChangePassword = true;
+        notifyListeners();
+      }
       if (e.unauthorized) {
         await sessionStore.clearSession();
         _api = ApiClient(baseUrl: serverUrl);

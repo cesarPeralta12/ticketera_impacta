@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { formatDateTime, normalizeImageUrl, slugify, zonedDateTimeToUtc } from "@ticketera/core";
-import { EventCategory, EventMode, prisma } from "@ticketera/db";
+import { formatDateTime, normalizeImageUrl, slugify, windowsOverlap, zonedDateTimeToUtc } from "@ticketera/core";
+import { DomainError, EventCategory, EventMode, prisma, publicationProblem, submitEventForReview } from "@ticketera/db";
 import { formObject, intField, moneyField, zodErrors, type FormState } from "@/lib/forms";
 import { ROLES, requireStaff } from "@/lib/session";
 
@@ -100,25 +100,38 @@ export async function updateEventAction(_prev: FormState, formData: FormData): P
   return { ok: true };
 }
 
-/** Publica si cada función vigente tiene al menos un tipo de entrada (regla del prototipo). */
+/**
+ * Publicar. IMPACTA publica directo (también cuando entró en un organizador). Un
+ * organizador no publica: lo envía a revisión y sale en la web cuando IMPACTA lo aprueba.
+ */
 export async function publishEventAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireStaff(ROLES.manage);
-  const event = await prisma.event.findFirst({
-    where: { id: String(formData.get("eventId")), organizationId: staff.organization.id },
-    include: { sessions: { where: { cancelledAt: null }, include: { _count: { select: { ticketTypes: true } } } } },
-  });
+  const event = await ownedEvent(staff.organization.id, String(formData.get("eventId")));
   if (!event) return { error: "Evento no encontrado." };
-  if (event.sessions.length === 0) return { error: "Agrega al menos una función antes de publicar." };
-  if (event.sessions.some((s) => s._count.ticketTypes === 0)) {
-    return { error: "Todas las funciones necesitan al menos un tipo de entrada antes de publicar." };
+
+  if (!staff.platform) {
+    try {
+      await submitEventForReview(event.id, staff.id);
+    } catch (error) {
+      if (error instanceof DomainError) return { error: error.message };
+      throw error;
+    }
+    revalidatePath(`/eventos/${event.id}`);
+    return { ok: true };
   }
 
-  await prisma.event.update({ where: { id: event.id }, data: { status: "PUBLISHED", publishedAt: new Date() } });
+  const problem = await publicationProblem(event.id);
+  if (problem) return { error: problem };
+  await prisma.event.update({
+    where: { id: event.id },
+    data: { status: "PUBLISHED", publishedAt: new Date(), reviewNote: null },
+  });
   await audit(staff.id, "event.publish", "Event", event.id);
   revalidatePath(`/eventos/${event.id}`);
   return { ok: true };
 }
 
+/** Pasar a borrador: deja de venderse (o sale de la revisión, si estaba esperando). */
 export async function unpublishEventAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireStaff(ROLES.manage);
   const event = await ownedEvent(staff.organization.id, String(formData.get("eventId")));
@@ -198,6 +211,11 @@ const ticketTypeSchema = z.object({
   price: moneyField,
   capacity: intField(1, 200_000, "El cupo").optional(),
   maxPerOrder: intField(1, 10, "El máximo por compra"),
+  presale: z.literal("on").optional(),
+  salesStartAt: z.string().optional(),
+  salesEndAt: z.string().optional(),
+  /** Preventa: mientras dure, las otras entradas de la sección no se venden. */
+  exclusive: z.literal("on").optional(),
 });
 
 const ACCESS_METHODS = ["QR", "BARCODE", "NFC"] as const;
@@ -210,6 +228,32 @@ function readAccessMethods(formData: FormData) {
   return picked.length > 0 ? [...new Set(picked)] : (["QR"] as const);
 }
 
+type Window = { salesStartAt: Date | null; salesEndAt: Date | null };
+
+/** Fechas de venta escritas en la hora del recinto, validadas. */
+function parseSaleWindow(
+  input: { presale?: string; salesStartAt?: string; salesEndAt?: string },
+  timeZone: string,
+): { ok: true; window: Window } | { ok: false; error: FormState } {
+  const toDate = (value: string | undefined) => (value ? zonedDateTimeToUtc(value, timeZone) : null);
+  let window: Window;
+  try {
+    window = { salesStartAt: toDate(input.salesStartAt), salesEndAt: toDate(input.salesEndAt) };
+  } catch {
+    return { ok: false, error: { fieldErrors: { salesEndAt: "Fecha inválida." } } };
+  }
+  if (input.presale && !window.salesEndAt) {
+    return { ok: false, error: { fieldErrors: { salesEndAt: "La preventa necesita fecha de fin (hasta cuándo se vende)." } } };
+  }
+  if (window.salesStartAt && window.salesEndAt && window.salesEndAt <= window.salesStartAt) {
+    return { ok: false, error: { fieldErrors: { salesEndAt: "La venta tiene que terminar después de empezar." } } };
+  }
+  return { ok: true, window };
+}
+
+const seatedOverlapError = (sectionName: string) =>
+  `"${sectionName}" es de butacas numeradas: solo puede tener un precio a la vez. Pon fecha de fin a la preventa y la general empieza cuando termina (casilla "no vender las otras").`;
+
 export async function addTicketTypeAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireStaff(ROLES.manage);
   const parsed = ticketTypeSchema.safeParse(formObject(formData));
@@ -218,6 +262,7 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
 
   const session = await prisma.eventSession.findFirst({
     where: { id: data.sessionId, event: { organizationId: staff.organization.id } },
+    include: { venue: { select: { timezone: true } } },
   });
   const section = await prisma.section.findFirst({
     where: { id: data.sectionId, venueId: session?.venueId },
@@ -225,12 +270,18 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
   });
   if (!session || !section) return { error: "Función o sección no encontrada." };
 
+  const parsedWindow = parseSaleWindow(data, session.venue.timezone);
+  if (!parsedWindow.ok) return parsedWindow.error;
+  const window = parsedWindow.window;
+  const presale = Boolean(data.presale);
+  if (presale && window.salesEndAt && window.salesEndAt <= new Date()) {
+    return { fieldErrors: { salesEndAt: "La fecha de fin de la preventa ya pasó." } };
+  }
+
+  const seated = section.seatingMode === "RESERVED";
   let capacity: number;
-  if (section.seatingMode === "RESERVED") {
-    // Una sección numerada tiene un solo precio por función: cada butaca es una entrada.
-    const existing = await prisma.ticketType.count({ where: { sessionId: session.id, sectionId: section.id } });
-    if (existing > 0) return { error: `"${section.name}" ya tiene precio en esta función.` };
-    capacity = section._count.seats;
+  if (seated) {
+    capacity = section._count.seats; // cada butaca es una entrada
   } else {
     if (!data.capacity) return { fieldErrors: { capacity: "Ingresa el cupo." } };
     if (data.capacity > section.capacity) {
@@ -239,20 +290,49 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
     capacity = data.capacity;
   }
 
-  const type = await prisma.ticketType.create({
-    data: {
-      sessionId: session.id,
-      sectionId: section.id,
-      name: data.name,
-      unitAmount: data.price,
-      currency: staff.organization.currency,
-      capacity,
-      maxPerOrder: data.maxPerOrder,
-      accessMethods: [...readAccessMethods(formData)],
-      sortOrder: await prisma.ticketType.count({ where: { sessionId: session.id } }),
-    },
+  // Preventa exclusiva: las otras entradas de la sección empiezan cuando termina la preventa.
+  // En butacas numeradas es obligatoria: cada butaca tiene un solo precio a la vez.
+  const others = await prisma.ticketType.findMany({ where: { sessionId: session.id, sectionId: section.id } });
+  const shift = presale && (seated || Boolean(data.exclusive)) && window.salesEndAt ? window.salesEndAt : null;
+  const adjusted = others.map((t) => {
+    if (!shift || !windowsOverlap(window, t)) return { type: t, window: t as Window, changed: false };
+    const start = t.salesStartAt && t.salesStartAt > shift ? t.salesStartAt : shift;
+    return { type: t, window: { salesStartAt: start, salesEndAt: t.salesEndAt }, changed: true };
   });
-  await audit(staff.id, "ticket_type.create", "TicketType", type.id, { price: data.price, capacity });
+  if (adjusted.some((a) => a.window.salesEndAt && a.window.salesStartAt && a.window.salesEndAt <= a.window.salesStartAt)) {
+    return { error: "Otra entrada de esta sección termina antes de que termine la preventa: revisa sus fechas." };
+  }
+  if (seated && adjusted.some((a) => windowsOverlap(window, a.window))) {
+    return { error: seatedOverlapError(section.name) };
+  }
+
+  const type = await prisma.$transaction(async (tx) => {
+    for (const a of adjusted.filter((x) => x.changed)) {
+      await tx.ticketType.update({ where: { id: a.type.id }, data: { salesStartAt: a.window.salesStartAt } });
+    }
+    return tx.ticketType.create({
+      data: {
+        sessionId: session.id,
+        sectionId: section.id,
+        name: data.name,
+        unitAmount: data.price,
+        currency: staff.organization.currency,
+        capacity,
+        maxPerOrder: data.maxPerOrder,
+        presale,
+        accessMethods: [...readAccessMethods(formData)],
+        salesStartAt: window.salesStartAt,
+        salesEndAt: window.salesEndAt,
+        sortOrder: await tx.ticketType.count({ where: { sessionId: session.id } }),
+      },
+    });
+  });
+  await audit(staff.id, "ticket_type.create", "TicketType", type.id, {
+    price: data.price,
+    capacity,
+    presale,
+    shifted: adjusted.filter((a) => a.changed).map((a) => a.type.id),
+  });
   revalidatePath(`/eventos/${session.eventId}/funciones/${session.id}`);
   return { ok: true };
 }
@@ -268,6 +348,47 @@ export async function updateAccessMethodsAction(_prev: FormState, formData: Form
   const methods = [...readAccessMethods(formData)];
   await prisma.ticketType.update({ where: { id: type.id }, data: { accessMethods: methods } });
   await audit(staff.id, "ticket_type.access_methods", "TicketType", type.id, { methods });
+  revalidatePath(`/eventos/${type.session.eventId}/funciones/${type.sessionId}`);
+  return { ok: true };
+}
+
+const saleDatesSchema = z.object({
+  ticketTypeId: z.string(),
+  presale: z.literal("on").optional(),
+  salesStartAt: z.string().optional(),
+  salesEndAt: z.string().optional(),
+});
+
+/** Cambiar desde/hasta cuándo se vende un tipo (extender o cortar una preventa). */
+export async function updateTicketTypeSalesAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireStaff(ROLES.manage);
+  const parsed = saleDatesSchema.safeParse(formObject(formData));
+  if (!parsed.success) return zodErrors(parsed.error);
+  const type = await prisma.ticketType.findFirst({
+    where: { id: parsed.data.ticketTypeId, session: { event: { organizationId: staff.organization.id } } },
+    include: { section: true, session: { include: { venue: { select: { timezone: true } } } } },
+  });
+  if (!type) return { error: "Tipo de entrada no encontrado." };
+
+  const parsedWindow = parseSaleWindow(parsed.data, type.session.venue.timezone);
+  if (!parsedWindow.ok) return parsedWindow.error;
+  const window = parsedWindow.window;
+  if (type.section?.seatingMode === "RESERVED") {
+    const others = await prisma.ticketType.findMany({
+      where: { sessionId: type.sessionId, sectionId: type.sectionId, id: { not: type.id } },
+    });
+    if (others.some((t) => windowsOverlap(window, t))) return { error: seatedOverlapError(type.section.name) };
+  }
+
+  await prisma.ticketType.update({
+    where: { id: type.id },
+    data: { presale: Boolean(parsed.data.presale), salesStartAt: window.salesStartAt, salesEndAt: window.salesEndAt },
+  });
+  await audit(staff.id, "ticket_type.sales", "TicketType", type.id, {
+    presale: Boolean(parsed.data.presale),
+    salesStartAt: window.salesStartAt?.toISOString() ?? null,
+    salesEndAt: window.salesEndAt?.toISOString() ?? null,
+  });
   revalidatePath(`/eventos/${type.session.eventId}/funciones/${type.sessionId}`);
   return { ok: true };
 }

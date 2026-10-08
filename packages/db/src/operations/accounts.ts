@@ -45,15 +45,20 @@ export async function registerCustomer(input: { name: string; email: string; pas
   }
 }
 
-/** Devuelve el staff con su organización y rol, solo si la cuenta está activa. */
+/**
+ * Devuelve el staff con su organización y rol, solo si la cuenta está activa y su
+ * organización no está suspendida.
+ */
 export async function verifyStaffCredentials(email: string, password: string) {
   const staff = await prisma.staffUser.findUnique({
     where: { email: email.trim().toLowerCase() },
-    include: { memberships: { orderBy: { createdAt: "asc" }, take: 1 } },
+    include: {
+      memberships: { orderBy: { createdAt: "asc" }, take: 1, include: { organization: { select: { status: true } } } },
+    },
   });
   if (!(await passwordMatches(password, staff?.passwordHash))) return null;
   const membership = staff?.memberships[0];
-  if (!staff || !staff.active || !membership) return null;
+  if (!staff || !staff.active || !membership || membership.organization.status !== "ACTIVE") return null;
   return {
     id: staff.id,
     name: staff.name,
@@ -72,6 +77,8 @@ export async function createStaffUser(input: {
   role: StaffRole;
   /** Obligatorio para el rol CLIENT: el cliente cuyos eventos podrá ver. */
   clientId?: string;
+  /** Contraseña temporal: la tiene que cambiar al entrar. */
+  mustChangePassword?: boolean;
 }) {
   try {
     return await prisma.staffUser.create({
@@ -79,6 +86,7 @@ export async function createStaffUser(input: {
         name: input.name.trim(),
         email: input.email.trim().toLowerCase(),
         passwordHash: await hashPassword(input.password),
+        mustChangePassword: input.mustChangePassword ?? false,
         memberships: {
           create: { organizationId: input.organizationId, role: input.role, clientId: input.clientId ?? null },
         },
@@ -88,4 +96,18 @@ export async function createStaffUser(input: {
     if (isUniqueViolation(error)) return null;
     throw error;
   }
+}
+
+/**
+ * Cambia la contraseña de una cuenta del panel verificando la actual. Devuelve false si
+ * la actual no coincide. Al cambiarla deja de ser temporal.
+ */
+export async function changeStaffPassword(userId: string, current: string, next: string) {
+  const staff = await prisma.staffUser.findUnique({ where: { id: userId } });
+  if (!staff || !(await passwordMatches(current, staff.passwordHash))) return false;
+  await prisma.staffUser.update({
+    where: { id: userId },
+    data: { passwordHash: await hashPassword(next), mustChangePassword: false },
+  });
+  return true;
 }

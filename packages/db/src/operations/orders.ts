@@ -90,7 +90,10 @@ export async function createPendingOrder(
 
     const types = await tx.ticketType.findMany({
       where: { id: { in: ids } },
-      include: { section: true, session: { include: { event: true } } },
+      include: {
+        section: true,
+        session: { include: { event: { include: { organization: { select: { status: true } } } } } },
+      },
     });
     if (types.length !== ids.length) {
       throw new DomainError("INVALID_ITEMS", "Alguna de las entradas elegidas ya no existe.");
@@ -105,6 +108,9 @@ export async function createPendingOrder(
       }
       if (session.cancelledAt || session.event.status !== "PUBLISHED" || salesCutoff(session, channel) <= now) {
         throw new DomainError("NOT_ON_SALE", "Esta función no está a la venta.");
+      }
+      if (session.event.organization.status !== "ACTIVE") {
+        throw new DomainError("NOT_ON_SALE", "Este evento no está a la venta.");
       }
       if (session.event.mode === "GUEST_LIST") {
         throw new DomainError("NOT_ON_SALE", "Este evento es solo con lista de invitados: no tiene venta.");

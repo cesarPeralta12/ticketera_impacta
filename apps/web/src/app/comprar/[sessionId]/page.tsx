@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
-import { MAX_TICKETS_PER_ORDER, formatDateTime } from "@ticketera/core";
+import { MAX_TICKETS_PER_ORDER, formatDateTime, saleState } from "@ticketera/core";
 import { getQueueStatus, getSessionAvailability, getTakenSeatIds, prisma } from "@ticketera/db";
 import { auth } from "@/lib/auth";
 import { queueCookieName } from "@/lib/queue-cookie";
@@ -21,7 +21,7 @@ export default async function BuyPage({ params }: Props) {
   const session = await prisma.eventSession.findUnique({
     where: { id: sessionId },
     include: {
-      event: true,
+      event: { include: { organization: { select: { status: true } } } },
       venue: true,
       ticketTypes: {
         orderBy: { sortOrder: "asc" },
@@ -33,6 +33,7 @@ export default async function BuyPage({ params }: Props) {
     !session ||
     session.event.status !== "PUBLISHED" ||
     session.event.mode !== "TICKETING" ||
+    session.event.organization.status !== "ACTIVE" ||
     session.cancelledAt ||
     session.startsAt <= new Date()
   ) {
@@ -55,7 +56,11 @@ export default async function BuyPage({ params }: Props) {
     auth(),
   ]);
 
-  const general: GeneralType[] = session.ticketTypes
+  // Lo que ya terminó (una preventa vencida) no se muestra; lo que todavía no empieza, sí,
+  // con su fecha (solo en generales: una butaca tiene un único precio a la vez).
+  const tz = session.venue.timezone;
+  const types = session.ticketTypes.filter((t) => saleState(t) !== "closed");
+  const general: GeneralType[] = types
     .filter((t) => t.section?.seatingMode !== "RESERVED")
     .map((t) => ({
       id: t.id,
@@ -63,17 +68,22 @@ export default async function BuyPage({ params }: Props) {
       detail: t.section ? `${t.section.name} · Entrada general` : null,
       unitAmount: t.unitAmount,
       currency: t.currency,
-      max: Math.min(remaining.get(t.id) ?? 0, t.maxPerOrder, MAX_TICKETS_PER_ORDER),
-    }));
+      max: saleState(t) === "open" ? Math.min(remaining.get(t.id) ?? 0, t.maxPerOrder, MAX_TICKETS_PER_ORDER) : 0,
+      presaleUntil: t.presale && t.salesEndAt ? formatDateTime(t.salesEndAt, tz) : null,
+      opensAt: saleState(t) === "scheduled" && t.salesStartAt ? formatDateTime(t.salesStartAt, tz) : null,
+    }))
+    // Primero lo que se puede comprar ahora (la preventa), después lo que empieza más adelante.
+    .toSorted((a, b) => Number(Boolean(a.opensAt)) - Number(Boolean(b.opensAt)));
 
-  const seated: SeatedType[] = session.ticketTypes
-    .filter((t) => t.section?.seatingMode === "RESERVED")
+  const seated: SeatedType[] = types
+    .filter((t) => t.section?.seatingMode === "RESERVED" && saleState(t) === "open")
     .map((t) => ({
       ticketTypeId: t.id,
       name: t.section!.name,
       color: t.section!.color,
       unitAmount: t.unitAmount,
       currency: t.currency,
+      presale: t.presale,
       maxPerOrder: Math.min(t.maxPerOrder, MAX_TICKETS_PER_ORDER),
       seats: t.section!.seats
         // Orden de lectura natural (fila A: 1, 2, … 10), no alfabético ("1", "10", "2").

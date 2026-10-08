@@ -16,6 +16,7 @@ import {
   startDeviceSession,
 } from "../src/operations/mobile";
 import { getLiveAccess } from "../src/operations/live";
+import { changeStaffPassword } from "../src/operations/accounts";
 import { sellAtBoxOffice } from "../src/operations/sales";
 import { createGeneralAdmissionEvent } from "./fixtures";
 
@@ -179,5 +180,40 @@ describe("ingreso en vivo", () => {
     expect(live.tickets.find((t) => t.id === second!.id)!.entry).toBeNull();
     expect(live.rejected[0]).toMatchObject({ result: "ALREADY_USED", code: first!.code });
     expect(live.sections[0]).toMatchObject({ issued: 2, entered: 1 });
+  });
+});
+
+describe("organizadores y la app móvil", () => {
+  it("un portero de un organizador no puede controlar funciones de otro", async () => {
+    const a = await setup();
+    const b = await setup();
+    const staffA = { id: a.operator.id, name: "A", email: a.operator.email, role: "OPERATOR" as const, organizationId: a.orgId };
+    await prisma.doorAssignment.create({ data: { userId: a.operator.id, sessionId: a.session.id } });
+    // Aunque tenga una asignación forzada a la función ajena, la organización no coincide.
+    await prisma.doorAssignment.create({ data: { userId: a.operator.id, sessionId: b.session.id } });
+    expect(await canControlSession(staffA, a.session.id)).not.toBeNull();
+    expect(await canControlSession(staffA, b.session.id)).toBeNull();
+    expect((await getDoorAssignments(staffA)).map((x) => x.sessionId)).toEqual([a.session.id]);
+  });
+
+  it("suspender al organizador corta los teléfonos al instante", async () => {
+    const { operator, orgId } = await setup();
+    const { token } = await login(operator.email);
+    expect(await authenticateDevice(token)).not.toBeNull();
+    await prisma.organization.update({ where: { id: orgId }, data: { status: "SUSPENDED" } });
+    expect(await authenticateDevice(token)).toBeNull();
+    expect(await startDeviceSession({ email: operator.email, password: PASSWORD, deviceId: "dev-9999", deviceName: "x" })).toEqual({ error: "CREDENTIALS" });
+  });
+
+  it("una cuenta con contraseña temporal lo indica hasta que la cambia", async () => {
+    const { operator } = await setup();
+    await prisma.staffUser.update({ where: { id: operator.id }, data: { mustChangePassword: true } });
+    const first = await login(operator.email);
+    expect(first.staff.mustChangePassword).toBe(true);
+    expect((await authenticateDevice(first.token))?.mustChangePassword).toBe(true);
+
+    expect(await changeStaffPassword(operator.id, "otra-mala", "NuevaClave2026!")).toBe(false);
+    expect(await changeStaffPassword(operator.id, PASSWORD, "NuevaClave2026!")).toBe(true);
+    expect((await authenticateDevice(first.token))?.mustChangePassword).toBe(false);
   });
 });

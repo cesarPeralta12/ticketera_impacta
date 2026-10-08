@@ -11,3 +11,7 @@ export async function mobileStaff(req: Request) {
   const match = /^Bearer\s+(\S+)$/i.exec(header);
   return match?.[1] ? authenticateDevice(match[1]) : null;
 }
+
+/** Respuesta para una cuenta con contraseña temporal: debe cambiarla antes de usar la app. */
+export const passwordChangeRequired = () =>
+  json({ error: "Cambia tu contraseña temporal para continuar.", code: "PASSWORD_CHANGE_REQUIRED" }, 403);

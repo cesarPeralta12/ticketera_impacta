@@ -13,7 +13,15 @@ export const ALL_ACCESS_METHODS: AccessMethod[] = ["QR", "BARCODE", "NFC"];
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
-export type DoorStaff = { id: string; name: string; email: string; role: StaffRole; organizationId: string };
+export type DoorStaff = {
+  id: string;
+  name: string;
+  email: string;
+  role: StaffRole;
+  organizationId: string;
+  /** Cuenta con contraseña temporal: tiene que cambiarla antes de usar la app. */
+  mustChangePassword?: boolean;
+};
 
 /**
  * Login de la app móvil: verifica la cuenta y emite un token propio del teléfono.
@@ -25,6 +33,7 @@ export async function startDeviceSession(input: {
   deviceId: string;
   deviceName: string;
 }): Promise<{ token: string; staff: DoorStaff } | { error: "CREDENTIALS" | "ROLE" }> {
+  // verifyStaffCredentials ya rechaza cuentas desactivadas y organizadores suspendidos.
   const staff = await verifyStaffCredentials(input.email, input.password);
   if (!staff) return { error: "CREDENTIALS" };
   if (!DOOR_APP_ROLES.includes(staff.role)) return { error: "ROLE" };
@@ -45,9 +54,17 @@ export async function startDeviceSession(input: {
       expiresAt: new Date(Date.now() + DEVICE_SESSION_DAYS * 24 * 60 * 60_000),
     },
   });
+  const user = await prisma.staffUser.findUniqueOrThrow({ where: { id: staff.id }, select: { mustChangePassword: true } });
   return {
     token,
-    staff: { id: staff.id, name: staff.name, email: staff.email, role: staff.role, organizationId: staff.organizationId },
+    staff: {
+      id: staff.id,
+      name: staff.name,
+      email: staff.email,
+      role: staff.role,
+      organizationId: staff.organizationId,
+      mustChangePassword: user.mustChangePassword,
+    },
   };
 }
 
@@ -56,10 +73,16 @@ export async function authenticateDevice(token: string): Promise<(DoorStaff & { 
   if (!token) return null;
   const row = await prisma.deviceToken.findUnique({
     where: { tokenHash: hashToken(token) },
-    include: { user: { include: { memberships: { orderBy: { createdAt: "asc" }, take: 1 } } } },
+    include: {
+      user: {
+        include: { memberships: { orderBy: { createdAt: "asc" }, take: 1, include: { organization: { select: { status: true } } } } },
+      },
+    },
   });
   const membership = row?.user.memberships[0];
   if (!row || !membership || row.revokedAt || row.expiresAt < new Date() || !row.user.active) return null;
+  // Un organizador suspendido pierde el acceso de sus teléfonos al instante, aunque el token siga vigente.
+  if (membership.organization.status !== "ACTIVE") return null;
   if (!DOOR_APP_ROLES.includes(membership.role)) return null;
   // Evita escribir en cada lectura: basta con saber que estuvo activo en el último minuto.
   if (Date.now() - row.lastSeenAt.getTime() > 60_000) {
@@ -71,6 +94,7 @@ export async function authenticateDevice(token: string): Promise<(DoorStaff & { 
     email: row.user.email,
     role: membership.role,
     organizationId: membership.organizationId,
+    mustChangePassword: row.user.mustChangePassword,
     deviceId: row.deviceId,
   };
 }

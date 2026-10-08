@@ -5,13 +5,16 @@ import { DEFAULT_TIMEZONE, formatDateTime } from "@ticketera/core";
 import { clientAccessOpen, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { createClientAction } from "@/lib/actions/clients";
-import { ROLES, requireStaff } from "@/lib/session";
+import { redirect } from "next/navigation";
+import { requirePlatform } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Clientes" };
 
 export default async function ClientsPage() {
   await connection();
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requirePlatform();
+  // Los clientes son de Impacta (eventos que Impacta opera para otros), no de un organizador.
+  if (staff.viewingAs) redirect("/");
   const clients = await prisma.client.findMany({
     where: { organizationId: staff.organization.id },
     orderBy: { name: "asc" },

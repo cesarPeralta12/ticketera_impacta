@@ -11,13 +11,15 @@ const ICONS = {
   map: "M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21zM12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
   receipt: "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6",
   ticket: "M3 9V6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v3a3 3 0 0 0 0 6v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a3 3 0 0 0 0-6zM14 5v14",
+  check: "M20 6 9 17l-5-5M4 21h16",
+  door: "M5 21V4a1 1 0 0 1 1-1h8l5 3v15M5 21h14M13 12h.01M9 21V8",
   users: "M16 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM21 20v-1a4 4 0 0 0-3-3.9M16 4.1a3.5 3.5 0 0 1 0 6.8",
 } as const;
 
 export type NavIcon = keyof typeof ICONS;
 
 /** Enlace del menú lateral con la sección activa resaltada. */
-export function NavLink({ href, label, icon }: { href: string; label: string; icon: NavIcon }) {
+export function NavLink({ href, label, icon, badge }: { href: string; label: string; icon: NavIcon; badge?: number }) {
   const pathname = usePathname();
   const active = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
   return (
@@ -25,7 +27,8 @@ export function NavLink({ href, label, icon }: { href: string; label: string; ic
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
         <path d={ICONS[icon]} />
       </svg>
-      <span>{label}</span>
+      <span className="flex-1">{label}</span>
+      {badge ? <span className="rounded-full bg-[var(--warn)] px-1.5 text-[10px] font-semibold text-white">{badge}</span> : null}
     </Link>
   );
 }

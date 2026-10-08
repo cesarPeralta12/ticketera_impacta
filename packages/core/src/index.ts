@@ -9,5 +9,6 @@ export * from "./inventory";
 export * from "./locale";
 export * from "./money";
 export * from "./qr";
+export * from "./sale-window";
 export * from "./seat-geometry";
 export * from "./status";

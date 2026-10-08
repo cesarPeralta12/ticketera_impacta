@@ -17,13 +17,27 @@ datasource db {
 
 // ───────────────────────── Organizadores y staff ─────────────────────────
 
+enum OrganizationStatus {
+  ACTIVE
+  /// Sus cuentas no entran al panel y sus eventos no se muestran ni se venden.
+  SUSPENDED
+}
+
+/// IMPACTA (isPlatform) y cada organizador al que le da el servicio. Todo lo de un
+/// organizador (eventos, recintos, ventas, puerta, cuentas) cuelga de su organización:
+/// un organizador nunca ve lo de otro.
 model Organization {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  currency  String   @db.Char(3)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String             @id @default(cuid())
+  name         String
+  slug         String             @unique
+  currency     String             @db.Char(3)
+  /// La dueña de la plataforma: sus administradores ven y gestionan a todos los organizadores.
+  isPlatform   Boolean            @default(false)
+  status       OrganizationStatus @default(ACTIVE)
+  taxId        String?
+  contactEmail String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 
   members Membership[]
   venues  Venue[]
@@ -53,16 +67,18 @@ model Client {
 /// Usuario del panel: organizador, administrador u operador de puerta.
 /// Separado de Customer para que las sesiones de comprador y organizador nunca se mezclen.
 model StaffUser {
-  id            String   @id @default(cuid())
-  email         String   @unique
-  name          String
+  id                 String   @id @default(cuid())
+  email              String   @unique
+  name               String
   /// bcrypt. Las cuentas del panel las crea un OWNER/ADMIN: no hay registro público.
-  passwordHash  String
-  active        Boolean  @default(true)
-  emailVerified Boolean  @default(false)
-  image         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  passwordHash       String
+  active             Boolean  @default(true)
+  emailVerified      Boolean  @default(false)
+  /// Creada con contraseña temporal: tiene que cambiarla al entrar.
+  mustChangePassword Boolean  @default(false)
+  image              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   memberships     Membership[]
   scans           AccessScan[]
@@ -223,6 +239,8 @@ model Seat {
 
 enum EventStatus {
   DRAFT
+  /// Un organizador lo envió: espera que IMPACTA lo apruebe para salir en la web.
+  PENDING_REVIEW
   PUBLISHED
   CANCELLED
 }
@@ -261,6 +279,9 @@ model Event {
   clientAccessEnabled Boolean       @default(false)
   clientAccessUntil   DateTime?
   publishedAt         DateTime?
+  /// Revisión de IMPACTA: cuándo lo enviaron y, si lo devolvió, qué hay que corregir.
+  submittedAt         DateTime?
+  reviewNote          String?
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
@@ -319,6 +340,8 @@ model TicketType {
   maxPerOrder   Int            @default(10)
   salesStartAt  DateTime?
   salesEndAt    DateTime?
+  /// Preventa: se muestra como tal y solo vende hasta salesEndAt.
+  presale       Boolean        @default(false)
   sortOrder     Int            @default(0)
   /// Cómo se lee esta entrada en puerta: solo QR, solo código de barras, NFC o varias.
   accessMethods AccessMethod[] @default([QR])

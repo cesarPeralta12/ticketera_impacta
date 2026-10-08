@@ -54,6 +54,8 @@ datos nuevos (cliente, cajero, puertas por sección, evento con invitados) **sin
 | App móvil | `puerta@impacta.test` | `Puerta2026!` | Portero: solo la app móvil (no entra al panel) |
 | Panel :3001 | `caja@impacta.test` | `Caja2026!` | Cajero: solo boletería |
 | Panel :3001 | `cliente@impacta.test` | `Cliente2026!` | Cliente (Producciones Andinas): solo sus eventos |
+| Panel :3001 | `organizador@andeslive.test` | `Organizador2026!` | Organizador "Andes Live": su propio panel |
+| Panel :3001 | `organizador@cumbre.test` | `Organizador2026!` | Organizador "Cumbre Eventos": su propio panel |
 | Sitio :3000 | `comprador@impacta.test` | `Comprador2026!` | Comprador (comprar no exige cuenta) |
 
 Cada rol entra directo a su pantalla y no puede abrir las de los demás. El portero no tiene sesión en el panel web.
@@ -82,6 +84,12 @@ Cada rol entra directo a su pantalla y no puede abrir las de los demás. El port
 11. **Reporte** (botón en cada evento): por canal, ingresados, ausentes, rechazos en puerta, boletería
     por cajero y medio, y CSV de asistentes.
 12. **Usuarios**: crea un operador; al desactivarlo pierde el acceso en la siguiente acción.
+13. **Organizadores** (como admin de Impacta): crea uno → entra con su cuenta (pide cambiar la
+    contraseña temporal) → su panel está vacío y no ve nada de Impacta ni de los otros. Arma su
+    recinto y su evento → "Enviar a revisión" → Impacta lo aprueba o lo devuelve en **Aprobaciones**.
+14. **Preventa**: en la función, un tipo de entrada "Es preventa" con fecha de fin. La General de esa
+    sección empieza sola cuando termina; la web muestra "Preventa hasta…" y la General "desde…".
+15. **Vista general de Impacta**: Resumen general, Ventas e Ingresos en puerta de todos los organizadores.
 
 ## Comandos
 
@@ -116,6 +124,12 @@ Cada rol entra directo a su pantalla y no puede abrir las de los demás. El port
   tiene registro público: las cuentas las crea un dueño o administrador.
 - **Fechas**: el organizador escribe la hora del recinto (La Paz); se guarda en UTC y se muestra
   siempre en la zona del recinto, sin importar dónde corra el servidor.
+- **Organizadores**: cada uno es su propia organización; todo (eventos, recintos, ventas, puerta,
+  cuentas) cuelga de ella y cada consulta del panel filtra por organización, así que uno nunca ve ni
+  toca lo de otro (probado entrando por dirección directa a eventos, reportes y la API de puerta
+  ajenos). Impacta es la organización "plataforma": ve todo y puede "entrar" en un organizador para
+  trabajar como él. Solo Impacta crea cuentas, siempre con contraseña temporal. Los eventos de un
+  organizador salen en la web cuando Impacta los aprueba; uno suspendido no entra ni vende.
 - **Canales**: online, boletería e invitaciones descuentan del mismo inventario con la misma
   transacción: nunca se vende de más. Cada orden guarda su canal y quién la emitió.
 - **Puerta sin internet**: la app móvil descarga la lista de entradas de la función (completas para su

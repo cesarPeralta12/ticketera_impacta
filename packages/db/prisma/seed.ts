@@ -272,7 +272,7 @@ async function main() {
   ]);
 
   const org = await prisma.organization.create({
-    data: { name: "Impacta", slug: "impacta", currency: DEFAULT_CURRENCY },
+    data: { name: "Impacta", slug: "impacta", currency: DEFAULT_CURRENCY, isPlatform: true },
   });
 
   await prisma.staffUser.create({
@@ -371,6 +371,7 @@ async function main() {
                   capacity: t.capacity ?? section.capacity,
                   maxPerOrder: t.maxPerOrder ?? 10,
                   salesEndAt: t.salesEndsInDays === undefined ? null : laPaz(t.salesEndsInDays, 23),
+                  presale: t.salesEndsInDays !== undefined,
                   sortOrder: i,
                 };
               }),
