@@ -20,6 +20,7 @@ export class DomainError extends Error {
       | "PAYMENT_MISMATCH"
       | "LOGIN_REQUIRED"
       | "DOCUMENT_REQUIRED"
+      | "EMAIL_NOT_VERIFIED"
       | "NOT_FOUND"
       | "INVALID_STATE"
       | "DUPLICATE",

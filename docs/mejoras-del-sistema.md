@@ -35,7 +35,7 @@ organizadores con la app móvil de puerta. Prioridad: **P0** antes de vender ent
 1. **P0 · Pasarela de pago real para Bolivia** (QR interoperable autorizado por el BCB + tarjetas) con
    conciliación diaria y reembolsos. Mercado Pago no opera en el país.
 2. **P0 · Facturación electrónica (SIN)** con NIT/carnet del comprador.
-3. **P0 · Correo transaccional** (entrada, recordatorios, transferencias) con SPF/DKIM; **WhatsApp** como
+3. **Hecho (falta producción) · Correo transaccional** (entrada, recordatorios, transferencias) con SPF/DKIM; **WhatsApp** como
    canal principal de entrega y recordatorio (más usado que el correo en Bolivia).
 4. **P1 · Modelo comercial por organizador:** comisión (porcentaje o fija), quién la paga, liquidación por
    organizador y por evento (ventas, comisión, neto, fecha de pago) y exportación a Excel.

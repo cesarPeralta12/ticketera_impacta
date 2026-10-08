@@ -25,10 +25,11 @@ export async function createOrderAction(_prev: CheckoutState, formData: FormData
   const customer = session?.user?.id
     ? await prisma.customer.findUnique({
         where: { id: session.user.id },
-        select: { id: true, name: true, email: true, documentId: true },
+        select: { id: true, name: true, email: true, documentId: true, emailVerified: true },
       })
     : null;
   if (!customer) redirect(`/login?next=${back}`);
+  if (!customer.emailVerified) redirect(`/cuenta/verificar?next=${back}`);
   if (!customer.documentId) redirect(`/cuenta/datos?next=${back}`);
 
   const items = [...formData.entries()].flatMap(([key, value]) => {
@@ -60,6 +61,7 @@ export async function createOrderAction(_prev: CheckoutState, formData: FormData
       if (error.code === "QUEUE_REQUIRED") redirect(`/comprar/${sessionId}/espera`);
       if (error.code === "LOGIN_REQUIRED") redirect(`/login?next=${back}`);
       if (error.code === "DOCUMENT_REQUIRED") redirect(`/cuenta/datos?next=${back}`);
+      if (error.code === "EMAIL_NOT_VERIFIED") redirect(`/cuenta/verificar?next=${back}`);
       return { error: error.message, refresh: error.code === "SEAT_TAKEN" || error.code === "SOLD_OUT" };
     }
     throw error;

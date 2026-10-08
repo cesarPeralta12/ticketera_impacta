@@ -2,8 +2,9 @@
 
 import { redirect } from "next/navigation";
 import { DOCUMENT_ERROR } from "@ticketera/core";
-import { updateCustomerProfile } from "@ticketera/db";
+import { MIN_PASSWORD_LENGTH, changeCustomerPassword, updateCustomerProfile } from "@ticketera/db";
 import { auth } from "@/lib/auth";
+import { sendPasswordChangedEmail } from "@/lib/mail";
 
 export type ProfileState = { error?: string; ok?: boolean } | undefined;
 
@@ -34,5 +35,20 @@ export async function saveProfileAction(_prev: ProfileState, formData: FormData)
   }
   const next = safeNext(formData.get("next"));
   if (next) redirect(next);
+  return { ok: true };
+}
+
+export type PasswordState = { error?: string; ok?: boolean } | undefined;
+
+/** Cambio de contraseña dentro de la cuenta: pide la actual y avisa por correo. */
+export async function changePasswordAction(_prev: PasswordState, formData: FormData): Promise<PasswordState> {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+  const next = String(formData.get("next") ?? "");
+  if (next.length < MIN_PASSWORD_LENGTH) return { error: `La contraseña nueva debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.` };
+  if (next !== String(formData.get("repeat") ?? "")) return { error: "Las contraseñas nuevas no coinciden." };
+  const result = await changeCustomerPassword(session.user.id, String(formData.get("current") ?? ""), next);
+  if (!result.ok) return { error: result.reason === "WRONG_PASSWORD" ? "La contraseña actual no es correcta." : "La contraseña nueva es muy corta." };
+  await sendPasswordChangedEmail(result.email, result.name);
   return { ok: true };
 }

@@ -162,6 +162,29 @@ en iOS requiere el permiso *Near Field Communication Tag Reading* de la cuenta d
   después vuelve al normal solo. El servidor calcula el precio al crear la orden (la web muestra el precio
   normal tachado). Se configura en la función, al agregar o editar el tipo de entrada.
 
+## Correo (confirmar email, contraseña y entradas)
+
+El sistema envía cuatro correos: **confirmar el email** (obligatorio para comprar), **cambiar la contraseña**
+(compradores y personal del panel), **aviso de contraseña cambiada** y **tus entradas** al pagar (el QR de cada
+entrada va como imagen dentro del mensaje, más un botón a "Ver mis entradas"; también se pueden reenviar desde la
+orden). Los enlaces sirven una sola vez, vencen (24 h confirmar, 1 h contraseña) y hay un mínimo entre envíos.
+
+- **Desarrollo** (`MAIL_PROVIDER="console"`, por defecto): no se envía nada. Cada correo queda como HTML en
+  `.dev-mail/` (ábrelo en el navegador) y el enlace aparece en la consola del servidor.
+- **Producción con Resend** (`MAIL_PROVIDER="resend"`): crea una cuenta en https://resend.com, genera una API key
+  (`RESEND_API_KEY`), **verifica tu dominio** (registros SPF/DKIM que te indica Resend) y pon el remitente en
+  `MAIL_FROM="Impacta <entradas@tudominio.bo>"`. Sin dominio verificado, Resend solo entrega a tu propio correo.
+- Cambiar de proveedor es agregar una función en `packages/mail/src/send.ts`; nada más del sistema lo sabe.
+
+| Opción | Gratis | Para qué sirve |
+|---|---|---|
+| **Resend** | 3.000/mes y **100/día** | Lo más simple de integrar. El tope diario se agota con ~100 compras al día: para eventos grandes, plan de pago |
+| **Brevo** | **300/día** (sin tope mensual) | Más margen diario; lleva marca de Brevo en el plan gratis |
+| **Amazon SES** | casi nada (~US$0,10 cada 1.000) | El más barato a volumen; exige más configuración |
+| **MailerSend** | 500/mes y 100/día | Muy poco para producción |
+
+Los topes cambian: confirma en la página de precios de cada proveedor antes de decidir.
+
 ## Despliegue (Coolify u otro servidor con Nixpacks)
 
 Dos aplicaciones desde este mismo repo (Base Directory `/`) y una base PostgreSQL:

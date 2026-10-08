@@ -293,7 +293,7 @@ async function main() {
     },
   });
   await prisma.customer.create({
-    data: { email: "comprador@impacta.test", name: "Comprador Demo", documentId: "1234567", passwordHash: await hashPassword(seedPassword("Comprador2026!")) },
+    data: { email: "comprador@impacta.test", name: "Comprador Demo", documentId: "1234567", emailVerified: true, passwordHash: await hashPassword(seedPassword("Comprador2026!")) },
   });
 
   // ── Recintos ──

@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
-import { prisma } from "@ticketera/db";
+import { MIN_PASSWORD_LENGTH, prisma } from "@ticketera/db";
 import { auth } from "@/lib/auth";
-import { ProfileForm } from "./profile-form";
+import { PasswordForm, ProfileForm } from "./profile-form";
 
 export const metadata: Metadata = { title: "Mis datos", robots: { index: false } };
 
@@ -20,7 +20,7 @@ export default async function ProfilePage({ searchParams }: Props) {
   if (!customer) redirect(`/login?next=${encodeURIComponent("/cuenta/datos")}`);
 
   return (
-    <main className="mx-auto flex min-h-[75vh] w-full max-w-sm flex-col justify-center gap-6 px-6">
+    <main className="mx-auto flex w-full max-w-sm flex-col gap-6 px-6 py-12">
       <div>
         <p className="eyebrow mb-1">{customer.documentId ? "Tu cuenta" : "Falta un dato para comprar"}</p>
         <h1 className="font-display text-3xl">Mis datos</h1>
@@ -33,6 +33,10 @@ export default async function ProfilePage({ searchParams }: Props) {
         next={next}
         defaults={{ name: customer.name, document: customer.documentId ?? "", phone: customer.phone ?? "", email: customer.email }}
       />
+      <section className="mt-6 flex flex-col gap-4 border-t border-[var(--border)] pt-6">
+        <h2 className="font-display text-xl">Cambiar contraseña</h2>
+        <PasswordForm minLength={MIN_PASSWORD_LENGTH} />
+      </section>
     </main>
   );
 }

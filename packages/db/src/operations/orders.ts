@@ -72,11 +72,15 @@ export async function createPendingOrder(
     if (!options.customerId) throw new DomainError("LOGIN_REQUIRED", "Inicia sesión para comprar tus entradas.");
     const customer = await prisma.customer.findUnique({
       where: { id: options.customerId },
-      select: { name: true, email: true, documentId: true },
+      select: { name: true, email: true, documentId: true, emailVerified: true },
     });
     if (!customer) throw new DomainError("LOGIN_REQUIRED", "Inicia sesión para comprar tus entradas.");
     if (!customer.documentId) {
       throw new DomainError("DOCUMENT_REQUIRED", "Completa tu carnet de identidad en tu cuenta para poder comprar.");
+    }
+    // Las entradas se envían a este correo: tiene que estar confirmado.
+    if (!customer.emailVerified) {
+      throw new DomainError("EMAIL_NOT_VERIFIED", "Confirma tu correo para poder comprar: te enviamos un enlace.");
     }
     data.buyer = { name: customer.name, email: customer.email, document: customer.documentId };
   }

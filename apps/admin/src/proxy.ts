@@ -19,6 +19,9 @@ export default auth((req) => {
   const { pathname } = req.nextUrl;
   if (
     pathname.startsWith("/login") ||
+    // Recuperar la contraseña se hace sin sesión (por eso mismo se olvidó).
+    pathname.startsWith("/olvide-contrasena") ||
+    pathname.startsWith("/restablecer") ||
     pathname.startsWith("/api/auth") ||
     pathname === "/api/health" ||
     // La app móvil de puerta usa tokens propios (Authorization: Bearer), no la cookie del panel.

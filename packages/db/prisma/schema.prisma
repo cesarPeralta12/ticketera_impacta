@@ -85,6 +85,7 @@ model StaffUser {
   issuedOrders    Order[]
   doorAssignments DoorAssignment[]
   deviceTokens    DeviceToken[]
+  emailTokens     EmailToken[]
 }
 
 /// Funciones (y opcionalmente una puerta) que un portero puede descargar y controlar
@@ -168,8 +169,33 @@ model Customer {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  orders  Order[]
-  tickets Ticket[]
+  orders      Order[]
+  tickets     Ticket[]
+  emailTokens EmailToken[]
+}
+
+enum EmailTokenPurpose {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+}
+
+/// Enlace de un solo uso que se manda por correo (confirmar el email, cambiar la contraseña).
+/// Solo se guarda el hash del token: quien lea la base no puede usar los enlaces pendientes.
+model EmailToken {
+  id          String            @id @default(cuid())
+  purpose     EmailTokenPurpose
+  tokenHash   String            @unique
+  customerId  String?
+  staffUserId String?
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime          @default(now())
+
+  customer  Customer?  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  staffUser StaffUser? @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, purpose, createdAt])
+  @@index([staffUserId, purpose, createdAt])
 }
 
 // ─────────────────────────────── Recintos ───────────────────────────────

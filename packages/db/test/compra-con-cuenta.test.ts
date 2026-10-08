@@ -23,7 +23,7 @@ async function event() {
 
 async function account(document: string | null) {
   return prisma.customer.create({
-    data: { email: `c-${unique()}@prueba.test`, name: "Ana Rojas", passwordHash: "!", documentId: document },
+    data: { email: `c-${unique()}@prueba.test`, name: "Ana Rojas", passwordHash: "!", documentId: document, emailVerified: true },
   });
 }
 
@@ -54,6 +54,20 @@ describe("comprar online exige cuenta con carnet", () => {
     await expect(attempt()).rejects.toMatchObject({ code: "DOCUMENT_REQUIRED" });
 
     expect(await updateCustomerProfile(old.id, { name: "Ana Rojas", document: newDocument() })).toEqual({ ok: true });
+    await expect(attempt()).resolves.toBeTruthy();
+  });
+
+  it("hay que confirmar el correo antes de comprar", async () => {
+    const { session, type } = await event();
+    const customer = await account(newDocument());
+    await prisma.customer.update({ where: { id: customer.id }, data: { emailVerified: false } });
+    const attempt = () =>
+      createPendingOrder(
+        { sessionId: session.id, items: [{ ticketTypeId: type.id, quantity: 1 }], buyer: { name: "Ana Rojas", email: "x@prueba.test", document: "1234567" } },
+        { customerId: customer.id },
+      );
+    await expect(attempt()).rejects.toMatchObject({ code: "EMAIL_NOT_VERIFIED" });
+    await prisma.customer.update({ where: { id: customer.id }, data: { emailVerified: true } });
     await expect(attempt()).resolves.toBeTruthy();
   });
 

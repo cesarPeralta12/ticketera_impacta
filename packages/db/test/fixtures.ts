@@ -137,6 +137,7 @@ export async function createPendingOrder(input: CheckoutInput, options: Paramete
       email,
       name: input.buyer.name,
       passwordHash: "!",
+      emailVerified: true,
       documentId: normalizeDocument(input.buyer.document ?? String(Math.floor(Math.random() * 1e7) + 1e7)),
     },
   });

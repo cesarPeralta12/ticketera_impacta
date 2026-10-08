@@ -6,7 +6,9 @@ import QRCode from "qrcode";
 import { code128Svg, formatCode, formatDateTime, formatMoney, signTicketPayload } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, expireStaleOrders, getOrderByCode, requireEnv } from "@ticketera/db";
 import { payOrderAction } from "./actions";
+import { auth } from "@/lib/auth";
 import { AutoRefresh, Countdown } from "./live";
+import { ResendTickets } from "./resend-button";
 
 export const metadata: Metadata = { title: "Tu orden", robots: { index: false } };
 
@@ -27,6 +29,8 @@ export default async function OrderPage({ params }: Props) {
   const guest = order.channel === "GUEST";
   // En boletería el email es opcional: si no lo dieron, no se muestra el de relleno.
   const email = order.buyerEmail && order.buyerEmail !== BOX_OFFICE_BUYER.email ? order.buyerEmail : null;
+  const account = await auth();
+  const isOwner = Boolean(account?.user?.id && account.user.id === order.customerId);
   const latestPayment = order.payments[0];
   const approvedPayments = order.payments.filter((p) => p.status === "APPROVED").length;
 
@@ -108,6 +112,7 @@ export default async function OrderPage({ params }: Props) {
                   ? `Te enviamos las entradas a ${email}. Presenta el QR en la puerta.`
                   : "Presenta el QR en la puerta. Cada entrada vale para un ingreso."}
             </p>
+            {isOwner && order.channel === "ONLINE" && <ResendTickets code={order.code} />}
           </div>
           <TicketList tickets={order.tickets} guest={guest} />
         </section>

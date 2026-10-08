@@ -4,6 +4,7 @@ import { AuthError } from "next-auth";
 import { DOCUMENT_ERROR } from "@ticketera/core";
 import { MIN_PASSWORD_LENGTH, registerCustomer } from "@ticketera/db";
 import { signIn } from "@/lib/auth";
+import { sendVerificationEmail } from "@/lib/mail";
 
 export type AuthState = { error?: string } | undefined;
 
@@ -53,6 +54,9 @@ export async function registerAction(_prev: AuthState, formData: FormData): Prom
       }[result.error],
     };
   }
+
+  // Confirmar el correo es obligatorio para comprar: se envía el enlace al crear la cuenta.
+  await sendVerificationEmail(result.customer.id);
 
   try {
     await signIn("credentials", { email, password, redirectTo: safeNext(formData.get("next")) });

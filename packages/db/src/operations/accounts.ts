@@ -18,7 +18,7 @@ export function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, BCRYPT_COST);
 }
 
-async function passwordMatches(password: string, hash: string | undefined): Promise<boolean> {
+export async function passwordMatches(password: string, hash: string | undefined): Promise<boolean> {
   dummyHash ??= hashPassword("contraseña-de-relleno");
   const ok = await bcrypt.compare(password, hash ?? (await dummyHash));
   return ok && hash !== undefined;
