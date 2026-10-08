@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { formatCode, formatDateTime, formatMoney } from "@ticketera/core";
+import { code128Svg, formatCode, formatDateTime, formatMoney } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, getOrderByCode, prisma } from "@ticketera/db";
 import { PrintButton } from "@/components/print-button";
 import { ticketQrSvg } from "@/lib/qr";
@@ -32,7 +32,9 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
   const tickets = await Promise.all(
     order.tickets.map(async (t) => ({
       ...t,
-      qr: await ticketQrSvg(t.code),
+      qr: t.ticketType.accessMethods.includes("QR") ? await ticketQrSvg(t.code) : null,
+      // Código de barras: lo lee cualquier lector láser, ideal para el ticket térmico.
+      barcode: t.ticketType.accessMethods.includes("BARCODE") ? code128Svg(t.code, { height: 48 }) : null,
       price: order.items.find((i) => i.id === t.orderItemId)?.unitAmount ?? 0,
     })),
   );
@@ -84,7 +86,13 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
                 {t.seat.section.name} · {t.seat.label}
               </p>
             )}
-            <div className="mx-auto my-2 w-[46mm]" dangerouslySetInnerHTML={{ __html: t.qr }} />
+            {t.qr && <div className="mx-auto my-2 w-[46mm]" dangerouslySetInnerHTML={{ __html: t.qr }} />}
+            {t.barcode && (
+              <div className="mx-auto my-2 w-[60mm] [&>svg]:h-auto [&>svg]:w-full" dangerouslySetInnerHTML={{ __html: t.barcode }} />
+            )}
+            {t.ticketType.accessMethods.includes("NFC") && !t.qr && !t.barcode && (
+              <p className="my-2 text-xs font-semibold">Se lee por NFC</p>
+            )}
             <p className="font-mono text-sm tracking-wider">{formatCode(t.code)}</p>
             <p className="text-[10px]">
               Entrada {i + 1} de {tickets.length} · {formatMoney(t.price, order.currency)}

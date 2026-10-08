@@ -1,4 +1,5 @@
 export * from "./accounts";
+export * from "./barcode";
 export * from "./categories";
 export * from "./checkout";
 export * from "./codes";

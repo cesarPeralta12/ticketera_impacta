@@ -8,8 +8,6 @@ export const ROLES = {
   manage: ["OWNER", "ADMIN"],
   /** Crear y desactivar cuentas del panel. */
   users: ["OWNER", "ADMIN"],
-  /** Validar entradas en puerta. */
-  access: ["OWNER", "ADMIN", "OPERATOR"],
   /** Vender en boletería. */
   pos: ["OWNER", "ADMIN", "CASHIER"],
   /** Espacio temporal del cliente/organizador. */
@@ -20,7 +18,8 @@ export const ROLES = {
 export const HOME_BY_ROLE: Record<StaffRole, string> = {
   OWNER: "/",
   ADMIN: "/",
-  OPERATOR: "/puerta",
+  /** El portero trabaja solo con la app móvil: el panel web no es para su rol. */
+  OPERATOR: "/login",
   CASHIER: "/boleteria",
   CLIENT: "/cliente",
 };

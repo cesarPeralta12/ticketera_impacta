@@ -6,14 +6,13 @@ const { auth } = NextAuth(authConfig);
 
 /** Secciones a las que puede entrar cada rol restringido (el resto, a su pantalla de inicio). */
 const RESTRICTED: Record<string, { home: string; allowed: string[] }> = {
-  OPERATOR: { home: "/puerta", allowed: ["/puerta", "/api/puerta"] },
   CASHIER: { home: "/boleteria", allowed: ["/boleteria"] },
   CLIENT: { home: "/cliente", allowed: ["/cliente"] },
 };
 
 /**
  * Primera barrera del panel: sin sesión, al login; cada rol restringido solo ve su parte
- * (puerta, boletería o espacio del cliente). Es una redirección de cortesía: la
+ * (boletería o espacio del cliente). Es una redirección de cortesía: la
  * autorización real la hace requireStaff() en cada página y server action.
  */
 export default auth((req) => {
@@ -22,8 +21,8 @@ export default auth((req) => {
     pathname.startsWith("/login") ||
     pathname.startsWith("/api/auth") ||
     pathname === "/api/health" ||
-    pathname === "/manifest.webmanifest" ||
-    pathname === "/sw.js" ||
+    // La app móvil de puerta usa tokens propios (Authorization: Bearer), no la cookie del panel.
+    pathname.startsWith("/api/v1/") ||
     /^\/icon[\w-]*\.(svg|png)$/.test(pathname)
   ) {
     return NextResponse.next();

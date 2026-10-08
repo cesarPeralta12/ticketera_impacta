@@ -124,6 +124,30 @@ export async function seedArchitectureDemo(db: Db, orgId: string) {
         log.push(`${gate.name} → ${section.name}`);
       }
     }
+
+    // Cómo se lee cada sector en puerta (demostración de la app móvil).
+    const methodsBySection: Record<string, ("QR" | "BARCODE" | "NFC")[]> = {
+      Campo: ["QR", "BARCODE", "NFC"],
+      Palco: ["QR", "BARCODE"],
+    };
+    for (const [sectionName, methods] of Object.entries(methodsBySection)) {
+      const section = arena.sections.find((s) => s.name === sectionName);
+      if (section) await prisma.ticketType.updateMany({ where: { sectionId: section.id }, data: { accessMethods: methods } });
+    }
+
+    // El portero de prueba ve en la app las funciones de Arena 26.
+    const doorman = await prisma.staffUser.findUnique({ where: { email: "puerta@impacta.test" } });
+    if (doorman) {
+      const sessions = await prisma.eventSession.findMany({ where: { venueId: arena.id }, select: { id: true } });
+      for (const session of sessions) {
+        await prisma.doorAssignment.upsert({
+          where: { userId_sessionId: { userId: doorman.id, sessionId: session.id } },
+          create: { userId: doorman.id, sessionId: session.id },
+          update: {},
+        });
+      }
+      log.push(`Portero de prueba asignado a ${sessions.length} función(es) de Arena 26`);
+    }
   }
 
   // ── Evento con lista de invitados (sin venta) ──

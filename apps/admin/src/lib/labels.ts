@@ -26,8 +26,11 @@ export const SCAN_LABEL = {
   CANCELLED: "Anulada",
   WRONG_SESSION: "Otra función",
   WRONG_GATE: "Puerta equivocada",
-  INVALID: "QR inválido",
+  INVALID: "Código inválido",
+  METHOD_NOT_ALLOWED: "Método no permitido",
 } as const;
+
+export const ACCESS_METHOD_LABEL = { QR: "QR", BARCODE: "Código de barras", NFC: "NFC" } as const;
 
 export const TICKET_STATUS = {
   VALID: { text: "Válida", className: "bg-[var(--accent-soft)] text-[var(--accent)]" },

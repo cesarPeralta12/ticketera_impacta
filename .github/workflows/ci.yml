@@ -43,3 +43,18 @@ jobs:
       # Concurrencia, pagos y acceso contra Postgres real (crea su propia base de pruebas).
       - run: npm run test:integration
       - run: npm run build
+
+  puerta-app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/puerta_app
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test

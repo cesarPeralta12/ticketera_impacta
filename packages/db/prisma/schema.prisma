@@ -64,9 +64,47 @@ model StaffUser {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  memberships  Membership[]
-  scans        AccessScan[]
-  issuedOrders Order[]
+  memberships     Membership[]
+  scans           AccessScan[]
+  issuedOrders    Order[]
+  doorAssignments DoorAssignment[]
+  deviceTokens    DeviceToken[]
+}
+
+/// Funciones (y opcionalmente una puerta) que un portero puede descargar y controlar
+/// en la app móvil. Sin asignación, el portero no ve ningún evento.
+model DoorAssignment {
+  id            String   @id @default(cuid())
+  userId        String
+  sessionId     String
+  /// Vacío = todas las puertas de la función.
+  accessPointId String?
+  createdAt     DateTime @default(now())
+
+  user        StaffUser    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session     EventSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  accessPoint AccessPoint? @relation(fields: [accessPointId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, sessionId])
+  @@index([sessionId])
+}
+
+/// Sesión de la app móvil: token opaco (se guarda solo su hash), un dispositivo por token.
+/// Se puede revocar desde el panel; al revocarlo el teléfono pierde el acceso.
+model DeviceToken {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique
+  deviceId   String
+  deviceName String
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  user StaffUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 enum StaffRole {
@@ -252,12 +290,13 @@ model EventSession {
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
-  event       Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  venue       Venue        @relation(fields: [venueId], references: [id])
-  ticketTypes TicketType[]
-  tickets     Ticket[]
-  scans       AccessScan[]
-  queue       QueueEntry[]
+  event           Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  venue           Venue            @relation(fields: [venueId], references: [id])
+  ticketTypes     TicketType[]
+  tickets         Ticket[]
+  scans           AccessScan[]
+  doorAssignments DoorAssignment[]
+  queue           QueueEntry[]
 
   @@index([eventId, startsAt])
 }
@@ -268,21 +307,23 @@ model EventSession {
 /// no expiradas. La reserva debe ser atómica (UPDATE condicional o lock de fila):
 /// se diseña en Sprint 0 y se implementa en Sprint 2, antes de vender nada.
 model TicketType {
-  id           String    @id @default(cuid())
-  sessionId    String
+  id            String         @id @default(cuid())
+  sessionId     String
   /// Sección física asociada. Obligatoria si la sección es RESERVED.
-  sectionId    String?
-  name         String
-  description  String?
-  unitAmount   Int
-  currency     String    @db.Char(3)
-  capacity     Int
-  maxPerOrder  Int       @default(10)
-  salesStartAt DateTime?
-  salesEndAt   DateTime?
-  sortOrder    Int       @default(0)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  sectionId     String?
+  name          String
+  description   String?
+  unitAmount    Int
+  currency      String         @db.Char(3)
+  capacity      Int
+  maxPerOrder   Int            @default(10)
+  salesStartAt  DateTime?
+  salesEndAt    DateTime?
+  sortOrder     Int            @default(0)
+  /// Cómo se lee esta entrada en puerta: solo QR, solo código de barras, NFC o varias.
+  accessMethods AccessMethod[] @default([QR])
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   session    EventSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   section    Section?     @relation(fields: [sectionId], references: [id])
@@ -462,9 +503,10 @@ model AccessPoint {
   venueId String
   name    String
 
-  venue    Venue        @relation(fields: [venueId], references: [id], onDelete: Cascade)
-  scans    AccessScan[]
-  sections Section[]
+  venue       Venue            @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  scans       AccessScan[]
+  sections    Section[]
+  assignments DoorAssignment[]
 
   @@unique([venueId, name])
 }
@@ -478,6 +520,15 @@ enum ScanResult {
   /// La entrada es de una sección que no entra por esta puerta.
   WRONG_GATE
   INVALID
+  /// La entrada no se puede leer con ese método (ej. QR en una entrada solo NFC).
+  METHOD_NOT_ALLOWED
+}
+
+/// Formas de leer una entrada en puerta. Se configura por tipo de entrada.
+enum AccessMethod {
+  QR
+  BARCODE
+  NFC
 }
 
 /// Cada lectura en puerta, aceptada o rechazada: es el historial de auditoría del acceso.
@@ -498,6 +549,8 @@ model AccessScan {
   offline       Boolean    @default(false)
   /// Id que genera la app de puerta por lectura: si reenvía la misma al sincronizar, no se duplica.
   clientScanId  String?    @unique
+  /// Cómo se leyó: QR, BARCODE, NFC o MANUAL (código escrito a mano).
+  method        String?
 
   session     EventSession @relation(fields: [sessionId], references: [id])
   ticket      Ticket?      @relation(fields: [ticketId], references: [id])

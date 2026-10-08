@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { connection } from "next/server";
 import { MIN_PASSWORD_LENGTH, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
@@ -25,7 +26,7 @@ export default async function UsersPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Usuarios del panel</h1>
         <p className="text-sm text-[var(--ink-muted)]">
-          No hay registro público: las cuentas se crean aquí. Cada rol ve solo lo suyo: el operador, la app de
+          No hay registro público: las cuentas se crean aquí. Cada rol ve solo lo suyo: el portero, la app móvil de
           puerta; el cajero, la boletería; el cliente, sus eventos mientras su espacio esté abierto.
         </p>
       </div>
@@ -58,7 +59,12 @@ export default async function UsersPage() {
                     {m.user.active ? "Activo" : "Desactivado"}
                   </span>
                 </td>
-                <td className="px-5 py-3 text-right">
+                <td className="flex items-center justify-end gap-2 px-5 py-3 text-right">
+                  {m.role === "OPERATOR" && (
+                    <Link href={`/usuarios/${m.userId}`} className="btn text-xs">
+                      Funciones y teléfonos
+                    </Link>
+                  )}
                   {m.userId !== staff.id && (
                     <ActionForm action={toggleStaffActiveAction}>
                       <input type="hidden" name="userId" value={m.userId} />

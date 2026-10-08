@@ -1,7 +1,10 @@
 import { parseTicketPayload } from "@ticketera/core";
 import { prisma } from "../client";
-import type { ScanResult } from "../generated/prisma/client";
+import type { AccessMethod, ScanResult } from "../generated/prisma/client";
 import { isUniqueViolation, requireEnv } from "./shared";
+
+/** Métodos de lectura que reporta la app; MANUAL (código escrito) siempre se admite. */
+export type ScanMethod = AccessMethod | "MANUAL";
 
 export type ScanOutcome = {
   result: ScanResult;
@@ -45,6 +48,8 @@ export async function scanTicket(input: {
   /** Rechazo decidido por el dispositivo sin conexión: se registra tal cual. */
   offlineResult?: Exclude<ScanResult, "ACCEPTED">;
   clientScanId?: string;
+  /** Cómo se leyó la entrada. Si el tipo de entrada no admite ese método, se rechaza. */
+  method?: ScanMethod;
 }): Promise<ScanOutcome> {
   if (input.clientScanId) {
     const done = await prisma.accessScan.findUnique({ where: { clientScanId: input.clientScanId } });
@@ -66,7 +71,9 @@ export async function scanTicket(input: {
   else if (parsed.ok) {
     if (!ticket) result = "NOT_FOUND";
     else if (ticket.sessionId !== input.sessionId) result = "WRONG_SESSION";
-    else {
+    else if (input.method && input.method !== "MANUAL" && !ticket.ticketType.accessMethods.includes(input.method)) {
+      result = "METHOD_NOT_ALLOWED";
+    } else {
       const gate = input.accessPointId
         ? await prisma.accessPoint.findUnique({
             where: { id: input.accessPointId },
@@ -121,6 +128,7 @@ export async function scanTicket(input: {
         offline: Boolean(input.offline),
         syncedAt: input.offline ? new Date() : null,
         clientScanId: input.clientScanId,
+        method: input.method,
       },
     });
   } catch (error) {

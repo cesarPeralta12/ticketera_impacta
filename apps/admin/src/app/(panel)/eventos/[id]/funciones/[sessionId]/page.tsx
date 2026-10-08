@@ -4,12 +4,14 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { formatDateTime, formatMoney } from "@ticketera/core";
 import { getSessionAvailability, prisma } from "@ticketera/db";
+import { AccessMethodsField } from "@/components/access-methods-field";
 import { ActionForm } from "@/components/action-form";
 import { SeatMapPreview, positioned } from "@/components/seat-map-preview";
 import {
   addTicketTypeAction,
   deleteSessionAction,
   deleteTicketTypeAction,
+  updateAccessMethodsAction,
   updateQueueSettingsAction,
 } from "@/lib/actions/events";
 import { SEATING_LABEL } from "@/lib/labels";
@@ -88,6 +90,7 @@ export default async function SessionPage({ params }: Props) {
                   <th className="py-2 pr-4 font-normal">Sección</th>
                   <th className="py-2 pr-4 text-right font-normal">Precio</th>
                   <th className="py-2 pr-4 text-right font-normal">Quedan</th>
+                  <th className="py-2 pr-4 font-normal">Lectura en puerta</th>
                   <th className="py-2" />
                 </tr>
               </thead>
@@ -101,6 +104,15 @@ export default async function SessionPage({ params }: Props) {
                     <td className="py-2.5 pr-4 text-right font-mono">{formatMoney(t.unitAmount, t.currency)}</td>
                     <td className="py-2.5 pr-4 text-right font-mono">
                       {remaining.get(t.id) ?? 0} / {t.capacity}
+                    </td>
+                    <td className="py-2.5 pr-4">
+                      <ActionForm action={updateAccessMethodsAction} successMessage="Guardado." className="flex flex-wrap items-center gap-2">
+                        <input type="hidden" name="ticketTypeId" value={t.id} />
+                        <AccessMethodsField defaultValue={t.accessMethods} />
+                        <button type="submit" className="btn px-2 py-1 text-xs">
+                          Guardar
+                        </button>
+                      </ActionForm>
                     </td>
                     <td className="py-2.5 text-right">
                       {t._count.orderItems === 0 && (
@@ -175,12 +187,20 @@ export default async function SessionPage({ params }: Props) {
               Máx. por compra
               <input name="maxPerOrder" type="number" min={1} max={10} defaultValue={10} className="field w-24" />
             </label>
+            <div className="label">
+              Lectura en puerta
+              <div className="flex h-[38px] items-center">
+                <AccessMethodsField />
+              </div>
+            </div>
             <button type="submit" className="btn btn-dark">
               Agregar
             </button>
           </ActionForm>
         )}
         <p className="mt-3 text-xs text-[var(--ink-dim)]">
+          <strong>Lectura en puerta</strong>: la app del portero solo ofrece los métodos que admitan las entradas de su
+          función (por ejemplo, solo QR, o código de barras y NFC). Una entrada leída con un método no admitido se rechaza.
           En secciones numeradas el cupo es la cantidad de butacas. Varios tipos pueden compartir una sección general
           (ej. Preventa y General): juntos nunca superan su aforo.
         </p>

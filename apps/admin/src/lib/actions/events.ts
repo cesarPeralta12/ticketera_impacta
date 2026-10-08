@@ -200,6 +200,16 @@ const ticketTypeSchema = z.object({
   maxPerOrder: intField(1, 10, "El máximo por compra"),
 });
 
+const ACCESS_METHODS = ["QR", "BARCODE", "NFC"] as const;
+
+/** Métodos de lectura marcados en el formulario; si no marca ninguno, solo QR. */
+function readAccessMethods(formData: FormData) {
+  const picked = formData.getAll("methods").filter((m): m is (typeof ACCESS_METHODS)[number] =>
+    ACCESS_METHODS.includes(m as (typeof ACCESS_METHODS)[number]),
+  );
+  return picked.length > 0 ? [...new Set(picked)] : (["QR"] as const);
+}
+
 export async function addTicketTypeAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireStaff(ROLES.manage);
   const parsed = ticketTypeSchema.safeParse(formObject(formData));
@@ -238,11 +248,27 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
       currency: staff.organization.currency,
       capacity,
       maxPerOrder: data.maxPerOrder,
+      accessMethods: [...readAccessMethods(formData)],
       sortOrder: await prisma.ticketType.count({ where: { sessionId: session.id } }),
     },
   });
   await audit(staff.id, "ticket_type.create", "TicketType", type.id, { price: data.price, capacity });
   revalidatePath(`/eventos/${session.eventId}/funciones/${session.id}`);
+  return { ok: true };
+}
+
+/** Cambia cómo se lee una entrada en puerta (QR, código de barras, NFC). Vale también para las ya vendidas. */
+export async function updateAccessMethodsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireStaff(ROLES.manage);
+  const type = await prisma.ticketType.findFirst({
+    where: { id: String(formData.get("ticketTypeId")), session: { event: { organizationId: staff.organization.id } } },
+    include: { session: true },
+  });
+  if (!type) return { error: "Tipo de entrada no encontrado." };
+  const methods = [...readAccessMethods(formData)];
+  await prisma.ticketType.update({ where: { id: type.id }, data: { accessMethods: methods } });
+  await audit(staff.id, "ticket_type.access_methods", "TicketType", type.id, { methods });
+  revalidatePath(`/eventos/${type.session.eventId}/funciones/${type.sessionId}`);
   return { ok: true };
 }
 

@@ -6,7 +6,7 @@
  *
  * Cuentas de prueba (solo desarrollo local):
  *   Panel   admin@impacta.test      / Impacta2026!    (OWNER)
- *   Puerta  puerta@impacta.test     / Puerta2026!     (OPERATOR: solo control de acceso)
+ *   Puerta  puerta@impacta.test     / Puerta2026!     (OPERATOR: solo la app móvil de puerta)
  *   Sitio   comprador@impacta.test  / Comprador2026!
  *   + cliente y cajero: ver seed-demo.ts
  */

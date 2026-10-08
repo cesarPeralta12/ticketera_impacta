@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import QRCode from "qrcode";
-import { formatCode, formatDateTime, formatMoney, signTicketPayload } from "@ticketera/core";
+import { code128Svg, formatCode, formatDateTime, formatMoney, signTicketPayload } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, expireStaleOrders, getOrderByCode, requireEnv } from "@ticketera/db";
 import { payOrderAction } from "./actions";
 import { AutoRefresh, Countdown } from "./live";
@@ -145,7 +145,7 @@ type TicketForList = {
   code: string;
   status: string;
   holderName: string | null;
-  ticketType: { name: string };
+  ticketType: { name: string; accessMethods: ("QR" | "BARCODE" | "NFC")[] };
   seat: { label: string; section: { name: string } } | null;
 };
 
@@ -154,11 +154,16 @@ async function TicketList({ tickets, guest }: { tickets: TicketForList[]; guest:
   const rendered = await Promise.all(
     tickets.map(async (ticket) => ({
       ...ticket,
-      qr: await QRCode.toString(await signTicketPayload(ticket.code, secret), {
-        type: "svg",
-        margin: 1,
-        errorCorrectionLevel: "M",
-      }),
+      // Cada tipo de entrada define cómo se lee en puerta: se muestra solo lo que el lector admite.
+      qr: ticket.ticketType.accessMethods.includes("QR")
+        ? await QRCode.toString(await signTicketPayload(ticket.code, secret), {
+            type: "svg",
+            margin: 1,
+            errorCorrectionLevel: "M",
+          })
+        : null,
+      barcode: ticket.ticketType.accessMethods.includes("BARCODE") ? code128Svg(ticket.code, { height: 56 }) : null,
+      nfc: ticket.ticketType.accessMethods.includes("NFC"),
     })),
   );
 
@@ -177,10 +182,23 @@ async function TicketList({ tickets, guest }: { tickets: TicketForList[]; guest:
               {ticket.seat.section.name} · {ticket.seat.label}
             </p>
           )}
-          <div
-            className={`mx-auto my-3 w-48 ${ticket.status === "VALID" ? "" : "opacity-30"}`}
-            dangerouslySetInnerHTML={{ __html: ticket.qr }}
-          />
+          {ticket.qr && (
+            <div
+              className={`mx-auto my-3 w-48 ${ticket.status === "VALID" ? "" : "opacity-30"}`}
+              dangerouslySetInnerHTML={{ __html: ticket.qr }}
+            />
+          )}
+          {ticket.barcode && (
+            <div
+              className={`mx-auto my-3 w-full max-w-60 overflow-hidden rounded-md bg-white [&>svg]:h-auto [&>svg]:w-full ${ticket.status === "VALID" ? "" : "opacity-30"}`}
+              dangerouslySetInnerHTML={{ __html: ticket.barcode }}
+            />
+          )}
+          {ticket.nfc && (
+            <p className="my-2 text-xs font-semibold text-[#6b687a]">
+              {ticket.qr || ticket.barcode ? "También se lee por NFC." : "Esta entrada se lee por NFC: acércala al lector."}
+            </p>
+          )}
           <p className="font-mono text-sm tracking-wider">{formatCode(ticket.code)}</p>
           {ticket.status === "USED" && <p className="mt-1 text-xs font-semibold text-[#6b687a]">Ya utilizada</p>}
           {ticket.status === "CANCELLED" && <p className="mt-1 text-xs font-semibold text-[#c2183e]">Anulada</p>}

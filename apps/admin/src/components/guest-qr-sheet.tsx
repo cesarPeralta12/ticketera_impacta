@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { formatCode, formatDateTime } from "@ticketera/core";
+import { code128Svg, formatCode, formatDateTime } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { PrintButton } from "@/components/print-button";
 import { ticketQrSvg } from "@/lib/qr";
@@ -18,9 +18,15 @@ export async function GuestQrSheet({ eventId, sessionId, backHref }: { eventId: 
   const tickets = await prisma.ticket.findMany({
     where: { sessionId: session.id, order: { channel: "GUEST" }, status: "VALID" },
     orderBy: { holderName: "asc" },
-    include: { ticketType: { select: { name: true } } },
+    include: { ticketType: { select: { name: true, accessMethods: true } } },
   });
-  const cards = await Promise.all(tickets.map(async (t) => ({ ...t, qr: await ticketQrSvg(t.code) })));
+  const cards = await Promise.all(
+    tickets.map(async (t) => ({
+      ...t,
+      qr: t.ticketType.accessMethods.includes("QR") ? await ticketQrSvg(t.code) : null,
+      barcode: t.ticketType.accessMethods.includes("BARCODE") ? code128Svg(t.code, { height: 48 }) : null,
+    })),
+  );
 
   return (
     <div className="space-y-6">
@@ -50,7 +56,10 @@ export async function GuestQrSheet({ eventId, sessionId, backHref }: { eventId: 
             <p className="text-xs text-[var(--ink-muted)]">
               {formatDateTime(session.startsAt, session.venue.timezone)} · {session.venue.name}
             </p>
-            <div className="mx-auto my-2 w-36" dangerouslySetInnerHTML={{ __html: t.qr }} />
+            {t.qr && <div className="mx-auto my-2 w-36" dangerouslySetInnerHTML={{ __html: t.qr }} />}
+            {t.barcode && (
+              <div className="mx-auto my-2 w-full max-w-56 [&>svg]:h-auto [&>svg]:w-full" dangerouslySetInnerHTML={{ __html: t.barcode }} />
+            )}
             <p className="font-semibold">{t.holderName}</p>
             <p className="text-xs text-[var(--ink-muted)]">{t.ticketType.name}</p>
             <p className="font-mono text-xs tracking-wider">{formatCode(t.code)}</p>

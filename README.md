@@ -10,7 +10,8 @@ eventos, editor y mapa de butacas, sala de espera, diseño visual, datos bolivia
 
 ```
 apps/web       Sitio público: eventos, compra (general y butacas), sala de espera, pago, QR, Mis eventos → :3000
-apps/admin     Panel de IMPACTA, boletería, espacio del cliente y app de puerta (/puerta, instalable) → :3001
+apps/admin     Panel de IMPACTA, boletería, espacio del cliente y API móvil (/api/v1) → :3001
+apps/puerta_app App móvil Flutter del portero: QR, código de barras y NFC, con validación sin internet
 packages/db    Esquema Prisma, migraciones, operaciones transaccionales y pruebas de integración
 packages/core  Reglas puras: dinero, estados, inventario, QR, checkout, geometría de butacas, fechas
 docs/          Plan de trabajo, propuesta técnica y decisiones del Sprint 0
@@ -50,12 +51,12 @@ datos nuevos (cliente, cajero, puertas por sección, evento con invitados) **sin
 | Dónde | Email | Contraseña | Rol |
 |---|---|---|---|
 | Panel :3001 | `admin@impacta.test` | `Impacta2026!` | Dueño: todo el panel |
-| Panel :3001 | `puerta@impacta.test` | `Puerta2026!` | Operador: solo la app de puerta |
+| App móvil | `puerta@impacta.test` | `Puerta2026!` | Portero: solo la app móvil (no entra al panel) |
 | Panel :3001 | `caja@impacta.test` | `Caja2026!` | Cajero: solo boletería |
 | Panel :3001 | `cliente@impacta.test` | `Cliente2026!` | Cliente (Producciones Andinas): solo sus eventos |
 | Sitio :3000 | `comprador@impacta.test` | `Comprador2026!` | Comprador (comprar no exige cuenta) |
 
-Cada rol entra directo a su pantalla y no puede abrir las de los demás.
+Cada rol entra directo a su pantalla y no puede abrir las de los demás. El portero no tiene sesión en el panel web.
 
 ## Qué probar
 
@@ -67,10 +68,11 @@ Cada rol entra directo a su pantalla y no puede abrir las de los demás.
 4. **Pago demorado**: en la pasarela, "Aprobar con webhook demorado": la orden espera la confirmación.
 5. **Panel**: crea un evento → agrega una función → carga precios por sección → Publicar → aparece en el sitio.
 6. **Recintos**: diseña secciones de butacas (grilla o arco) con el editor visual.
-7. **Puerta** (`/puerta`, o entra con la cuenta de puerta): elige la función → cámara, NFC, lector
-   USB o el código bajo el QR. Repite: rechaza el reingreso. En *Loko Fest*, el Acceso sur solo
-   acepta Palco: una entrada de Campo sale "Puerta equivocada" y dice por dónde entrar.
-   **Sin internet** sigue validando con la lista descargada y sube las lecturas al volver.
+7. **Puerta (app móvil)**: en el panel, *Usuarios → Funciones y teléfonos* asigna funciones (y puerta) al
+   portero. En cada tipo de entrada se elige cómo se lee en puerta: QR, código de barras y/o NFC. El portero
+   inicia sesión en la app (`apps/puerta_app`), elige la función, **descarga los datos** y solo ve los métodos
+   que admiten sus entradas. Valida sin internet y sube las lecturas al volver la señal. Una entrada leída por
+   un método no admitido se rechaza. En *Loko Fest*, el Acceso sur solo acepta Palco.
 8. **Boletería** (cuenta de cajero): vende → ticket para impresora térmica de 80 mm o A4. Comparte
    el cupo con la venta online y sigue vendiendo durante el evento. "Mi caja de hoy" = arqueo.
 9. **Lista de invitados**: *Lanzamiento Andino* no se vende ni aparece en el sitio. En la función →
@@ -116,12 +118,30 @@ Cada rol entra directo a su pantalla y no puede abrir las de los demás.
   siempre en la zona del recinto, sin importar dónde corra el servidor.
 - **Canales**: online, boletería e invitaciones descuentan del mismo inventario con la misma
   transacción: nunca se vende de más. Cada orden guarda su canal y quién la emitió.
-- **Puerta sin internet**: al abrir la función el celular descarga la lista de entradas (sin el
-  secreto del QR: valida que el código exista; son aleatorios e imposibles de adivinar). Sin
-  conexión decide con esa lista y guarda las lecturas en el equipo; al volver las sube con su hora
-  real. Cada lectura tiene un id, así que reenviarla no la duplica. Para que dos puertas sin
-  internet no acepten la misma entrada, cada puerta tiene sus secciones; si igual ocurre, queda
-  registrado como doble ingreso. La cámara necesita https (o localhost).
+- **Puerta sin internet**: la app móvil descarga la lista de entradas de la función (completas para su
+  puerta, compactas para las demás, sin el secreto del QR) y valida en el teléfono: que el código exista,
+  que el método de lectura esté permitido, que sea de su puerta y que no haya entrado. Cada lectura se guarda
+  con un id y la hora real, y se sube sola en cuanto hay internet (reenviar no duplica). Si un código no está
+  en la lista y hay internet, el servidor decide en el momento (venta posterior a la descarga). Para que
+  dos puertas sin internet no acepten la misma entrada, cada puerta tiene sus secciones; si igual ocurre
+  (dos lectores en la misma puerta), queda registrado como doble ingreso al sincronizar.
+- **App móvil (API `/api/v1`)**: el teléfono inicia sesión con email y contraseña y recibe un token propio
+  (solo se guarda su hash). Se revoca desde *Usuarios → Funciones y teléfonos*, y una cuenta desactivada
+  pierde el acceso al instante.
+
+## App móvil de puerta (Flutter)
+
+```bash
+cd apps/puerta_app
+flutter pub get
+flutter test && flutter analyze
+flutter run --dart-define=API_URL=http://10.0.2.2:3001   # emulador Android → panel local
+```
+
+En un teléfono real usa la IP de tu PC (o el dominio https del panel) en `API_URL`, o cámbiala en la
+pantalla de login ("Configurar servidor"). Para generar el APK hay que aceptar las licencias de Android
+(`flutter doctor --android-licenses`). El NFC lee etiquetas NDEF (texto o enlace) con el código de la entrada;
+en iOS requiere el permiso *Near Field Communication Tag Reading* de la cuenta de Apple Developer.
 
 ## Despliegue (Coolify u otro servidor con Nixpacks)
 
