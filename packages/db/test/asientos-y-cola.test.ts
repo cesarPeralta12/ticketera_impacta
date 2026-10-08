@@ -4,10 +4,9 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { prisma } from "../src/client";
-import { createPendingOrder } from "../src/operations/orders";
 import { applyPaymentUpdate, startPayment } from "../src/operations/payments";
 import { getQueueStatus, joinQueue } from "../src/operations/queue";
-import { buyer, createSeatedEvent } from "./fixtures";
+import { buyer, createPendingOrder, createSeatedEvent } from "./fixtures";
 
 afterAll(() => prisma.$disconnect());
 

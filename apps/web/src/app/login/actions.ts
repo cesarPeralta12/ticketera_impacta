@@ -1,6 +1,7 @@
 "use server";
 
 import { AuthError } from "next-auth";
+import { DOCUMENT_ERROR } from "@ticketera/core";
 import { MIN_PASSWORD_LENGTH, registerCustomer } from "@ticketera/db";
 import { signIn } from "@/lib/auth";
 
@@ -36,8 +37,22 @@ export async function registerAction(_prev: AuthState, formData: FormData): Prom
     return { error: `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.` };
   }
 
-  const customer = await registerCustomer({ name, email, password });
-  if (!customer) return { error: "Ya existe una cuenta con ese email. Inicia sesión." };
+  const result = await registerCustomer({
+    name,
+    email,
+    password,
+    document: String(formData.get("document") ?? ""),
+    phone: String(formData.get("phone") ?? ""),
+  });
+  if ("error" in result) {
+    return {
+      error: {
+        EMAIL_TAKEN: "Ya existe una cuenta con ese email. Inicia sesión.",
+        DOCUMENT_TAKEN: "Ese carnet ya tiene una cuenta. Inicia sesión con ella.",
+        DOCUMENT_INVALID: DOCUMENT_ERROR,
+      }[result.error],
+    };
+  }
 
   try {
     await signIn("credentials", { email, password, redirectTo: safeNext(formData.get("next")) });

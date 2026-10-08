@@ -5,7 +5,7 @@ import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { MAX_TICKETS_PER_ORDER, currentPrice, discountLabel, formatDateTime, saleState } from "@ticketera/core";
 import { getQueueStatus, getSessionAvailability, getTakenSeatIds, prisma } from "@ticketera/db";
-import { auth } from "@/lib/auth";
+import { requireBuyer } from "@/lib/customer";
 import { queueCookieName } from "@/lib/queue-cookie";
 import { CheckoutForm, type GeneralType, type SeatedType } from "./checkout-form";
 import { TurnCountdown } from "./turn-countdown";
@@ -40,6 +40,9 @@ export default async function BuyPage({ params }: Props) {
     notFound();
   }
 
+  // Comprar exige cuenta con carnet: sin sesión, al login; sin carnet, a completarlo (y vuelve aquí).
+  const buyer = await requireBuyer(`/comprar/${session.id}`);
+
   // Cola virtual: sin turno vigente, a la sala de espera. (createPendingOrder lo vuelve a
   // verificar: esto es para la experiencia, no la protección.)
   let turnEndsAt: Date | undefined;
@@ -50,11 +53,7 @@ export default async function BuyPage({ params }: Props) {
     turnEndsAt = status.expiresAt;
   }
 
-  const [remaining, taken, account] = await Promise.all([
-    getSessionAvailability(session.id),
-    getTakenSeatIds(session.id),
-    auth(),
-  ]);
+  const [remaining, taken] = await Promise.all([getSessionAvailability(session.id), getTakenSeatIds(session.id)]);
 
   // Lo que ya terminó (una preventa vencida) no se muestra; lo que todavía no empieza, sí,
   // con su fecha (solo en generales: una butaca tiene un único precio a la vez).
@@ -118,7 +117,7 @@ export default async function BuyPage({ params }: Props) {
           sessionId={session.id}
           general={general}
           seated={seated}
-          buyer={account?.user ? { name: account.user.name ?? "", email: account.user.email ?? "" } : undefined}
+          buyer={{ name: buyer.name, email: buyer.email, document: buyer.documentId }}
         />
       )}
     </main>

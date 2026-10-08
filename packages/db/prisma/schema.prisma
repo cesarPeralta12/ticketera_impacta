@@ -157,12 +157,13 @@ model Customer {
   id            String   @id @default(cuid())
   email         String   @unique
   name          String
-  /// bcrypt. Comprar no exige cuenta: la cuenta sirve para ver "Mis entradas".
+  /// bcrypt. Comprar exige cuenta: nombre, email y carnet salen de aquí.
   passwordHash  String
   emailVerified Boolean  @default(false)
   image         String?
-  /// RUT / DNI, solo si las entradas son nominativas.
-  documentId    String?
+  /// Carnet de identidad, normalizado (mayúsculas, sin espacios ni guiones). Obligatorio para comprar
+  /// y único: una persona, una cuenta. Nulo solo en cuentas antiguas, que deben completarlo.
+  documentId    String?  @unique
   phone         String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

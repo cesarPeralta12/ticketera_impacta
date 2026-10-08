@@ -21,6 +21,19 @@ export function AuthForm({ mode, next }: { mode: "login" | "register"; next?: st
         Email
         <input type="email" name="email" required autoComplete="email" className="field" />
       </label>
+      {mode === "register" && (
+        <>
+          <label className="flex flex-col gap-1.5 text-sm text-[var(--ink-muted)]">
+            Carnet de identidad
+            <input name="document" required autoComplete="off" placeholder="1234567 LP" className="field" />
+            <span className="text-xs text-[var(--ink-dim)]">Tus entradas salen con este carnet y se verifica en la puerta.</span>
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm text-[var(--ink-muted)]">
+            Celular (opcional)
+            <input name="phone" type="tel" autoComplete="tel" className="field" />
+          </label>
+        </>
+      )}
       <label className="flex flex-col gap-1.5 text-sm text-[var(--ink-muted)]">
         Contraseña
         <input

@@ -3,7 +3,7 @@
  * una cuenta de comprador nunca puede entrar al panel, ni al revés.
  */
 import bcrypt from "bcryptjs";
-import { MIN_PASSWORD_LENGTH } from "@ticketera/core";
+import { MIN_PASSWORD_LENGTH, isValidDocument, normalizeDocument } from "@ticketera/core";
 import type { StaffRole } from "../generated/prisma/client";
 import { prisma } from "../client";
 import { isUniqueViolation } from "./shared";
@@ -30,17 +30,56 @@ export async function verifyCustomerCredentials(email: string, password: string)
   return customer;
 }
 
-export async function registerCustomer(input: { name: string; email: string; password: string }) {
+/**
+ * Crea la cuenta de un comprador. El carnet es obligatorio y único (una persona, una cuenta).
+ * Devuelve la causa si no se pudo: el email o el carnet ya tienen cuenta.
+ */
+export async function registerCustomer(input: {
+  name: string;
+  email: string;
+  password: string;
+  document: string;
+  phone?: string;
+}): Promise<{ customer: Awaited<ReturnType<typeof prisma.customer.create>> } | { error: "EMAIL_TAKEN" | "DOCUMENT_TAKEN" | "DOCUMENT_INVALID" }> {
+  const documentId = normalizeDocument(input.document);
+  if (!isValidDocument(documentId)) return { error: "DOCUMENT_INVALID" };
+  const email = input.email.trim().toLowerCase();
+  if (await prisma.customer.findUnique({ where: { email }, select: { id: true } })) return { error: "EMAIL_TAKEN" };
+  if (await prisma.customer.findUnique({ where: { documentId }, select: { id: true } })) return { error: "DOCUMENT_TAKEN" };
   try {
-    return await prisma.customer.create({
+    const customer = await prisma.customer.create({
       data: {
         name: input.name.trim(),
-        email: input.email.trim().toLowerCase(),
+        email,
+        documentId,
+        phone: input.phone?.trim() || null,
         passwordHash: await hashPassword(input.password),
       },
     });
+    return { customer };
   } catch (error) {
-    if (isUniqueViolation(error)) return null; // ya existe una cuenta con ese email
+    if (isUniqueViolation(error)) return { error: "DOCUMENT_TAKEN" }; // alguien lo creó justo ahora
+    throw error;
+  }
+}
+
+/** Completa o corrige los datos de una cuenta (las antiguas no tenían carnet). */
+export async function updateCustomerProfile(
+  customerId: string,
+  input: { name: string; document: string; phone?: string },
+): Promise<{ ok: true } | { error: "DOCUMENT_TAKEN" | "DOCUMENT_INVALID" }> {
+  const documentId = normalizeDocument(input.document);
+  if (!isValidDocument(documentId)) return { error: "DOCUMENT_INVALID" };
+  const other = await prisma.customer.findUnique({ where: { documentId }, select: { id: true } });
+  if (other && other.id !== customerId) return { error: "DOCUMENT_TAKEN" };
+  try {
+    await prisma.customer.update({
+      where: { id: customerId },
+      data: { name: input.name.trim(), documentId, phone: input.phone?.trim() || null },
+    });
+    return { ok: true };
+  } catch (error) {
+    if (isUniqueViolation(error)) return { error: "DOCUMENT_TAKEN" };
     throw error;
   }
 }

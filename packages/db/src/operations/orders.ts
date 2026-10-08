@@ -65,6 +65,22 @@ export async function createPendingOrder(
   const data = checkoutSchema.parse(input);
   const ids = data.items.map((i) => i.ticketTypeId);
 
+  // Comprar online exige cuenta con carnet. Los datos del comprador salen SIEMPRE de la cuenta,
+  // nunca de lo que mande el formulario: nadie puede comprar a nombre de otro ni sin identificarse.
+  // (En boletería el cajero ingresa el carnet del cliente; las invitaciones no pasan por aquí.)
+  if (channel === "ONLINE") {
+    if (!options.customerId) throw new DomainError("LOGIN_REQUIRED", "Inicia sesión para comprar tus entradas.");
+    const customer = await prisma.customer.findUnique({
+      where: { id: options.customerId },
+      select: { name: true, email: true, documentId: true },
+    });
+    if (!customer) throw new DomainError("LOGIN_REQUIRED", "Inicia sesión para comprar tus entradas.");
+    if (!customer.documentId) {
+      throw new DomainError("DOCUMENT_REQUIRED", "Completa tu carnet de identidad en tu cuenta para poder comprar.");
+    }
+    data.buyer = { name: customer.name, email: customer.email, document: customer.documentId };
+  }
+
   return prisma.$transaction(async (tx) => {
     const session = await tx.eventSession.findUnique({
       where: { id: data.sessionId },

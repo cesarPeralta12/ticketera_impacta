@@ -18,6 +18,8 @@ export class DomainError extends Error {
       | "ORDER_EXPIRED"
       | "PAYMENT_NOT_FOUND"
       | "PAYMENT_MISMATCH"
+      | "LOGIN_REQUIRED"
+      | "DOCUMENT_REQUIRED"
       | "NOT_FOUND"
       | "INVALID_STATE"
       | "DUPLICATE",

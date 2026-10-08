@@ -162,8 +162,8 @@ export function PosForm({
           <input name="email" type="email" autoComplete="off" className="field" />
         </label>
         <label className="label">
-          CI / NIT (opcional)
-          <input name="document" autoComplete="off" className="field" />
+          Carnet de identidad (obligatorio)
+          <input name="document" required autoComplete="off" placeholder="1234567 LP" className="field" />
         </label>
       </section>
 

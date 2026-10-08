@@ -6,10 +6,9 @@ import { afterAll, describe, expect, it } from "vitest";
 import { randomCode } from "@ticketera/core";
 import { prisma } from "../src/client";
 import { scanTicket } from "../src/operations/access";
-import { createPendingOrder } from "../src/operations/orders";
 import { getEventReport } from "../src/operations/report";
 import { cancelGuestTicket, issueGuestTickets, sellAtBoxOffice } from "../src/operations/sales";
-import { buyer, createGeneralAdmissionEvent } from "./fixtures";
+import { buyer, createPendingOrder, createGeneralAdmissionEvent } from "./fixtures";
 
 afterAll(() => prisma.$disconnect());
 
@@ -24,7 +23,7 @@ describe("boletería e invitaciones", () => {
     const { session, types } = await createGeneralAdmissionEvent({ sectionCapacity: 10, types: [{ name: "General", capacity: 10 }] });
     const cashier = await staff();
     const order = await sellAtBoxOffice(
-      { sessionId: session.id, items: [{ ticketTypeId: types[0]!.id, quantity: 3 }], buyer: { name: "Venta en caja", email: "caja@prueba.test" } },
+      { sessionId: session.id, items: [{ ticketTypeId: types[0]!.id, quantity: 3 }], buyer: { name: "Venta en caja", email: "caja@prueba.test", document: "7654321" } },
       { staffId: cashier.id, method: "EFECTIVO" },
     );
     const saved = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { tickets: true, payments: true } });

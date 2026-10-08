@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useState, useTransition, type FormEvent } from "react";
 import { MAX_TICKETS_PER_ORDER, RESERVATION_MINUTES, formatMoney } from "@ticketera/core";
@@ -36,7 +37,7 @@ export function CheckoutForm({
   sessionId: string;
   general: GeneralType[];
   seated: SeatedType[];
-  buyer?: { name: string; email: string };
+  buyer: { name: string; email: string; document: string };
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState<CheckoutState, FormData>(createOrderAction, {});
@@ -175,18 +176,22 @@ export function CheckoutForm({
         </section>
       )}
 
-      <section className="card space-y-4 p-5">
-        <h2 className="font-display text-xl">2. Tus datos</h2>
-        <Field label="Nombre completo" name="name" autoComplete="name" defaultValue={buyer?.name} error={state.fieldErrors?.name} />
-        <Field
-          label="Email (aquí te enviamos las entradas)"
-          name="email"
-          type="email"
-          autoComplete="email"
-          defaultValue={buyer?.email}
-          error={state.fieldErrors?.email}
-        />
-        <Field label="Carnet de identidad / NIT (opcional)" name="document" error={state.fieldErrors?.document} />
+      <section className="card space-y-3 p-5">
+        <h2 className="font-display text-xl">2. Comprando como</h2>
+        <dl className="grid grid-cols-[110px_1fr] gap-y-1 text-sm">
+          <dt className="text-[var(--ink-muted)]">Nombre</dt>
+          <dd className="font-semibold">{buyer.name}</dd>
+          <dt className="text-[var(--ink-muted)]">Email</dt>
+          <dd>{buyer.email}</dd>
+          <dt className="text-[var(--ink-muted)]">Carnet</dt>
+          <dd className="font-mono">{buyer.document}</dd>
+        </dl>
+        <p className="text-xs text-[var(--ink-dim)]">
+          Las entradas salen a tu nombre y con tu carnet, que se verifica en la puerta.{" "}
+          <Link href={`/cuenta/datos?next=${encodeURIComponent(`/comprar/${sessionId}`)}`} className="text-[var(--accent)] underline underline-offset-4">
+            Editar mis datos
+          </Link>
+        </p>
       </section>
 
       {state.error && (
@@ -210,36 +215,5 @@ export function CheckoutForm({
         Al continuar, tus entradas quedan reservadas por {RESERVATION_MINUTES} minutos mientras pagas.
       </p>
     </form>
-  );
-}
-
-function Field({
-  label,
-  name,
-  type = "text",
-  autoComplete,
-  defaultValue,
-  error,
-}: {
-  label: string;
-  name: string;
-  type?: string;
-  autoComplete?: string;
-  defaultValue?: string;
-  error?: string;
-}) {
-  return (
-    <label className="block text-sm">
-      <span className="text-[var(--ink-muted)]">{label}</span>
-      <input
-        name={name}
-        type={type}
-        autoComplete={autoComplete}
-        defaultValue={defaultValue}
-        aria-invalid={error ? true : undefined}
-        className="field mt-1"
-      />
-      {error && <span className="mt-1 block text-xs text-[var(--accent-2)]">{error}</span>}
-    </label>
   );
 }

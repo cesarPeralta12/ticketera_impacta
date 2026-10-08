@@ -20,7 +20,7 @@ export default async function LoginPage({ searchParams }: Props) {
         <Link href={`/registro${next ? `?next=${encodeURIComponent(next)}` : ""}`} className="text-[var(--accent)] underline underline-offset-4">
           Regístrate
         </Link>
-        . No hace falta para comprar: sirve para ver tus entradas en un solo lugar.
+        . Para comprar entradas necesitas una cuenta con tu carnet de identidad.
       </p>
     </main>
   );

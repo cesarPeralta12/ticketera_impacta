@@ -43,7 +43,7 @@ async function login(email: string) {
 
 async function sell(sessionId: string, ticketTypeId: string, staffId: string, quantity = 1) {
   const order = await sellAtBoxOffice(
-    { sessionId, items: [{ ticketTypeId, quantity }], buyer: { name: "Venta en caja", email: "caja@prueba.test" } },
+    { sessionId, items: [{ ticketTypeId, quantity }], buyer: { name: "Venta en caja", email: "caja@prueba.test", document: "7654321" } },
     { staffId, method: "EFECTIVO" },
   );
   return prisma.ticket.findMany({ where: { orderId: order.id } });

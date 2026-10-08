@@ -17,7 +17,7 @@ organizadores con la app móvil de puerta. Prioridad: **P0** antes de vender ent
 
 ## 1. Identidad, cuentas y organizadores
 
-1. **P0 · Login y carnet obligatorios para comprar.** Hoy se compra como invitado y el carnet es opcional.
+1. **Hecho · Login y carnet obligatorios para comprar.** (Antes se compraba como invitado y el carnet era opcional.)
    La compra toma nombre, email y carnet de la cuenta; el carnet es único por persona (evita reventa con
    cuentas múltiples). Verificación de email y recuperar contraseña.
 2. **P0 · Límite de intentos** (rate limiting) en login, registro, cola, compra, API móvil y lectura

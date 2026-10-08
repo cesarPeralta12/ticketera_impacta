@@ -4,8 +4,7 @@
  */
 import { afterAll, describe, expect, it } from "vitest";
 import { prisma } from "../src/client";
-import { createPendingOrder } from "../src/operations/orders";
-import { buyer, createGeneralAdmissionEvent } from "./fixtures";
+import { buyer, createPendingOrder, createGeneralAdmissionEvent } from "./fixtures";
 
 afterAll(() => prisma.$disconnect());
 

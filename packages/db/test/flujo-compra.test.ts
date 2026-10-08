@@ -6,10 +6,9 @@ import { afterAll, describe, expect, it } from "vitest";
 import { RESERVATION_MINUTES, signTicketPayload } from "@ticketera/core";
 import { prisma } from "../src/client";
 import { scanTicket } from "../src/operations/access";
-import { createPendingOrder } from "../src/operations/orders";
 import { applyPaymentUpdate, startPayment } from "../src/operations/payments";
 import { DomainError } from "../src/operations/shared";
-import { buyer, createGeneralAdmissionEvent } from "./fixtures";
+import { buyer, createPendingOrder, createGeneralAdmissionEvent } from "./fixtures";
 
 afterAll(() => prisma.$disconnect());
 

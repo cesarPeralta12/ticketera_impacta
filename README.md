@@ -56,13 +56,13 @@ datos nuevos (cliente, cajero, puertas por sección, evento con invitados) **sin
 | Panel :3001 | `cliente@impacta.test` | `Cliente2026!` | Cliente (Producciones Andinas): solo sus eventos |
 | Panel :3001 | `organizador@andeslive.test` | `Organizador2026!` | Organizador "Andes Live": su propio panel |
 | Panel :3001 | `organizador@cumbre.test` | `Organizador2026!` | Organizador "Cumbre Eventos": su propio panel |
-| Sitio :3000 | `comprador@impacta.test` | `Comprador2026!` | Comprador (comprar no exige cuenta) |
+| Sitio :3000 | `comprador@impacta.test` | `Comprador2026!` | Comprador (comprar exige cuenta con carnet) |
 
 Cada rol entra directo a su pantalla y no puede abrir las de los demás. El portero no tiene sesión en el panel web.
 
 ## Qué probar
 
-1. **Butacas**: http://localhost:3000 → *La Deliciosa Historia del Xocolate* → Comprar → elige
+1. **Butacas**: http://localhost:3000 → inicia sesión (comprar exige cuenta con carnet; usa `comprador@impacta.test` o crea una) → *La Deliciosa Historia del Xocolate* → Comprar → elige
    butacas en el mapa → Reservar y pagar → en la *pasarela simulada*, Aprobar → entradas con QR y butaca.
 2. **Entrada general y cupo compartido**: *Loko Fest* (Preventa y General comparten el Campo).
 3. **Cola virtual**: *Loko Fest* y *Alok* tienen sala de espera. Para verla esperar, baja el

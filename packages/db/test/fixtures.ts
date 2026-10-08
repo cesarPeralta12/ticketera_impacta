@@ -1,5 +1,6 @@
-import { randomCode } from "@ticketera/core";
+import { normalizeDocument, randomCode, type CheckoutInput } from "@ticketera/core";
 import { prisma } from "../src/client";
+import { createPendingOrder as createOrder } from "../src/operations/orders";
 
 /**
  * Crea un evento publicado, aislado del resto, con una sección de entrada general y
@@ -115,4 +116,29 @@ export async function createSeatedEvent(opts: { sections: { name: string; seats:
   };
 }
 
-export const buyer = (n: number) => ({ name: `Comprador ${n}`, email: `comprador${n}@prueba.test` });
+export const buyer = (n: number) => ({
+  name: `Comprador ${n}`,
+  email: `comprador${n}@prueba.test`,
+  document: String(7_000_000 + n),
+});
+
+/**
+ * Orden online de prueba. Comprar exige una cuenta con carnet y los datos del comprador salen de ella,
+ * así que se crea (o reutiliza) la cuenta del comprador antes de reservar.
+ */
+export async function createPendingOrder(input: CheckoutInput, options: Parameters<typeof createOrder>[1] = {}) {
+  if (options.channel && options.channel !== "ONLINE") return createOrder(input, options);
+  if (options.customerId) return createOrder(input, options);
+  const email = input.buyer.email.trim().toLowerCase();
+  const customer = await prisma.customer.upsert({
+    where: { email },
+    update: {},
+    create: {
+      email,
+      name: input.buyer.name,
+      passwordHash: "!",
+      documentId: normalizeDocument(input.buyer.document ?? String(Math.floor(Math.random() * 1e7) + 1e7)),
+    },
+  });
+  return createOrder(input, { ...options, customerId: customer.id });
+}
