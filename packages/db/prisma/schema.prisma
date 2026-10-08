@@ -169,9 +169,43 @@ model Customer {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  orders      Order[]
-  tickets     Ticket[]
-  emailTokens EmailToken[]
+  orders            Order[]
+  tickets           Ticket[]
+  emailTokens       EmailToken[]
+  transfersSent     TicketTransfer[] @relation("TransfersSent")
+  transfersReceived TicketTransfer[] @relation("TransfersReceived")
+}
+
+enum TransferStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+  EXPIRED
+}
+
+/// Una entrada que su titular le ofrece a otra persona registrada. Al aceptarla, la entrada recibe un
+/// código nuevo (el anterior deja de valer) y pasa a la cuenta de quien la aceptó.
+model TicketTransfer {
+  id             String         @id @default(cuid())
+  ticketId       String
+  fromCustomerId String
+  toCustomerId   String
+  status         TransferStatus @default(PENDING)
+  /// Solo si se aceptó: el código que dejó de valer y el nuevo.
+  oldCode        String?
+  newCode        String?
+  createdAt      DateTime       @default(now())
+  expiresAt      DateTime
+  resolvedAt     DateTime?
+
+  ticket Ticket   @relation(fields: [ticketId], references: [id])
+  from   Customer @relation("TransfersSent", fields: [fromCustomerId], references: [id])
+  to     Customer @relation("TransfersReceived", fields: [toCustomerId], references: [id])
+
+  @@index([ticketId, status])
+  @@index([toCustomerId, status])
+  @@index([fromCustomerId, status, createdAt])
 }
 
 enum EmailTokenPurpose {
@@ -309,6 +343,8 @@ model Event {
   /// Revisión de IMPACTA: cuándo lo enviaron y, si lo devolvió, qué hay que corregir.
   submittedAt         DateTime?
   reviewNote          String?
+  /// ¿Los compradores pueden transferir sus entradas a otra persona registrada?
+  transfersEnabled    Boolean       @default(true)
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
@@ -518,28 +554,34 @@ enum TicketStatus {
 }
 
 model Ticket {
-  id           String       @id @default(cuid())
+  id             String       @id @default(cuid())
   /// Identificador público que viaja en el QR.
-  code         String       @unique
-  orderId      String
-  orderItemId  String
-  ticketTypeId String
-  sessionId    String
-  seatId       String?
-  customerId   String?
-  holderName   String?
-  status       TicketStatus @default(VALID)
-  issuedAt     DateTime     @default(now())
-  usedAt       DateTime?
-  cancelledAt  DateTime?
+  code           String       @unique
+  orderId        String
+  orderItemId    String
+  ticketTypeId   String
+  sessionId      String
+  seatId         String?
+  customerId     String?
+  holderName     String?
+  /// Carnet del titular actual (si cambió por una transferencia). Vacío: es el del comprador de la orden.
+  holderDocument String?
+  /// Cuántas veces se transfirió; tiene un máximo por entrada.
+  transferCount  Int          @default(0)
+  transferredAt  DateTime?
+  status         TicketStatus @default(VALID)
+  issuedAt       DateTime     @default(now())
+  usedAt         DateTime?
+  cancelledAt    DateTime?
 
-  order      Order        @relation(fields: [orderId], references: [id])
-  orderItem  OrderItem    @relation(fields: [orderItemId], references: [id])
-  ticketType TicketType   @relation(fields: [ticketTypeId], references: [id])
-  session    EventSession @relation(fields: [sessionId], references: [id])
-  seat       Seat?        @relation(fields: [seatId], references: [id])
-  customer   Customer?    @relation(fields: [customerId], references: [id])
+  order      Order            @relation(fields: [orderId], references: [id])
+  orderItem  OrderItem        @relation(fields: [orderItemId], references: [id])
+  ticketType TicketType       @relation(fields: [ticketTypeId], references: [id])
+  session    EventSession     @relation(fields: [sessionId], references: [id])
+  seat       Seat?            @relation(fields: [seatId], references: [id])
+  customer   Customer?        @relation(fields: [customerId], references: [id])
   scans      AccessScan[]
+  transfers  TicketTransfer[]
 
   // Para asientos numerados se agregará un índice único parcial
   // (sessionId, seatId) WHERE status <> 'CANCELLED' mediante SQL en la migración:

@@ -21,6 +21,8 @@ export class DomainError extends Error {
       | "LOGIN_REQUIRED"
       | "DOCUMENT_REQUIRED"
       | "EMAIL_NOT_VERIFIED"
+      | "TRANSFER_NOT_ALLOWED"
+      | "RECIPIENT_NOT_FOUND"
       | "NOT_FOUND"
       | "INVALID_STATE"
       | "DUPLICATE",

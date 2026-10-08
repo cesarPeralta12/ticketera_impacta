@@ -237,22 +237,42 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
     where: {
       sessionId: input.sessionId,
       ...(since
-        ? { OR: [{ issuedAt: { gte: since } }, { usedAt: { gte: since } }, { cancelledAt: { gte: since } }] }
+        ? {
+            OR: [
+              { issuedAt: { gte: since } },
+              { usedAt: { gte: since } },
+              { cancelledAt: { gte: since } },
+              // Transferida: lleva código y titular nuevos.
+              { transferredAt: { gte: since } },
+            ],
+          }
         : {}),
     },
     select: {
       code: true,
       status: true,
       holderName: true,
+      holderDocument: true,
       ticketType: { select: { name: true, sectionId: true, accessMethods: true } },
       seat: { select: { label: true } },
       order: { select: { buyerName: true, buyerDocument: true } },
     },
   });
 
+  // Códigos que dejaron de valer por una transferencia: el teléfono los saca de su lista.
+  const revoked = since
+    ? (
+        await prisma.ticketTransfer.findMany({
+          where: { status: "ACCEPTED", resolvedAt: { gte: since }, oldCode: { not: null }, ticket: { sessionId: input.sessionId } },
+          select: { oldCode: true },
+        })
+      ).flatMap((t) => (t.oldCode ? [t.oldCode] : []))
+    : [];
+
   return {
     syncedAt: syncedAt.toISOString(),
     full: !since,
+    revoked,
     session: {
       id: session.id,
       title: session.event.title,
@@ -271,7 +291,8 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
         ? {
             ...base,
             holder: t.holderName ?? t.order.buyerName,
-            document: t.order.buyerDocument,
+            // Titular actual: si la entrada se transfirió, el carnet es el de quien la recibió.
+            document: t.holderDocument ?? t.order.buyerDocument,
             type: t.ticketType.name,
             seat: t.seat?.label ?? null,
             methods: t.ticketType.accessMethods,

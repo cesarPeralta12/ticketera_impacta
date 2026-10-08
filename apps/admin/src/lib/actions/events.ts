@@ -26,6 +26,11 @@ const eventSchema = z.object({
     .optional(),
   mode: z.enum(Object.values(EventMode) as [EventMode, ...EventMode[]]).default("TICKETING"),
   clientId: z.string().optional(),
+  /** Casilla "permitir transferir entradas": sin marcar, el navegador no la envía. */
+  transfersEnabled: z
+    .literal("on")
+    .optional()
+    .transform((v) => v === "on"),
 });
 
 /** El cliente elegido tiene que ser de la organización; vacío = evento propio de IMPACTA. */

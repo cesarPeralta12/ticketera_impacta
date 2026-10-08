@@ -39,7 +39,7 @@ organizadores con la app móvil de puerta. Prioridad: **P0** antes de vender ent
    canal principal de entrega y recordatorio (más usado que el correo en Bolivia).
 4. **P1 · Modelo comercial por organizador:** comisión (porcentaje o fija), quién la paga, liquidación por
    organizador y por evento (ventas, comisión, neto, fecha de pago) y exportación a Excel.
-5. **P1 · Transferir o asignar entradas** (pedido 6): titular por entrada, transferencia a otra cuenta con
+5. **Hecho · Transferir entradas** (pedido 6): titular por entrada, transferencia a otra cuenta con
    aceptación, el código anterior se anula al transferir, reglas por evento (cantidad y hasta cuándo).
 6. **P1 · Zonas de pie con "restantes"** y cupo por función; administrador de recintos más claro
    (duplicar, archivar, editar secciones, deshacer/zoom en el editor).

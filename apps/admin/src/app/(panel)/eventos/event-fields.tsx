@@ -15,6 +15,7 @@ export function EventFields({
     imageUrl: string | null;
     mode: string;
     clientId: string | null;
+    transfersEnabled: boolean;
   };
   /** Clientes de Impacta (null: no aplica, por ejemplo en el panel de un organizador). */
   clients: { id: string; name: string }[] | null;
@@ -51,6 +52,15 @@ export function EventFields({
           </select>
           <span className="text-xs font-normal text-[var(--ink-dim)]">
             Con lista de invitados no hay venta: se cargan los invitados y cada uno recibe su QR.
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-sm sm:col-span-2">
+          <input type="checkbox" name="transfersEnabled" defaultChecked={defaults?.transfersEnabled ?? true} className="mt-1 h-4 w-4 accent-[var(--accent)]" />
+          <span>
+            Permitir que los compradores transfieran sus entradas a otra persona registrada
+            <span className="block text-xs font-normal text-[var(--ink-dim)]">
+              La entrada recibe un código nuevo y pasa al nombre y carnet de quien la acepta. Máximo 2 transferencias por entrada y hasta 2 horas antes de la función.
+            </span>
           </span>
         </label>
         {clients && (

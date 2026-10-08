@@ -16,8 +16,11 @@ export async function Nav() {
           </Link>
           {session?.user ? (
             <>
+              <Link href="/mis-entradas" className="text-[var(--ink-muted)] transition-colors hover:text-[var(--ink)]">
+                Mis entradas
+              </Link>
               <Link href="/mis-eventos" className="text-[var(--ink-muted)] transition-colors hover:text-[var(--ink)]">
-                Mis eventos
+                Mis compras
               </Link>
               <form
                 action={async () => {

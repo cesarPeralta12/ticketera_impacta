@@ -42,7 +42,7 @@ export async function attendeesCsvResponse(eventId: string, slug: string) {
       formatCode(t.code),
       t.holderName ?? t.order.buyerName,
       t.order.buyerEmail === BOX_OFFICE_BUYER.email ? "" : t.order.buyerEmail,
-      t.order.buyerDocument,
+      t.holderDocument ?? t.order.buyerDocument,
       CHANNEL_LABEL[t.order.channel],
       t.ticketType.name,
       t.ticketType.section?.name,

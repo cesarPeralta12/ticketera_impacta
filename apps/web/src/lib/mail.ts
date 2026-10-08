@@ -1,5 +1,5 @@
 import QRCode from "qrcode";
-import { signTicketPayload } from "@ticketera/core";
+import { TRANSFER_OFFER_HOURS, signTicketPayload } from "@ticketera/core";
 import {
   RESET_PASSWORD_MINUTES,
   VERIFY_EMAIL_HOURS,
@@ -13,6 +13,8 @@ import {
   resetPasswordMessage,
   sendEmailSafely,
   ticketsMessage,
+  transferAcceptedMessage,
+  transferOfferedMessage,
   verifyEmailMessage,
 } from "@ticketera/mail";
 
@@ -87,6 +89,72 @@ export async function sendTicketsEmail(orderCode: string): Promise<boolean> {
       orderCode: order.code,
       orderUrl: `${baseUrl()}/orden/${order.code}`,
       tickets,
+    }),
+  );
+}
+
+type TransferTicket = {
+  code: string;
+  typeName: string;
+  accessMethods: ("QR" | "BARCODE" | "NFC")[];
+  seat: string | null;
+  eventTitle: string;
+  startsAt: Date;
+  venueName: string;
+  timezone: string;
+};
+
+/** Avisa a la persona a quien le ofrecieron una entrada. */
+export async function sendTransferOfferedEmail(offer: { ticket: TransferTicket; from: { name: string }; to: { name: string; email: string } }) {
+  await sendEmailSafely(
+    transferOfferedMessage({
+      to: offer.to.email,
+      name: offer.to.name,
+      fromName: offer.from.name,
+      eventTitle: offer.ticket.eventTitle,
+      startsAt: offer.ticket.startsAt,
+      timezone: offer.ticket.timezone,
+      venueName: offer.ticket.venueName,
+      typeName: offer.ticket.typeName,
+      seat: offer.ticket.seat,
+      link: `${baseUrl()}/mis-entradas`,
+      hours: TRANSFER_OFFER_HOURS,
+    }),
+  );
+}
+
+/**
+ * La transferencia se aceptó: quien la recibe obtiene su entrada con el QR NUEVO por correo y quien la
+ * ofreció recibe la confirmación (su QR anterior ya no vale).
+ */
+export async function sendTransferAcceptedEmails(done: {
+  ticket: TransferTicket;
+  from: { name: string; email: string };
+  to: { name: string; email: string };
+}) {
+  const secret = requireEnv("TICKET_QR_SECRET");
+  const qrPng = done.ticket.accessMethods.includes("QR")
+    ? await QRCode.toBuffer(await signTicketPayload(done.ticket.code, secret), { type: "png", margin: 1, width: 400, errorCorrectionLevel: "M" })
+    : null;
+  await sendEmailSafely(
+    ticketsMessage({
+      to: done.to.email,
+      buyerName: done.to.name,
+      eventTitle: done.ticket.eventTitle,
+      startsAt: done.ticket.startsAt,
+      timezone: done.ticket.timezone,
+      venueName: done.ticket.venueName,
+      orderUrl: `${baseUrl()}/mis-entradas`,
+      tickets: [{ code: done.ticket.code, typeName: done.ticket.typeName, seat: done.ticket.seat, qrPng }],
+    }),
+  );
+  await sendEmailSafely(
+    transferAcceptedMessage({
+      to: done.from.email,
+      name: done.from.name,
+      toName: done.to.name,
+      eventTitle: done.ticket.eventTitle,
+      typeName: done.ticket.typeName,
     }),
   );
 }

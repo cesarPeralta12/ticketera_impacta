@@ -61,6 +61,7 @@ export async function getLiveAccess(sessionId: string) {
         code: true,
         status: true,
         holderName: true,
+        holderDocument: true,
         seatId: true,
         seat: { select: { label: true, sectionId: true } },
         ticketType: { select: { name: true, sectionId: true } },
@@ -112,7 +113,7 @@ export async function getLiveAccess(sessionId: string) {
     seatId: t.seatId,
     seatLabel: t.seat?.label ?? null,
     holder: t.holderName ?? t.order.buyerName,
-    document: t.order.buyerDocument,
+    document: t.holderDocument ?? t.order.buyerDocument,
     entry: entryByTicket.get(t.id) ?? null,
     attempts: attemptsByTicket.get(t.id) ?? [],
   }));

@@ -216,7 +216,7 @@ class SessionMeta {
 
 /// Respuesta de `GET /sessions/:id/download`.
 class DownloadResult {
-  const DownloadResult({required this.meta, required this.tickets, required this.full});
+  const DownloadResult({required this.meta, required this.tickets, required this.full, this.revoked = const []});
 
   final SessionMeta meta;
   final List<TicketRow> tickets;
@@ -224,11 +224,15 @@ class DownloadResult {
   /// true = lista completa; false = solo los cambios desde la última descarga.
   final bool full;
 
+  /// Códigos que dejaron de valer (la entrada se transfirió y tiene un código nuevo).
+  final List<String> revoked;
+
   factory DownloadResult.fromJson(Map<String, dynamic> json) {
     final tickets = [for (final t in json['tickets'] as List) TicketRow.fromJson(t as Map<String, dynamic>)];
     final session = json['session'] as Map<String, dynamic>;
     return DownloadResult(
       full: json['full'] as bool,
+      revoked: [for (final c in (json['revoked'] as List? ?? const [])) c as String],
       tickets: tickets,
       meta: SessionMeta(
         sessionId: session['id'] as String,

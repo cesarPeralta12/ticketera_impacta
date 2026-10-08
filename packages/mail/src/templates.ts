@@ -91,7 +91,8 @@ export function ticketsMessage(input: {
   startsAt: Date;
   timezone: string;
   venueName: string;
-  orderCode: string;
+  /** Compra de origen (se omite en entradas recibidas por transferencia). */
+  orderCode?: string;
   orderUrl: string;
   tickets: TicketMail[];
 }): Email {
@@ -123,11 +124,61 @@ export function ticketsMessage(input: {
      <p style="margin:0;color:#62655f">${esc(when)} · ${esc(input.venueName)}</p>
      ${cards}
      <p style="margin:22px 0;text-align:center">${button(input.orderUrl, "Ver mis entradas")}</p>
-     <p style="color:#62655f;font-size:13px;line-height:1.55">Cada entrada vale para <strong>un solo ingreso</strong> y está a tu nombre: lleva tu <strong>carnet de identidad</strong>, que se puede pedir en la puerta. No compartas el QR por redes: quien llegue primero con él entra. El botón de arriba abre siempre la versión actualizada. Compra ${esc(input.orderCode)}.</p>`,
+     <p style="color:#62655f;font-size:13px;line-height:1.55">Cada entrada vale para <strong>un solo ingreso</strong> y está a tu nombre: lleva tu <strong>carnet de identidad</strong>, que se puede pedir en la puerta. No compartas el QR por redes: quien llegue primero con él entra. El botón de arriba abre siempre la versión actualizada.${input.orderCode ? ` Compra ${esc(input.orderCode)}.` : ""}</p>`,
   );
   const text =
     `¡Listo, ${input.buyerName}! Tus entradas para ${input.eventTitle}\n${when} · ${input.venueName}\n\n` +
     input.tickets.map((t, i) => `Entrada ${i + 1}: ${t.typeName}${t.seat ? ` · ${t.seat}` : ""} · ${formatCode(t.code)}`).join("\n") +
     `\n\nVer mis entradas: ${input.orderUrl}\n\nLleva tu carnet de identidad. Cada entrada vale para un solo ingreso.`;
   return { to: input.to, subject, html, text, images };
+}
+
+export function transferOfferedMessage(input: {
+  to: string;
+  name: string;
+  fromName: string;
+  eventTitle: string;
+  startsAt: Date;
+  timezone: string;
+  venueName: string;
+  typeName: string;
+  seat: string | null;
+  link: string;
+  hours: number;
+}): Email {
+  const when = formatDateTime(input.startsAt, input.timezone);
+  const subject = `${input.fromName} te transfirió una entrada para ${input.eventTitle}`;
+  const what = `${input.typeName}${input.seat ? ` · ${input.seat}` : ""}`;
+  const html = layout(
+    `${input.fromName} quiere darte una entrada.`,
+    `<h1 style="margin:0 0 12px;font-size:24px">Te ofrecieron una entrada</h1>
+     <p style="line-height:1.55"><strong>${esc(input.fromName)}</strong> quiere transferirte una entrada para:</p>
+     <p style="margin:0;font-size:18px;font-weight:700">${esc(input.eventTitle)}</p>
+     <p style="margin:2px 0 0;color:#62655f">${esc(when)} · ${esc(input.venueName)}</p>
+     <p style="margin:6px 0 0;font-weight:700">${esc(what)}</p>
+     <p style="margin:26px 0">${button(input.link, "Ver y aceptar la entrada")}</p>
+     <p style="color:#62655f;font-size:13px;line-height:1.5">Hola ${esc(input.name)}: si la aceptas, la entrada pasa a tu cuenta con tu nombre y tu carnet, y el QR anterior deja de valer. La oferta vale ${input.hours} horas. Si no la conoces o no la quieres, ignora este correo.</p>`,
+  );
+  const text = `Hola ${input.name},
+
+${input.fromName} quiere transferirte una entrada para ${input.eventTitle} (${when}, ${input.venueName}): ${what}.
+
+Ver y aceptar: ${input.link}
+
+La oferta vale ${input.hours} horas.`;
+  return { to: input.to, subject, html, text };
+}
+
+export function transferAcceptedMessage(input: { to: string; name: string; toName: string; eventTitle: string; typeName: string }): Email {
+  const subject = `${input.toName} aceptó tu entrada para ${input.eventTitle}`;
+  const html = layout(
+    `${input.toName} aceptó la entrada.`,
+    `<h1 style="margin:0 0 12px;font-size:24px">Transferencia lista</h1>
+     <p style="line-height:1.55">Hola ${esc(input.name)}, <strong>${esc(input.toName)}</strong> aceptó tu entrada <strong>${esc(input.typeName)}</strong> para <strong>${esc(input.eventTitle)}</strong>.</p>
+     <p style="line-height:1.55;color:#62655f">La entrada ya no está en tu cuenta y tu QR anterior dejó de valer.</p>`,
+  );
+  const text = `Hola ${input.name},
+
+${input.toName} aceptó tu entrada ${input.typeName} para ${input.eventTitle}. Ya no está en tu cuenta y tu QR anterior dejó de valer.`;
+  return { to: input.to, subject, html, text };
 }

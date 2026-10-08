@@ -37,6 +37,9 @@ export default async function MyEventsPage() {
       <div>
         <p className="eyebrow">{session.user.name}</p>
         <h1 className="font-display text-4xl">Mis eventos</h1>
+        <Link href="/mis-entradas" className="mt-2 inline-block text-sm text-[var(--accent)] underline underline-offset-4">
+          Ver mis entradas y transferirlas a otra persona →
+        </Link>
       </div>
 
       {orders.length === 0 ? (

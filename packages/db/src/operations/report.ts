@@ -132,6 +132,7 @@ export async function listEventAttendees(eventId: string) {
       status: true,
       usedAt: true,
       holderName: true,
+      holderDocument: true,
       session: { select: { startsAt: true, venue: { select: { name: true, timezone: true } } } },
       ticketType: { select: { name: true, section: { select: { name: true } } } },
       seat: { select: { label: true } },

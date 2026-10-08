@@ -161,6 +161,12 @@ en iOS requiere el permiso *Near Field Communication Tag Reading* de la cuenta d
   después vuelve al normal solo. El servidor calcula el precio al crear la orden (la web muestra el precio
   normal tachado). Se configura en la función, al agregar o editar el tipo de entrada.
 
+- **Transferir entradas**: en *Mis entradas*, el titular ofrece una entrada a otra persona registrada (por email o
+  carnet). Ella la acepta y entonces la entrada pasa a su cuenta con su nombre y su carnet y **recibe un código nuevo**:
+  el QR/barras anterior deja de valer, también en las puertas (la app descarga los códigos revocados). Hasta que la
+  acepten, la entrada sigue siendo del titular; la oferta vence a las 72 h; máximo 2 transferencias por entrada y hasta
+  2 horas antes de la función; el organizador puede desactivarlo por evento. Los dos reciben correo.
+
 ## Correo (confirmar email, contraseña y entradas)
 
 El sistema envía cuatro correos: **confirmar el email** (obligatorio para comprar), **cambiar la contraseña**

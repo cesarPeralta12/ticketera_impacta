@@ -114,7 +114,16 @@ export default async function OrderPage({ params }: Props) {
             </p>
             {isOwner && order.channel === "ONLINE" && <ResendTickets code={order.code} />}
           </div>
-          <TicketList tickets={order.tickets} guest={guest} />
+          <TicketList tickets={order.tickets} guest={guest} ownerId={order.customerId} />
+          {isOwner && order.channel === "ONLINE" && (
+            <p className="text-sm text-[var(--ink-muted)]">
+              ¿Quieres darle una entrada a otra persona?{" "}
+              <Link href="/mis-entradas" className="text-[var(--accent)] underline underline-offset-4">
+                Transferirla desde Mis entradas
+              </Link>
+              .
+            </p>
+          )}
         </section>
       )}
 
@@ -149,25 +158,28 @@ type TicketForList = {
   id: string;
   code: string;
   status: string;
+  customerId: string | null;
   holderName: string | null;
   ticketType: { name: string; accessMethods: ("QR" | "BARCODE" | "NFC")[] };
   seat: { label: string; section: { name: string } } | null;
 };
 
-async function TicketList({ tickets, guest }: { tickets: TicketForList[]; guest: boolean }) {
+async function TicketList({ tickets, guest, ownerId }: { tickets: TicketForList[]; guest: boolean; ownerId: string | null }) {
   const secret = requireEnv("TICKET_QR_SECRET");
   const rendered = await Promise.all(
     tickets.map(async (ticket) => ({
       ...ticket,
+      // Si la entrada se transfirió a otra cuenta, su QR ya no se muestra aquí (lo ve su nueva dueña en "Mis entradas").
+      transferred: Boolean(ownerId && ticket.customerId && ticket.customerId !== ownerId),
       // Cada tipo de entrada define cómo se lee en puerta: se muestra solo lo que el lector admite.
-      qr: ticket.ticketType.accessMethods.includes("QR")
+      qr: !(ownerId && ticket.customerId && ticket.customerId !== ownerId) && ticket.ticketType.accessMethods.includes("QR")
         ? await QRCode.toString(await signTicketPayload(ticket.code, secret), {
             type: "svg",
             margin: 1,
             errorCorrectionLevel: "M",
           })
         : null,
-      barcode: ticket.ticketType.accessMethods.includes("BARCODE") ? code128Svg(ticket.code, { height: 56 }) : null,
+      barcode: !(ownerId && ticket.customerId && ticket.customerId !== ownerId) && ticket.ticketType.accessMethods.includes("BARCODE") ? code128Svg(ticket.code, { height: 56 }) : null,
       nfc: ticket.ticketType.accessMethods.includes("NFC"),
     })),
   );
@@ -186,6 +198,9 @@ async function TicketList({ tickets, guest }: { tickets: TicketForList[]; guest:
             <p className="text-sm font-semibold">
               {ticket.seat.section.name} · {ticket.seat.label}
             </p>
+          )}
+          {ticket.transferred && (
+            <p className="my-4 rounded-lg bg-[#fff4d6] px-3 py-3 text-sm font-semibold">Esta entrada fue transferida a otra persona.</p>
           )}
           {ticket.qr && (
             <div

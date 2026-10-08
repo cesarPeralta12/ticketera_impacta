@@ -143,6 +143,10 @@ class DoorDb implements TicketLookup {
   /// Solo los cambios desde la última descarga (ventas nuevas, entradas usadas o anuladas en otros lados).
   Future<void> applyDelta(DownloadResult data) async {
     await _db.transaction((txn) async {
+      // Entradas transferidas: el código viejo deja de valer y el nuevo llega en la lista de cambios.
+      for (final code in data.revoked) {
+        await txn.delete('tickets', where: 'session_id = ? AND code = ?', whereArgs: [data.meta.sessionId, code]);
+      }
       await _insertTickets(txn, data.meta.sessionId, data.tickets);
       await _reapplyPending(txn, data.meta.sessionId);
       await _putMeta(txn, data.meta.copyWithCount(await _count(txn, data.meta.sessionId)));
