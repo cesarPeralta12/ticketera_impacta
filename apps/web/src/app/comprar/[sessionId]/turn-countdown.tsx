@@ -23,6 +23,27 @@ export function TurnCountdown({ endsAt, sessionId }: { endsAt: string; sessionId
 
   const m = Math.floor(left / 60_000);
   const s = Math.floor((left % 60_000) / 1000);
+  // Latido: mientras la persona sigue eligiendo, avisa que sigue aquí para no perder el turno por "inactividad".
+  useEffect(() => {
+    let cancelled = false;
+    async function beat() {
+      try {
+        const response = await fetch(`/api/cola/${sessionId}`, { cache: "no-store" });
+        const data = (await response.json()) as { state?: string };
+        if (!cancelled && (data.state === "finished" || data.state === "not_joined" || data.state === "waiting")) {
+          router.replace(`/comprar/${sessionId}/espera`);
+        }
+      } catch {
+        // Sin conexión un momento: se reintenta en el próximo latido.
+      }
+    }
+    const id = setInterval(beat, 20_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [router, sessionId]);
+
   return (
     <p className="rounded-xl border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-4 py-3 text-sm">
       Es tu turno: tienes{" "}

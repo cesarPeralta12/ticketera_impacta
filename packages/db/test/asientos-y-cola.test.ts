@@ -118,3 +118,74 @@ describe("cola virtual", () => {
     expect((await getQueueStatus(session.id, second)).state).toBe("admitted");
   });
 });
+
+describe("cola virtual: fantasmas y latidos", () => {
+  const ago = (seconds: number) => new Date(Date.now() - seconds * 1000);
+
+  it("quien dejó de preguntar no bloquea el primer lugar ni se lleva el turno", async () => {
+    const { session } = await createSeatedEvent({ sections: [{ name: "Platea", seats: 5 }], queue: 1 });
+    const [ghostA, ghostB, live] = [randomUUID(), randomUUID(), randomUUID()];
+    await joinQueue(session.id, ghostA);
+    await joinQueue(session.id, ghostB);
+    await joinQueue(session.id, live);
+    // Los dos primeros cerraron la pestaña hace 5 minutos.
+    await prisma.queueEntry.updateMany({ where: { sessionId: session.id, token: { in: [ghostA, ghostB] } }, data: { lastSeenAt: ago(300) } });
+
+    expect((await getQueueStatus(session.id, live)).state).toBe("admitted");
+    // Si el fantasma vuelve, conserva su lugar y ve la fila real (el admitido ya no cuenta como esperando).
+    expect(await getQueueStatus(session.id, ghostA)).toMatchObject({ state: "waiting", position: 1 });
+  });
+
+  it("quien volvió a tiempo conserva su posición original", async () => {
+    const { session } = await createSeatedEvent({ sections: [{ name: "Platea", seats: 5 }], queue: 1 });
+    const [first, second, third] = [randomUUID(), randomUUID(), randomUUID()];
+    await joinQueue(session.id, first);
+    await joinQueue(session.id, second);
+    await joinQueue(session.id, third);
+    expect((await getQueueStatus(session.id, first)).state).toBe("admitted");
+    await prisma.queueEntry.updateMany({ where: { sessionId: session.id, token: second }, data: { lastSeenAt: ago(60) } });
+    expect(await getQueueStatus(session.id, third)).toMatchObject({ state: "waiting", position: 1 }); // el segundo está ausente
+    expect(await getQueueStatus(session.id, second)).toMatchObject({ state: "waiting", position: 1 }); // y al volver recupera su lugar
+    expect(await getQueueStatus(session.id, third)).toMatchObject({ state: "waiting", position: 2 });
+  });
+
+  it("un admitido que se fue pierde el turno a los 2 minutos y pasa el siguiente", async () => {
+    const { session } = await createSeatedEvent({ sections: [{ name: "Platea", seats: 5 }], queue: 1 });
+    const [gone, next] = [randomUUID(), randomUUID()];
+    await joinQueue(session.id, gone);
+    await joinQueue(session.id, next);
+    expect((await getQueueStatus(session.id, gone)).state).toBe("admitted");
+    expect(await getQueueStatus(session.id, next)).toMatchObject({ state: "waiting" });
+
+    await prisma.queueEntry.updateMany({ where: { sessionId: session.id, token: gone }, data: { lastSeenAt: ago(180) } });
+    expect((await getQueueStatus(session.id, next)).state).toBe("admitted");
+    // Al volver, no se cuela: tiene que entrar de nuevo a la fila.
+    expect((await getQueueStatus(session.id, gone)).state).toBe("finished");
+  });
+
+  it("una persona ocupa un solo lugar aunque entre desde otro navegador", async () => {
+    const { session } = await createSeatedEvent({ sections: [{ name: "Platea", seats: 5 }], queue: 1 });
+    const customer = await prisma.customer.create({ data: { email: `cola-${randomUUID()}@prueba.test`, name: "Ana", passwordHash: "!" } });
+    const [phone, laptop, other] = [randomUUID(), randomUUID(), randomUUID()];
+    await joinQueue(session.id, phone, new Date(), customer.id);
+    await joinQueue(session.id, other);
+    await joinQueue(session.id, laptop, new Date(), customer.id); // misma persona, otro navegador
+
+    expect(await prisma.queueEntry.count({ where: { sessionId: session.id, customerId: customer.id } })).toBe(1);
+    // El lugar (el primero) pasó al navegador nuevo; el viejo ya no tiene lugar.
+    expect((await getQueueStatus(session.id, laptop)).state).toBe("admitted");
+    expect((await getQueueStatus(session.id, phone)).state).toBe("not_joined");
+  });
+
+  it("no se puede comprar con un turno abandonado, aunque no haya vencido", async () => {
+    const { session, sections } = await createSeatedEvent({ sections: [{ name: "Platea", seats: 5 }], queue: 1 });
+    const [platea] = sections;
+    const token = randomUUID();
+    await joinQueue(session.id, token);
+    expect((await getQueueStatus(session.id, token)).state).toBe("admitted");
+    await prisma.queueEntry.updateMany({ where: { sessionId: session.id, token }, data: { lastSeenAt: ago(180) } });
+    await expect(seatOrder(session.id, platea!.ticketType.id, [platea!.seats[0]!.id], 1, token)).rejects.toMatchObject({
+      code: "QUEUE_REQUIRED",
+    });
+  });
+});

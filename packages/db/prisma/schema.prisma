@@ -632,10 +632,16 @@ model QueueEntry {
   expiresAt   DateTime?
   /// Terminó (creó su orden): libera su lugar para el siguiente.
   completedAt DateTime?
+  /// Última vez que la página preguntó por su turno. Quien cierra la pestaña deja de preguntar:
+  /// sin esto, esos "fantasmas" bloquean la fila (esperando) o retienen un lugar (admitidos).
+  lastSeenAt  DateTime  @default(now())
+  /// Cuenta de quien está en la fila: una persona, un lugar (no sirve abrir varias pestañas).
+  customerId  String?
 
   session EventSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@unique([sessionId, token])
+  @@index([sessionId, customerId])
   @@index([sessionId, admittedAt, joinedAt])
 }
 
