@@ -58,6 +58,10 @@ export default async function EventDetailPage({ params }: Props) {
   const ready = event.sessions.length > 0 && event.sessions.every((s) => s.ticketTypes.length > 0);
   const tz = event.sessions[0]?.venue.timezone ?? DEFAULT_TIMEZONE;
   const accessOpen = clientAccessOpen(event);
+  // "Clientes" es el modo en que Impacta opera el evento para otro: solo en la organización de Impacta.
+  const clientMode = staff.organization.isPlatform;
+  // Un organizador no publica: envía a revisión y Impacta aprueba.
+  const needsReview = !staff.platform;
 
   return (
     <div className="space-y-8">
@@ -68,8 +72,8 @@ export default async function EventDetailPage({ params }: Props) {
           </Link>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">{event.title}</h1>
           <p className="text-sm text-[var(--ink-muted)]">
-            {CATEGORY_LABEL[event.category]} · {MODE_LABEL[event.mode]} ·{" "}
-            {event.client ? `Cliente: ${event.client.name}` : "Evento propio"}
+            {CATEGORY_LABEL[event.category]} · {MODE_LABEL[event.mode]}
+            {clientMode && <> · {event.client ? `Cliente: ${event.client.name}` : "Evento propio"}</>}
             {!guestList && (
               <>
                 {" "}
@@ -86,9 +90,41 @@ export default async function EventDetailPage({ params }: Props) {
         </div>
       </div>
 
+      {event.reviewNote && event.status === "DRAFT" && (
+        <div role="alert" className="rounded-lg border border-[var(--warn)]/40 bg-[var(--warn-soft)] px-5 py-4 text-sm">
+          <p className="font-semibold text-[var(--warn)]">Impacta devolvió este evento</p>
+          <p className="mt-1">{event.reviewNote}</p>
+          <p className="mt-1 text-xs text-[var(--ink-muted)]">Corrígelo y vuelve a enviarlo a revisión.</p>
+        </div>
+      )}
+
       <section className="card p-6">
         <h2 className="eyebrow mb-3">Publicación</h2>
-        {event.status === "PUBLISHED" ? (
+        {event.status === "PENDING_REVIEW" ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-sm text-[var(--ink-muted)]">
+              {needsReview
+                ? "Enviado a Impacta. Sale en la web cuando lo aprueben; si piden cambios, los verás aquí."
+                : "El organizador lo envió a revisión. Apruébalo aquí, o devuélvelo con observaciones desde Aprobaciones."}
+            </p>
+            {!needsReview && (
+              <ActionForm action={publishEventAction}>
+                <input type="hidden" name="eventId" value={event.id} />
+                <button type="submit" className="btn btn-primary">
+                  Aprobar y publicar
+                </button>
+              </ActionForm>
+            )}
+            {needsReview && (
+              <ActionForm action={unpublishEventAction}>
+                <input type="hidden" name="eventId" value={event.id} />
+                <button type="submit" className="btn">
+                  Retirar de revisión
+                </button>
+              </ActionForm>
+            )}
+          </div>
+        ) : event.status === "PUBLISHED" ? (
           <ActionForm action={unpublishEventAction} className="flex flex-wrap items-center gap-3">
             <input type="hidden" name="eventId" value={event.id} />
             <p className="text-sm text-[var(--ink-muted)]">
@@ -104,8 +140,11 @@ export default async function EventDetailPage({ params }: Props) {
           <ActionForm action={publishEventAction} className="flex flex-wrap items-center gap-3">
             <input type="hidden" name="eventId" value={event.id} />
             <button type="submit" disabled={!ready} className="btn btn-primary">
-              Publicar evento
+              {needsReview ? "Enviar a revisión" : "Publicar evento"}
             </button>
+            {needsReview && ready && (
+              <p className="text-sm text-[var(--ink-dim)]">Impacta lo revisa y lo publica en la web.</p>
+            )}
             {!ready && (
               <p className="text-sm text-[var(--ink-dim)]">
                 {guestList
@@ -192,55 +231,57 @@ export default async function EventDetailPage({ params }: Props) {
         )}
       </section>
 
-      <section className="card p-6">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="eyebrow">Espacio del cliente</h2>
-          {event.client &&
-            (accessOpen ? (
-              <span className="badge bg-[var(--accent-soft)] text-[var(--accent)]">
-                Abierto hasta {formatDateTime(event.clientAccessUntil!, tz)}
-              </span>
-            ) : (
-              <span className="badge bg-[var(--surface-2)] text-[var(--ink-dim)]">Cerrado</span>
-            ))}
-        </div>
-        {!event.client ? (
-          <p className="text-sm text-[var(--ink-muted)]">
-            Es un evento propio. Para que un organizador lo siga, asígnale un cliente en &ldquo;Editar datos del
-            evento&rdquo;.
-          </p>
-        ) : (
-          <ActionForm action={updateClientAccessAction} successMessage="Guardado." className="flex flex-wrap items-end gap-4">
-            <input type="hidden" name="eventId" value={event.id} />
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" name="enabled" defaultChecked={event.clientAccessEnabled} className="h-4 w-4" />
-              {event.client.name} puede ver ventas, ingresos y reportes de este evento
-            </label>
-            <label className="label">
-              Hasta
-              <input
-                type="datetime-local"
-                name="until"
-                defaultValue={utcToZonedInput(event.clientAccessUntil ?? suggestedUntil, tz)}
-                className="field"
-              />
-            </label>
-            <button type="submit" className="btn btn-dark">
-              Guardar
-            </button>
-            <p className="basis-full text-xs text-[var(--ink-dim)]">
-              Es temporal: se cierra sola en esa fecha (por defecto, 24 h después de la última función). Las cuentas del
-              cliente se crean en Usuarios con el rol &ldquo;Cliente / organizador&rdquo;.
+      {clientMode && (
+        <section className="card p-6">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="eyebrow">Espacio del cliente</h2>
+            {event.client &&
+              (accessOpen ? (
+                <span className="badge bg-[var(--accent-soft)] text-[var(--accent)]">
+                  Abierto hasta {formatDateTime(event.clientAccessUntil!, tz)}
+                </span>
+              ) : (
+                <span className="badge bg-[var(--surface-2)] text-[var(--ink-dim)]">Cerrado</span>
+              ))}
+          </div>
+          {!event.client ? (
+            <p className="text-sm text-[var(--ink-muted)]">
+              Es un evento propio. Para que un organizador lo siga, asígnale un cliente en &ldquo;Editar datos del
+              evento&rdquo;.
             </p>
-          </ActionForm>
-        )}
-      </section>
+          ) : (
+            <ActionForm action={updateClientAccessAction} successMessage="Guardado." className="flex flex-wrap items-end gap-4">
+              <input type="hidden" name="eventId" value={event.id} />
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="enabled" defaultChecked={event.clientAccessEnabled} className="h-4 w-4" />
+                {event.client.name} puede ver ventas, ingresos y reportes de este evento
+              </label>
+              <label className="label">
+                Hasta
+                <input
+                  type="datetime-local"
+                  name="until"
+                  defaultValue={utcToZonedInput(event.clientAccessUntil ?? suggestedUntil, tz)}
+                  className="field"
+                />
+              </label>
+              <button type="submit" className="btn btn-dark">
+                Guardar
+              </button>
+              <p className="basis-full text-xs text-[var(--ink-dim)]">
+                Es temporal: se cierra sola en esa fecha (por defecto, 24 h después de la última función). Las cuentas del
+                cliente se crean en Usuarios con el rol &ldquo;Cliente / organizador&rdquo;.
+              </p>
+            </ActionForm>
+          )}
+        </section>
+      )}
 
       <details className="card p-6">
         <summary className="cursor-pointer text-sm font-medium">Editar datos del evento</summary>
         <ActionForm action={updateEventAction} successMessage="Cambios guardados." className="mt-5 flex flex-col gap-5">
           <input type="hidden" name="eventId" value={event.id} />
-          <EventFields defaults={event} clients={clients} />
+          <EventFields defaults={event} clients={clientMode ? clients : null} />
           <button type="submit" className="btn btn-primary w-fit">
             Guardar cambios
           </button>

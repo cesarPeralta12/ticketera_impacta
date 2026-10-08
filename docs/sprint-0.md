@@ -29,6 +29,20 @@ Aplicado completo:
 - **Registro del dispositivo** en cada lectura; **reportes** de ausentes y rechazos.
 - "Mis entradas" → **"Mis eventos"** (el enlace viejo redirige).
 
+## Organizadores y preventa (2026-10-08)
+
+- **Varios organizadores**, cada uno una organización aislada: sus recintos, eventos, ventas, puerta,
+  boletería y reportes. Un organizador nuevo empieza vacío. Probado: no ve ni puede abrir nada ajeno.
+- **Impacta = plataforma**: Resumen general, Organizadores (alta, suspensión, "Entrar"), Aprobaciones,
+  Ventas e Ingresos en puerta de todos, en vivo.
+- **Solo Impacta crea cuentas** (de Impacta o de un organizador), con contraseña temporal que se cambia
+  al entrar. Cualquier cuenta puede cambiar su contraseña.
+- **Revisión**: el organizador envía su evento; Impacta lo aprueba (sale en la web) o lo devuelve con
+  una observación.
+- **Preventa** por tipo de entrada: fecha de fin (y de inicio opcional); la General empieza sola al
+  terminar; en butacas numeradas un solo precio a la vez. Web, boletería y mapa la muestran.
+- Se mantiene el modo "Clientes" (Impacta opera el evento y el cliente solo mira).
+
 ## Integración con el prototipo del compañero (2026-10-01)
 
 **Se trajo:**
@@ -79,6 +93,8 @@ Aplicado completo:
 - [ ] **Conciliación** de pagos con la pasarela real.
 - [ ] **https** en el entorno de pruebas: la cámara del celular no funciona por http en la red local.
 - [ ] **Excel nativo (.xlsx)** para invitados, si pegar o CSV no alcanza.
+- [ ] **Invitación por email** al crear un organizador o una cuenta (hoy se le pasa la contraseña temporal a mano).
+- [ ] **Comisión de Impacta** por organizador y liquidaciones (cuánto se le paga a cada uno).
 - [ ] **Editor de butacas**: editar/mover secciones existentes, zoom, deshacer (mejoras ya conversadas con el cliente; propuesta: Konva.js).
 - [ ] **Recuperar contraseña** y verificación de email.
 - [ ] **Hosting**: Vercel + Postgres administrado con pooler de conexiones.

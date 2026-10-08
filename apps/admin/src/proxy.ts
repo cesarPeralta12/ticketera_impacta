@@ -6,9 +6,9 @@ const { auth } = NextAuth(authConfig);
 
 /** Secciones a las que puede entrar cada rol restringido (el resto, a su pantalla de inicio). */
 const RESTRICTED: Record<string, { home: string; allowed: string[] }> = {
-  OPERATOR: { home: "/puerta", allowed: ["/puerta", "/api/puerta"] },
-  CASHIER: { home: "/boleteria", allowed: ["/boleteria"] },
-  CLIENT: { home: "/cliente", allowed: ["/cliente"] },
+  OPERATOR: { home: "/puerta", allowed: ["/puerta", "/api/puerta", "/cuenta"] },
+  CASHIER: { home: "/boleteria", allowed: ["/boleteria", "/cuenta"] },
+  CLIENT: { home: "/cliente", allowed: ["/cliente", "/cuenta"] },
 };
 
 /**

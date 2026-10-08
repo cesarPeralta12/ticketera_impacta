@@ -371,6 +371,7 @@ async function main() {
                   capacity: t.capacity ?? section.capacity,
                   maxPerOrder: t.maxPerOrder ?? 10,
                   salesEndAt: t.salesEndsInDays === undefined ? null : laPaz(t.salesEndsInDays, 23),
+                  presale: t.salesEndsInDays !== undefined,
                   sortOrder: i,
                 };
               }),

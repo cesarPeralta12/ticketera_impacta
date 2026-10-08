@@ -4,6 +4,7 @@ export { DomainError, requireEnv } from "./operations/shared";
 export * from "./operations/access";
 export * from "./operations/accounts";
 export * from "./operations/orders";
+export * from "./operations/organizations";
 export * from "./operations/payments";
 export * from "./operations/queue";
 export * from "./operations/report";

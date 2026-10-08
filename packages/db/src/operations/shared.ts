@@ -17,7 +17,10 @@ export class DomainError extends Error {
       | "ORDER_NOT_PAYABLE"
       | "ORDER_EXPIRED"
       | "PAYMENT_NOT_FOUND"
-      | "PAYMENT_MISMATCH",
+      | "PAYMENT_MISMATCH"
+      | "NOT_FOUND"
+      | "INVALID_STATE"
+      | "DUPLICATE",
     message: string,
   ) {
     super(message);

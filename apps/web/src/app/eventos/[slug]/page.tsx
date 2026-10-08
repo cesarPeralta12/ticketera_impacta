@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { CATEGORY_COLOR, CATEGORY_LABEL, formatDate, formatMoney } from "@ticketera/core";
+import { CATEGORY_COLOR, CATEGORY_LABEL, formatDate, formatDateTime, formatMoney, saleState } from "@ticketera/core";
 import { getSessionAvailability } from "@ticketera/db";
 import { EventImage } from "@/components/event-image";
 import { getPublishedEvent } from "@/lib/events";
@@ -28,9 +28,13 @@ export default async function EventPage({ params }: Props) {
       .filter((s) => s.startsAt > now)
       .map(async (s) => {
         const remaining = await getSessionAvailability(s.id, now);
-        const left = s.ticketTypes.reduce((sum, t) => sum + (remaining.get(t.id) ?? 0), 0);
-        const minPrice = s.ticketTypes.reduce<number | null>((m, t) => (m === null || t.unitAmount < m ? t.unitAmount : m), null);
-        return { ...s, left, minPrice };
+        // Solo lo que se vende ahora: una preventa vencida no cuenta, una general que empieza después tampoco.
+        const open = s.ticketTypes.filter((t) => saleState(t, now) === "open");
+        const left = open.reduce((sum, t) => sum + (remaining.get(t.id) ?? 0), 0);
+        const priced = open.length ? open : s.ticketTypes.filter((t) => saleState(t, now) !== "closed");
+        const minPrice = priced.reduce<number | null>((m, t) => (m === null || t.unitAmount < m ? t.unitAmount : m), null);
+        const presale = open.find((t) => t.presale && t.salesEndAt);
+        return { ...s, left, minPrice, presaleUntil: presale?.salesEndAt ?? null };
       }),
   );
   const color = CATEGORY_COLOR[event.category] ?? CATEGORY_COLOR.OTRO;
@@ -60,6 +64,9 @@ export default async function EventPage({ params }: Props) {
               {venue.address && ` · ${venue.address}`}
               {venue.city && `, ${venue.city}`}
             </p>
+          )}
+          {!event.organization.isPlatform && (
+            <p className="text-sm text-[var(--ink-dim)]">Organiza: {event.organization.name}</p>
           )}
         </div>
       </div>
@@ -102,6 +109,11 @@ export default async function EventPage({ params }: Props) {
                         )}
                         {s.queueEnabled && <span className="ml-2 text-[var(--accent)]">Fila virtual</span>}
                       </p>
+                      {s.presaleUntil && (
+                        <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-[var(--accent-2)]">
+                          Preventa hasta {formatDateTime(s.presaleUntil, s.venue.timezone)}
+                        </p>
+                      )}
                     </div>
                     <span
                       className={

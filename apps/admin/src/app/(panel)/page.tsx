@@ -2,11 +2,14 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { formatDateTime, formatMoney, sellableCapacity } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
-import { ROLES, requireStaff } from "@/lib/session";
+import { GlobalDashboard } from "@/components/global-dashboard";
+import { ROLES, isGlobalView, requireStaff } from "@/lib/session";
 
 export default async function DashboardPage() {
   await connection();
   const staff = await requireStaff(ROLES.manage);
+  // Impacta en su propia organización ve a todos los organizadores juntos.
+  if (isGlobalView(staff)) return <GlobalDashboard name={staff.name} />;
   const org = staff.organization;
   const byOrg = { event: { organizationId: org.id } };
 

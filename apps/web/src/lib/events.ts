@@ -1,3 +1,4 @@
+import { saleState } from "@ticketera/core";
 import { prisma, type EventCategory } from "@ticketera/db";
 
 /**
@@ -7,14 +8,15 @@ import { prisma, type EventCategory } from "@ticketera/db";
 export async function listPublishedEvents(category?: EventCategory) {
   const now = new Date();
   const events = await prisma.event.findMany({
-    where: { status: "PUBLISHED", mode: "TICKETING", ...(category ? { category } : {}) },
+    // Solo de organizadores activos: uno suspendido deja de mostrarse.
+    where: { status: "PUBLISHED", mode: "TICKETING", organization: { status: "ACTIVE" }, ...(category ? { category } : {}) },
     include: {
       sessions: {
         where: { cancelledAt: null, startsAt: { gte: now } },
         orderBy: { startsAt: "asc" },
         include: {
           venue: { select: { name: true, city: true, timezone: true } },
-          ticketTypes: { select: { unitAmount: true, currency: true } },
+          ticketTypes: { select: { unitAmount: true, currency: true, salesStartAt: true, salesEndAt: true } },
         },
       },
     },
@@ -24,7 +26,8 @@ export async function listPublishedEvents(category?: EventCategory) {
     .flatMap((event) => {
       const [next] = event.sessions;
       if (!next) return [];
-      const prices = event.sessions.flatMap((s) => s.ticketTypes);
+      // "Desde Bs X": sin contar preventas que ya terminaron.
+      const prices = event.sessions.flatMap((s) => s.ticketTypes).filter((t) => saleState(t) !== "closed");
       const minPrice = prices.reduce<(typeof prices)[number] | null>(
         (min, t) => (min === null || t.unitAmount < min.unitAmount ? t : min),
         null,
@@ -46,8 +49,9 @@ export async function listPublishedEvents(category?: EventCategory) {
 
 export async function getPublishedEvent(slug: string) {
   return prisma.event.findFirst({
-    where: { slug, status: "PUBLISHED", mode: "TICKETING" },
+    where: { slug, status: "PUBLISHED", mode: "TICKETING", organization: { status: "ACTIVE" } },
     include: {
+      organization: { select: { name: true, isPlatform: true } },
       sessions: {
         where: { cancelledAt: null },
         orderBy: { startsAt: "asc" },

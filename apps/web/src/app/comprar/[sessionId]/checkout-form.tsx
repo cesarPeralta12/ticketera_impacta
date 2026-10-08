@@ -14,6 +14,10 @@ export type GeneralType = {
   currency: string;
   /** Máximo seleccionable: el menor entre disponibles y el límite por compra. */
   max: number;
+  /** Preventa: hasta cuándo se vende (texto ya formateado). */
+  presaleUntil: string | null;
+  /** Todavía no empieza: desde cuándo se vende (texto ya formateado). */
+  opensAt: string | null;
 };
 
 export type SeatedType = PickerSection & { maxPerOrder: number };
@@ -96,7 +100,9 @@ export function CheckoutForm({
             {seated.map((t) => (
               <li key={t.ticketTypeId} className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color }} />
-                {t.name}: <span className="text-[var(--ink)]">{formatMoney(t.unitAmount, t.currency)}</span>
+                {t.name}
+                {t.presale && <span className="font-semibold text-[var(--accent-2)]">(preventa)</span>}:{" "}
+                <span className="text-[var(--ink)]">{formatMoney(t.unitAmount, t.currency)}</span>
                 {(seats[t.ticketTypeId]?.length ?? 0) > 0 && (
                   <span className="text-[var(--accent)]">× {seats[t.ticketTypeId]!.length}</span>
                 )}
@@ -116,11 +122,25 @@ export function CheckoutForm({
             {general.map((type) => (
               <li key={type.id} className="flex items-center justify-between gap-4 px-5 py-4">
                 <div>
-                  <p className="font-semibold">{type.name}</p>
+                  <p className="font-semibold">
+                    {type.name}
+                    {type.presaleUntil && (
+                      <span className="ml-2 rounded-full bg-[var(--accent-2)]/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--accent-2)]">
+                        Preventa
+                      </span>
+                    )}
+                  </p>
                   {type.detail && <p className="text-xs text-[var(--ink-dim)]">{type.detail}</p>}
+                  {type.presaleUntil && <p className="text-xs text-[var(--accent-2)]">Hasta {type.presaleUntil}</p>}
                   <p className="font-display text-lg text-[var(--accent)]">{formatMoney(type.unitAmount, type.currency)}</p>
                 </div>
-                {type.max === 0 ? (
+                {type.opensAt ? (
+                  <span className="text-right text-sm text-[var(--ink-dim)]">
+                    A la venta
+                    <br />
+                    desde {type.opensAt}
+                  </span>
+                ) : type.max === 0 ? (
                   <span className="text-sm text-[var(--ink-dim)]">Agotado</span>
                 ) : (
                   <select

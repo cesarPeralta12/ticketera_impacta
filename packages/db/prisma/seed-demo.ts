@@ -8,6 +8,8 @@
  * Cuentas de prueba (solo desarrollo local):
  *   Cliente  cliente@impacta.test  / Cliente2026!   (CLIENT: Producciones Andinas)
  *   Cajero   caja@impacta.test     / Caja2026!      (CASHIER: solo boletería)
+ *   Organizador  organizador@andeslive.test / Organizador2026!  (ADMIN de "Andes Live")
+ *   Organizador  organizador@cumbre.test    / Organizador2026!  (ADMIN de "Cumbre Eventos")
  * Con SEED_PASSWORD definida, todas las cuentas usan esa contraseña (ver seedPassword).
  */
 import {
@@ -56,7 +58,7 @@ const GUESTS = [
 async function ensureStaff(
   db: Db,
   orgId: string,
-  data: { email: string; name: string; password: string; role: "CLIENT" | "CASHIER"; clientId?: string },
+  data: { email: string; name: string; password: string; role: "CLIENT" | "CASHIER" | "ADMIN"; clientId?: string },
 ) {
   // Devuelve la cuenta solo si la creó (si ya existía, no la toca).
   if (await db.prisma.staffUser.findUnique({ where: { email: data.email } })) return null;
@@ -176,5 +178,128 @@ export async function seedArchitectureDemo(db: Db, orgId: string) {
     log.push(`"${event.title}" con ${GUESTS.length} invitados`);
   }
 
+  // ── Preventas: los tipos "Preventa" con fecha de fin se muestran como tales ──
+  const presales = await prisma.ticketType.updateMany({
+    where: { name: "Preventa", salesEndAt: { not: null }, presale: false, session: { event: { organizationId: orgId } } },
+    data: { presale: true },
+  });
+  if (presales.count) log.push(`${presales.count} preventa(s) marcada(s)`);
+
+  log.push(...(await seedOrganizers(db)));
+  return log;
+}
+
+/**
+ * Dos organizadores de ejemplo, cada uno aislado del otro: Andes Live con un evento con
+ * preventa esperando la aprobación de IMPACTA, y Cumbre Eventos con un evento publicado.
+ */
+async function seedOrganizers(db: Db) {
+  const { prisma } = db;
+  const log: string[] = [];
+  const organizers = [
+    {
+      slug: "andes-live",
+      name: "Andes Live Producciones",
+      taxId: "3456789012",
+      email: "organizador@andeslive.test",
+      admin: "Mariana Quispe (Andes Live)",
+      venue: { name: "Coliseo Julio Borelli", city: "La Paz", section: "Cancha", capacity: 600 },
+      event: {
+        title: "Festival Andes Live 2026",
+        description: "Rock y fusión andina en un solo escenario: seis bandas bolivianas en vivo.",
+        category: "FESTIVAL" as const,
+        imageUrl: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=1200&q=80",
+        status: "PENDING_REVIEW" as const,
+        days: 45,
+      },
+    },
+    {
+      slug: "cumbre-eventos",
+      name: "Cumbre Eventos",
+      taxId: "4567890123",
+      email: "organizador@cumbre.test",
+      admin: "Carlos Mendoza (Cumbre Eventos)",
+      venue: { name: "Salón Cumbre", city: "Cochabamba", section: "General", capacity: 250 },
+      event: {
+        title: "Noche de Gala Cumbre",
+        description: "Cena show con orquesta en vivo. Una noche para celebrar.",
+        category: "CONCIERTO" as const,
+        imageUrl: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1200&q=80",
+        status: "PUBLISHED" as const,
+        days: 30,
+      },
+    },
+  ];
+
+  for (const o of organizers) {
+    if (await prisma.organization.findUnique({ where: { slug: o.slug } })) continue;
+    const organization = await prisma.organization.create({
+      data: { name: o.name, slug: o.slug, currency: DEFAULT_CURRENCY, taxId: o.taxId, contactEmail: o.email },
+    });
+    await ensureStaff(db, organization.id, {
+      email: o.email,
+      name: o.admin,
+      password: seedPassword("Organizador2026!"),
+      role: "ADMIN",
+    });
+    const venue = await prisma.venue.create({
+      data: {
+        organizationId: organization.id,
+        name: o.venue.name,
+        city: o.venue.city,
+        timezone: DEFAULT_TIMEZONE,
+        accessPoints: { create: [{ name: "Puerta principal" }] },
+        sections: { create: { name: o.venue.section, seatingMode: "GENERAL_ADMISSION", capacity: o.venue.capacity } },
+      },
+      include: { sections: true },
+    });
+    const section = venue.sections[0]!;
+    const presaleEnds = laPaz(Math.min(15, o.event.days - 5), 23);
+    await prisma.event.create({
+      data: {
+        organizationId: organization.id,
+        slug: slugify(o.event.title),
+        title: o.event.title,
+        description: o.event.description,
+        category: o.event.category,
+        imageUrl: o.event.imageUrl,
+        status: o.event.status,
+        publishedAt: o.event.status === "PUBLISHED" ? new Date() : null,
+        submittedAt: o.event.status === "PENDING_REVIEW" ? new Date() : null,
+        sessions: {
+          create: {
+            venueId: venue.id,
+            startsAt: laPaz(o.event.days, 21),
+            doorsOpenAt: laPaz(o.event.days, 19),
+            ticketTypes: {
+              create: [
+                // Preventa más barata hasta una fecha; la General empieza cuando termina.
+                {
+                  name: "Preventa",
+                  sectionId: section.id,
+                  unitAmount: 6_000,
+                  currency: DEFAULT_CURRENCY,
+                  capacity: Math.floor(o.venue.capacity / 3),
+                  presale: true,
+                  salesEndAt: presaleEnds,
+                  sortOrder: 0,
+                },
+                {
+                  name: "General",
+                  sectionId: section.id,
+                  unitAmount: 9_000,
+                  currency: DEFAULT_CURRENCY,
+                  capacity: o.venue.capacity,
+                  salesStartAt: presaleEnds,
+                  sortOrder: 1,
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+    log.push(`organizador ${o.name} (${o.event.status === "PUBLISHED" ? "evento publicado" : "evento esperando aprobación"})`);
+  }
   return log;
 }
