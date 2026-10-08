@@ -18,6 +18,8 @@ export type GeneralType = {
   /** Ej. "20% menos hasta 20 oct, 23:59". */
   discountLabel: string | null;
   currency: string;
+  /** Lugares que quedan de esta entrada (considerando el aforo compartido de la zona). */
+  left: number;
   /** Máximo seleccionable: el menor entre disponibles y el límite por compra. */
   max: number;
   /** Preventa: hasta cuándo se vende (texto ya formateado). */
@@ -146,6 +148,11 @@ export function CheckoutForm({
                     {formatMoney(type.unitAmount, type.currency)}
                   </p>
                   {type.discountLabel && <p className="text-xs font-semibold text-[var(--accent-2)]">Preventa: {type.discountLabel}</p>}
+                  {!type.opensAt && type.left > 0 && (
+                    <p className={`text-xs ${type.left <= 20 ? "font-bold text-[var(--accent-2)]" : "text-[var(--ink-dim)]"}`}>
+                      {type.left <= 20 ? `¡Últimos ${type.left} lugares!` : `Quedan ${type.left}`}
+                    </p>
+                  )}
                 </div>
                 {type.opensAt ? (
                   <span className="text-right text-sm text-[var(--ink-dim)]">

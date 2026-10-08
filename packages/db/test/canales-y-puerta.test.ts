@@ -6,6 +6,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { randomCode } from "@ticketera/core";
 import { prisma } from "../src/client";
 import { scanTicket } from "../src/operations/access";
+import { getZoneAvailability } from "../src/operations/orders";
 import { getEventReport } from "../src/operations/report";
 import { cancelGuestTicket, issueGuestTickets, sellAtBoxOffice } from "../src/operations/sales";
 import { buyer, createPendingOrder, createGeneralAdmissionEvent } from "./fixtures";
@@ -190,5 +191,26 @@ describe("puertas", () => {
     expect((await prisma.ticket.findUniqueOrThrow({ where: { id: ticket.id } })).status).toBe("VALID");
     const saved = await prisma.accessScan.findFirstOrThrow({ where: { ticketId: ticket.id } });
     expect([saved.result, saved.offline]).toEqual(["NOT_FOUND", true]);
+  });
+});
+
+describe("zonas sin asientos: restantes", () => {
+  it("el aforo de la zona cuenta lo vendido y lo reservado de todos sus tipos de entrada", async () => {
+    const { session, types } = await createGeneralAdmissionEvent({
+      sectionCapacity: 10,
+      types: [
+        { name: "Preventa", capacity: 6 },
+        { name: "General", capacity: 10 },
+      ],
+    });
+    const cashier = await staff();
+    await sellAtBoxOffice(
+      { sessionId: session.id, items: [{ ticketTypeId: types[0]!.id, quantity: 3 }], buyer: buyer(1) },
+      { staffId: cashier.id, method: "EFECTIVO" },
+    );
+    await createPendingOrder({ sessionId: session.id, items: [{ ticketTypeId: types[1]!.id, quantity: 2 }], buyer: buyer(2) });
+
+    const [zone] = await getZoneAvailability(session.id);
+    expect(zone).toMatchObject({ name: "Cancha", capacity: 10, sold: 5, remaining: 5 });
   });
 });

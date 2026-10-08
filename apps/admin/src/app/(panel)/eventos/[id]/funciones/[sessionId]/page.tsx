@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { currentPrice, formatDateTime, formatMoney, saleState, utcToZonedInput, type SaleState } from "@ticketera/core";
-import { getSessionAvailability, prisma } from "@ticketera/db";
+import { getSessionAvailability, getZoneAvailability, prisma } from "@ticketera/db";
 import { AccessMethodsField } from "@/components/access-methods-field";
 import { ActionForm } from "@/components/action-form";
 import { SeatMapPreview, positioned } from "@/components/seat-map-preview";
@@ -43,8 +43,9 @@ export default async function SessionPage({ params }: Props) {
   });
   if (!session) notFound();
 
-  const [remaining, guests] = await Promise.all([
+  const [remaining, zones, guests] = await Promise.all([
     getSessionAvailability(session.id),
+    getZoneAvailability(session.id),
     prisma.ticket.count({ where: { sessionId: session.id, order: { channel: "GUEST" }, status: { in: ["VALID", "USED"] } } }),
   ]);
   const guestList = session.event.mode === "GUEST_LIST";
@@ -97,6 +98,34 @@ export default async function SessionPage({ params }: Props) {
         </span>
         <span className="font-mono text-sm text-[var(--accent)]">{guests} invitado(s) →</span>
       </Link>
+
+      {zones.length > 0 && (
+        <section className="card p-6">
+          <h2 className="eyebrow mb-1">Zonas sin asientos (de pie)</h2>
+          <p className="mb-4 text-sm text-[var(--ink-muted)]">Aforo de cada zona y cuántos lugares quedan, sumando todos sus tipos de entrada (preventa, general…).</p>
+          <ul className="space-y-3">
+            {zones.map((z) => {
+              const pct = z.capacity === 0 ? 0 : Math.round((z.sold / z.capacity) * 100);
+              return (
+                <li key={z.id}>
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="flex items-center gap-2 font-medium">
+                      <span className="h-3 w-3 rounded-full" style={{ background: z.color }} />
+                      {z.name}
+                    </span>
+                    <span className="font-mono text-sm">
+                      <strong>{z.remaining}</strong> restantes <span className="text-[var(--ink-dim)]">· {z.sold} de {z.capacity} ({pct}%)</span>
+                    </span>
+                  </div>
+                  <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[var(--surface-2)]">
+                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: z.remaining === 0 ? "var(--danger)" : z.color }} />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <section className="card p-6">
         <h2 className="eyebrow mb-4">Tipos de entrada</h2>

@@ -9,6 +9,25 @@ export async function getSessionAvailability(sessionId: string, now = new Date()
   return remainingByType(await loadInventory(prisma, sessionId, now));
 }
 
+/**
+ * Zonas sin asientos (de pie) de una función con su aforo y cuánto queda. Cuenta lo vendido y lo reservado
+ * por todos los tipos de entrada de la zona (Preventa + General comparten el mismo aforo).
+ */
+export async function getZoneAvailability(sessionId: string, now = new Date()) {
+  const [lines, sections] = await Promise.all([
+    loadInventory(prisma, sessionId, now),
+    prisma.section.findMany({
+      where: { seatingMode: "GENERAL_ADMISSION", ticketTypes: { some: { sessionId } } },
+      orderBy: { sortOrder: "asc" },
+      select: { id: true, name: true, color: true, capacity: true },
+    }),
+  ]);
+  return sections.map((s) => {
+    const sold = lines.filter((l) => l.sectionId === s.id).reduce((sum, l) => sum + l.used, 0);
+    return { id: s.id, name: s.name, color: s.color, capacity: s.capacity, sold, remaining: Math.max(0, s.capacity - sold) };
+  });
+}
+
 /** Butacas vendidas o reservadas en una función, para pintar el mapa (solo para mostrar). */
 export async function getTakenSeatIds(sessionId: string, now = new Date()) {
   const items = await prisma.orderItem.findMany({

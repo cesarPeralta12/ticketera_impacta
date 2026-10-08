@@ -70,6 +70,7 @@ export default async function BuyPage({ params }: Props) {
       listAmount: currentPrice(t, now).discountPercent ? t.unitAmount : null,
       discountLabel: discountLabel(t, now, tz),
       currency: t.currency,
+      left: remaining.get(t.id) ?? 0,
       max: saleState(t) === "open" ? Math.min(remaining.get(t.id) ?? 0, t.maxPerOrder, MAX_TICKETS_PER_ORDER) : 0,
       presaleUntil: t.presale && t.salesEndAt ? formatDateTime(t.salesEndAt, tz) : null,
       opensAt: saleState(t) === "scheduled" && t.salesStartAt ? formatDateTime(t.salesStartAt, tz) : null,
