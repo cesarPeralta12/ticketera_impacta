@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { checkoutSchema } from "@ticketera/core";
 import { DomainError, createPendingOrder, prisma } from "@ticketera/db";
 import { auth } from "@/lib/auth";
+import { activeProvider, isDirectPass, payDirect } from "@/lib/payments";
 import { queueCookieName } from "@/lib/queue-cookie";
 
 export type CheckoutState = {
@@ -65,6 +66,15 @@ export async function createOrderAction(_prev: CheckoutState, formData: FormData
       return { error: error.message, refresh: error.code === "SEAT_TAKEN" || error.code === "SOLD_OUT" };
     }
     throw error;
+  }
+  // Pase directo: se confirma en el mismo paso. Con una pasarela real, la orden queda reservada y la
+  // página de la orden lleva a pagar. Si el pase falla, la orden sigue reservada y se puede pagar desde ahí.
+  if (isDirectPass(activeProvider())) {
+    try {
+      await payDirect(code);
+    } catch (error) {
+      if (!(error instanceof DomainError)) throw error;
+    }
   }
   redirect(`/orden/${code}`);
 }

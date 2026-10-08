@@ -4,12 +4,16 @@ import { redirect } from "next/navigation";
 import { DomainError, getOrderByCode, prisma, startPayment } from "@ticketera/db";
 import { auth } from "@/lib/auth";
 import { sendTicketsEmail } from "@/lib/mail";
-import { activeProvider, checkoutUrl } from "@/lib/payments";
+import { activeProvider, checkoutUrl, isDirectPass, payDirect } from "@/lib/payments";
 
 export async function payOrderAction(formData: FormData) {
   const code = String(formData.get("code"));
   let url: string;
   try {
+    if (isDirectPass()) {
+      await payDirect(code);
+      redirect(`/orden/${code}`);
+    }
     url = checkoutUrl(await startPayment(code, activeProvider()));
   } catch (error) {
     // La orden venció o ya no es pagable: la página de la orden muestra el estado actual.

@@ -63,11 +63,10 @@ Cada rol entra directo a su pantalla y no puede abrir las de los demás. El port
 ## Qué probar
 
 1. **Butacas**: http://localhost:3000 → inicia sesión (comprar exige cuenta con carnet; usa `comprador@impacta.test` o crea una) → *La Deliciosa Historia del Xocolate* → Comprar → elige
-   butacas en el mapa → Reservar y pagar → en la *pasarela simulada*, Aprobar → entradas con QR y butaca.
+   butacas en el mapa → Reservar y pagar (pase directo: queda pagada en el acto, sin cobrar) → entradas con QR y butaca, y llegan por correo.
 2. **Entrada general y cupo compartido**: *Loko Fest* (Preventa y General comparten el Campo).
 3. **Cola virtual**: *Loko Fest* y *Alok* tienen sala de espera. Para verla esperar, baja el
    "cupo simultáneo" de la función a 1 en el panel y entra desde dos navegadores.
-4. **Pago demorado**: en la pasarela, "Aprobar con webhook demorado": la orden espera la confirmación.
 5. **Panel**: crea un evento → agrega una función → carga precios por sección → Publicar → aparece en el sitio.
 6. **Recintos**: diseña secciones de butacas (grilla o arco) con el editor visual.
 7. **Puerta (app móvil)**: en el panel, *Usuarios → Funciones y teléfonos* asigna funciones (y puerta) al
@@ -117,7 +116,7 @@ Cada rol entra directo a su pantalla y no puede abrir las de los demás. El port
 - **Cola virtual**: en Postgres (funciona con varios servidores). El token lo genera el servidor
   (cookie httpOnly) y **la creación de la orden exige un turno vigente**: no se puede saltar
   llamando a la acción directamente. La admisión se serializa: nunca entran más que el cupo.
-- **Pagos**: solo el webhook verificado confirma un pago. Idempotente; resuelve el pago tardío
+- **Pagos**: hoy rige el *pase directo* (sin cobro; ver docs/pasarela-de-pago.md). Con una pasarela real, solo el webhook verificado confirma un pago. Idempotente; resuelve el pago tardío
   (si ya no hay cupo o la butaca se vendió, la orden queda expirada y el pago se marca para reembolso).
 - **Sesiones**: comprador y staff en tablas, cookies y secretos distintos. El panel verifica el
   rol contra la base en cada acción (una cuenta desactivada pierde el acceso al instante) y no
@@ -204,9 +203,9 @@ Dos aplicaciones desde este mismo repo (Base Directory `/`) y una base PostgreSQ
 | Start Command | `npm run start -w @ticketera/web` | `npm run start -w @ticketera/admin` |
 | Pre-deployment | `npm run db:deploy` (migraciones) | — |
 
-Variables en las dos: `DATABASE_URL`, `WEB_URL` (URL pública de la web), `PAYMENT_PROVIDER=mock`,
+Variables en las dos: `DATABASE_URL`, `WEB_URL` (URL pública de la web), `PAYMENT_PROVIDER=directo`,
 `NIXPACKS_NODE_VERSION=22` y un secreto aleatorio distinto para `TICKET_QR_SECRET`,
-`PAYMENT_MOCK_SECRET`, `WEB_AUTH_SECRET` y `ADMIN_AUTH_SECRET`.
+`WEB_AUTH_SECRET` y `ADMIN_AUTH_SECRET`.
 
 Datos de demostración en un servidor nuevo (la semilla **borra todo**; sin `SEED_PASSWORD` se
 niega, porque las contraseñas de prueba de arriba son públicas). Desde la terminal de la app web:

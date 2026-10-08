@@ -26,8 +26,7 @@ jobs:
       # Valores de prueba: el CI no maneja secretos reales.
       WEB_URL: http://localhost:3000
       TICKET_QR_SECRET: ci-qr-secret
-      PAYMENT_PROVIDER: mock
-      PAYMENT_MOCK_SECRET: ci-mock-secret
+      PAYMENT_PROVIDER: directo
       WEB_AUTH_SECRET: ci-web-auth-secret
       ADMIN_AUTH_SECRET: ci-admin-auth-secret
     steps:

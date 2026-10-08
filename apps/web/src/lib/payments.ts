@@ -1,79 +1,62 @@
 /**
- * Pasarelas de pago. Hoy solo existe la simulada ("mock"); la real se agrega aquí cuando
- * se decida en el Sprint 0, implementando lo mismo: URL de checkout + webhook verificado.
+ * Pagos. Hoy el único medio es el **pase directo**: la compra queda pagada en el acto, sin cobrar
+ * (sirve mientras no hay pasarela real; el cobro se hace por fuera o no se hace). Todo lo demás del
+ * sistema ya está listo para una pasarela real:
+ *
+ *  - Un pago es un intento (Payment) con proveedor, monto y estado; las órdenes, entradas, correos
+ *    y reportes no saben qué proveedor lo cobró.
+ *  - `applyPaymentUpdate` (packages/db) es el único lugar que da un pago por aprobado: valida monto y
+ *    moneda, resuelve reservas vencidas, pagos dobles y reembolsos, y es idempotente.
+ *  - Una pasarela real agrega su proveedor aquí (qué hacer al pagar) y una ruta de webhook que
+ *    verifica la firma y llama a `applyPaymentUpdate`. Ver docs/pasarela-de-pago.md.
  */
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import { requireEnv } from "@ticketera/db";
+import { applyPaymentUpdate, requireEnv, startPayment } from "@ticketera/db";
+import { notifyOrderPaid } from "./notifications";
 
-export const MOCK_PROVIDER = "mock";
+export const DIRECT_PROVIDER = "directo";
 
+/** Proveedor configurado (`PAYMENT_PROVIDER`). Sin configurar: pase directo. */
 export function activeProvider(): string {
-  return requireEnv("PAYMENT_PROVIDER");
+  return process.env.PAYMENT_PROVIDER?.trim() || DIRECT_PROVIDER;
 }
 
-export function isMockEnabled(): boolean {
-  return process.env.PAYMENT_PROVIDER === MOCK_PROVIDER;
+export function isDirectPass(provider: string = activeProvider()): boolean {
+  return provider === DIRECT_PROVIDER;
 }
 
-/** Adónde se envía al comprador para pagar. */
-export function checkoutUrl(payment: { id: string; provider: string }): string {
-  if (payment.provider === MOCK_PROVIDER) return `/pago-simulado/${payment.id}`;
-  throw new Error(`Pasarela "${payment.provider}" no implementada.`);
+let warned = false;
+/** El pase directo no cobra: avisar en el servidor si se está usando en producción. */
+export function warnIfDirectInProduction() {
+  if (!warned && process.env.NODE_ENV === "production" && isDirectPass()) {
+    warned = true;
+    console.warn("[pagos] PAYMENT_PROVIDER=directo en producción: las compras se aprueban SIN cobrar. Configura una pasarela.");
+  }
 }
-
-// ─── Pasarela simulada ───────────────────────────────────────────────────────
 
 /**
- * Notificación que envía la pasarela simulada. A diferencia de una pasarela real, trae el
- * estado en el cuerpo (firmado). Con una pasarela real, el webhook solo trae un id y el
- * estado se consulta a su API: nunca se confía en el contenido sin verificarlo.
+ * Pase directo: abre el pago y lo aprueba en el momento (misma transacción y mismas reglas que un
+ * webhook de pasarela), y envía las entradas por correo. Devuelve el resultado del pago.
  */
-export type MockNotification = {
-  id: string;
-  type: "payment";
-  data: {
-    paymentId: string;
-    providerPaymentId: string;
-    status: "approved" | "rejected";
-    amount: number;
-    currency: string;
-  };
-};
-
-function signMock(body: string): string {
-  return createHmac("sha256", requireEnv("PAYMENT_MOCK_SECRET")).update(body).digest("hex");
-}
-
-export function verifyMockSignature(body: string, signature: string | null): boolean {
-  if (!signature) return false;
-  const expected = Buffer.from(signMock(body), "hex");
-  const given = Buffer.from(signature, "hex");
-  return expected.length === given.length && timingSafeEqual(expected, given);
-}
-
-/** Lo que hace una pasarela real al terminar un pago: avisar al servidor del comercio. */
-export async function sendMockWebhook(payment: {
-  id: string;
-  amount: number;
-  currency: string;
-  status: "approved" | "rejected";
-}) {
-  const notification: MockNotification = {
-    id: randomUUID(),
-    type: "payment",
-    data: {
-      paymentId: payment.id,
-      providerPaymentId: `mock_${randomUUID().slice(0, 8)}`,
-      status: payment.status,
-      amount: payment.amount,
-      currency: payment.currency,
-    },
-  };
-  const body = JSON.stringify(notification);
-  const response = await fetch(`${requireEnv("WEB_URL")}/api/webhooks/mock`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-mock-signature": signMock(body) },
-    body,
+export async function payDirect(orderCode: string) {
+  warnIfDirectInProduction();
+  const payment = await startPayment(orderCode, DIRECT_PROVIDER);
+  const { outcome } = await applyPaymentUpdate({
+    paymentId: payment.id,
+    provider: DIRECT_PROVIDER,
+    providerPaymentId: `directo_${payment.id}`,
+    status: "APPROVED",
+    providerStatus: "pase_directo",
+    amount: payment.amount,
+    currency: payment.currency,
   });
-  if (!response.ok) throw new Error(`El webhook respondió ${response.status}`);
+  if (outcome === "PAID") await notifyOrderPaid(orderCode);
+  return outcome;
+}
+
+/**
+ * Adónde se envía al comprador para pagar con una pasarela real (su página de pago). Se implementa
+ * al conectar la pasarela; con el pase directo no se usa porque el pago se aprueba en `payDirect`.
+ */
+export function checkoutUrl(payment: { id: string; provider: string }): string {
+  throw new Error(`Pasarela "${payment.provider}" no implementada (ver docs/pasarela-de-pago.md). WEB_URL=${requireEnv("WEB_URL")}`);
 }
