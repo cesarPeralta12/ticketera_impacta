@@ -174,11 +174,19 @@ orden). Los enlaces sirven una sola vez, vencen (24 h confirmar, 1 h contraseña
 - **Producción con Resend** (`MAIL_PROVIDER="resend"`): crea una cuenta en https://resend.com, genera una API key
   (`RESEND_API_KEY`), **verifica tu dominio** (registros SPF/DKIM que te indica Resend) y pon el remitente en
   `MAIL_FROM="Impacta <entradas@tudominio.bo>"`. Sin dominio verificado, Resend solo entrega a tu propio correo.
+- **Con Gmail** (`MAIL_PROVIDER="smtp"`): sirve para pruebas y un piloto pequeño. Activa la verificación en dos pasos
+  de la cuenta, crea una *contraseña de aplicación* y ponla en `SMTP_PASS` (con `SMTP_HOST="smtp.gmail.com"`,
+  `SMTP_PORT="465"`, `SMTP_USER="tu-cuenta@gmail.com"`). Límites: unos 500 destinatarios al día en una cuenta
+  personal; el remitente real siempre es la cuenta de Gmail (el nombre puede ser `Impacta (no responder)` en
+  `MAIL_FROM`, pero la dirección no puede ser `noreply@`); y si Google detecta envíos masivos puede bloquear la cuenta.
+  No guardes la contraseña en el repositorio: va solo en el `.env` del servidor.
+- Todos los correos dicen "mensaje automático: no respondas". Con `MAIL_REPLY_TO` las respuestas llegan a una dirección de soporte.
 - Cambiar de proveedor es agregar una función en `packages/mail/src/send.ts`; nada más del sistema lo sabe.
 
 | Opción | Gratis | Para qué sirve |
 |---|---|---|
 | **Resend** | 3.000/mes y **100/día** | Lo más simple de integrar. El tope diario se agota con ~100 compras al día: para eventos grandes, plan de pago |
+| **Gmail (SMTP)** | ~500/día en cuenta personal | Sirve para pruebas; riesgo de bloqueo con envío automático y sin dirección `noreply@` propia |
 | **Brevo** | **300/día** (sin tope mensual) | Más margen diario; lleva marca de Brevo en el plan gratis |
 | **Amazon SES** | casi nada (~US$0,10 cada 1.000) | El más barato a volumen; exige más configuración |
 | **MailerSend** | 500/mes y 100/día | Muy poco para producción |

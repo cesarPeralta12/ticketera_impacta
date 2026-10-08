@@ -25,7 +25,8 @@ function layout(preheader: string, body: string) {
     <tr><td style="background:${INK};padding:18px 28px;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:.5px">IMPACTA<span style="color:#f5b700">.</span></td></tr>
     <tr><td style="padding:28px">${body}</td></tr>
     <tr><td style="padding:16px 28px;background:#fafaf7;color:#7a7d76;font-size:12px;line-height:1.5">
-      Recibes este correo porque se usó esta dirección en Impacta. Si no fuiste tú, puedes ignorarlo.
+      Este es un mensaje automático: por favor no respondas a este correo. Lo recibes porque se usó esta dirección en
+      Impacta; si no fuiste tú, puedes ignorarlo.
     </td></tr>
   </table>
 </td></tr></table>

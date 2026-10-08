@@ -2,6 +2,13 @@ import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const { sendMail, createTransport } = vi.hoisted(() => {
+  const sendMail = vi.fn();
+  return { sendMail, createTransport: vi.fn(() => ({ sendMail, close: vi.fn() })) };
+});
+vi.mock("nodemailer", () => ({ default: { createTransport } }));
+
 import { sendEmail, ticketsMessage, verifyEmailMessage } from "./index";
 
 afterEach(() => {
@@ -63,5 +70,41 @@ describe("correo", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("domain not verified", { status: 403 })));
     await expect(sendEmail({ to: "a@b.test", subject: "x", html: "x", text: "x" })).rejects.toThrow(/403/);
     vi.unstubAllGlobals();
+  });
+
+  it("con SMTP (Gmail) usa TLS en el 465, el nombre del remitente, responder-a y las imágenes en línea", async () => {
+    vi.stubEnv("MAIL_PROVIDER", "smtp");
+    vi.stubEnv("SMTP_HOST", "smtp.gmail.com");
+    vi.stubEnv("SMTP_PORT", "465");
+    vi.stubEnv("SMTP_USER", "impacta@gmail.com");
+    vi.stubEnv("SMTP_PASS", "clave-de-aplicacion");
+    vi.stubEnv("MAIL_FROM", "Impacta (no responder) <impacta@gmail.com>");
+    vi.stubEnv("MAIL_REPLY_TO", "soporte@impacta.test");
+    sendMail.mockResolvedValue({ messageId: "<abc@gmail.com>" });
+
+    const email = verifyEmailMessage({ to: "ana@prueba.test", name: "Ana", link: "https://x.test/v", hours: 24 });
+    email.images = [{ cid: "qr-1", filename: "a.png", content: Buffer.from("x"), contentType: "image/png" }];
+    expect(await sendEmail(email)).toEqual({ provider: "smtp", id: "<abc@gmail.com>" });
+
+    expect(createTransport).toHaveBeenCalledWith(
+      expect.objectContaining({ host: "smtp.gmail.com", port: 465, secure: true, auth: { user: "impacta@gmail.com", pass: "clave-de-aplicacion" } }),
+    );
+    expect(sendMail.mock.calls[0]![0]).toMatchObject({
+      from: "Impacta (no responder) <impacta@gmail.com>",
+      replyTo: "soporte@impacta.test",
+      to: "ana@prueba.test",
+      attachments: [expect.objectContaining({ cid: "qr-1", contentDisposition: "inline" })],
+    });
+  });
+
+  it("con SMTP sin credenciales avisa qué falta, y si el servidor rechaza lo dice", async () => {
+    vi.stubEnv("MAIL_PROVIDER", "smtp");
+    vi.stubEnv("SMTP_HOST", "smtp.gmail.com");
+    await expect(sendEmail({ to: "a@b.test", subject: "x", html: "x", text: "x" })).rejects.toThrow(/SMTP_USER/);
+
+    vi.stubEnv("SMTP_USER", "impacta@gmail.com");
+    vi.stubEnv("SMTP_PASS", "mala");
+    sendMail.mockRejectedValue(new Error("535 Username and Password not accepted"));
+    await expect(sendEmail({ to: "a@b.test", subject: "x", html: "x", text: "x" })).rejects.toThrow(/535/);
   });
 });
