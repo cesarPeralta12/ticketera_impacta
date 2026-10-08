@@ -1,4 +1,4 @@
-import { saleState } from "@ticketera/core";
+import { currentPrice, saleState } from "@ticketera/core";
 import { prisma, type EventCategory } from "@ticketera/db";
 
 /**
@@ -16,7 +16,17 @@ export async function listPublishedEvents(category?: EventCategory) {
         orderBy: { startsAt: "asc" },
         include: {
           venue: { select: { name: true, city: true, timezone: true } },
-          ticketTypes: { select: { unitAmount: true, currency: true, salesStartAt: true, salesEndAt: true } },
+          ticketTypes: {
+            select: {
+              unitAmount: true,
+              currency: true,
+              salesStartAt: true,
+              salesEndAt: true,
+              discountPercent: true,
+              discountStartsAt: true,
+              discountEndsAt: true,
+            },
+          },
         },
       },
     },
@@ -27,7 +37,11 @@ export async function listPublishedEvents(category?: EventCategory) {
       const [next] = event.sessions;
       if (!next) return [];
       // "Desde Bs X": sin contar preventas que ya terminaron.
-      const prices = event.sessions.flatMap((s) => s.ticketTypes).filter((t) => saleState(t) !== "closed");
+      // Con el descuento de preventa vigente, si lo hay.
+      const prices = event.sessions
+        .flatMap((s) => s.ticketTypes)
+        .filter((t) => saleState(t) !== "closed")
+        .map((t) => ({ ...t, ...currentPrice(t, now) }));
       const minPrice = prices.reduce<(typeof prices)[number] | null>(
         (min, t) => (min === null || t.unitAmount < min.unitAmount ? t : min),
         null,

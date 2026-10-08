@@ -157,6 +157,11 @@ pantalla de login ("Configurar servidor"). Para generar el APK hay que aceptar l
 (`flutter doctor --android-licenses`). El NFC lee etiquetas NDEF (texto o enlace) con el código de la entrada;
 en iOS requiere el permiso *Near Field Communication Tag Reading* de la cuenta de Apple Developer.
 
+- **Descuento de preventa**: un tipo de entrada puede llevar un porcentaje de descuento con fecha de inicio
+  (opcional) y de fin. Es la misma entrada y el mismo cupo: hasta la fecha se cobra el precio con descuento y
+  después vuelve al normal solo. El servidor calcula el precio al crear la orden (la web muestra el precio
+  normal tachado). Se configura en la función, al agregar o editar el tipo de entrada.
+
 ## Despliegue (Coolify u otro servidor con Nixpacks)
 
 Dos aplicaciones desde este mismo repo (Base Directory `/`) y una base PostgreSQL:

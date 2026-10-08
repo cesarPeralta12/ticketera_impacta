@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { MAX_TICKETS_PER_ORDER, formatDateTime, saleState } from "@ticketera/core";
+import { MAX_TICKETS_PER_ORDER, currentPrice, discountLabel, formatDateTime, saleState } from "@ticketera/core";
 import { getSessionAvailability, getTakenSeatIds, prisma, salesCutoff } from "@ticketera/db";
 import { ROLES, requireStaff } from "@/lib/session";
 import { PosForm, type PosGeneralType, type PosSeatedType } from "./pos-form";
@@ -40,13 +40,16 @@ export default async function PosSessionPage({ params }: Props) {
 
   // En caja se vende lo mismo que online en este momento: la preventa mientras dure, la general cuando empiece.
   const openTypes = session.ticketTypes.filter((t) => saleState(t) === "open");
+  const now = new Date();
   const general: PosGeneralType[] = openTypes
     .filter((t) => t.section?.seatingMode !== "RESERVED")
     .map((t) => ({
       id: t.id,
       name: t.presale && t.salesEndAt ? `${t.name} (preventa hasta ${formatDateTime(t.salesEndAt, session.venue.timezone)})` : t.name,
       detail: t.section ? `${t.section.name} · quedan ${remaining.get(t.id) ?? 0}` : `quedan ${remaining.get(t.id) ?? 0}`,
-      unitAmount: t.unitAmount,
+      unitAmount: currentPrice(t, now).unitAmount,
+      listAmount: currentPrice(t, now).discountPercent ? t.unitAmount : null,
+      discountLabel: discountLabel(t, now, session.venue.timezone),
       currency: t.currency,
       max: Math.min(remaining.get(t.id) ?? 0, t.maxPerOrder, MAX_TICKETS_PER_ORDER),
     }));
@@ -57,7 +60,8 @@ export default async function PosSessionPage({ params }: Props) {
       ticketTypeId: t.id,
       name: t.section!.name,
       color: t.section!.color,
-      unitAmount: t.unitAmount,
+      unitAmount: currentPrice(t, now).unitAmount,
+      discountPercent: currentPrice(t, now).discountPercent,
       currency: t.currency,
       presale: t.presale,
       maxPerOrder: Math.min(t.maxPerOrder, MAX_TICKETS_PER_ORDER),

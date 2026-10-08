@@ -328,25 +328,30 @@ model EventSession {
 /// no expiradas. La reserva debe ser atómica (UPDATE condicional o lock de fila):
 /// se diseña en Sprint 0 y se implementa en Sprint 2, antes de vender nada.
 model TicketType {
-  id            String         @id @default(cuid())
-  sessionId     String
+  id               String         @id @default(cuid())
+  sessionId        String
   /// Sección física asociada. Obligatoria si la sección es RESERVED.
-  sectionId     String?
-  name          String
-  description   String?
-  unitAmount    Int
-  currency      String         @db.Char(3)
-  capacity      Int
-  maxPerOrder   Int            @default(10)
-  salesStartAt  DateTime?
-  salesEndAt    DateTime?
+  sectionId        String?
+  name             String
+  description      String?
+  unitAmount       Int
+  currency         String         @db.Char(3)
+  capacity         Int
+  maxPerOrder      Int            @default(10)
+  salesStartAt     DateTime?
+  salesEndAt       DateTime?
   /// Preventa: se muestra como tal y solo vende hasta salesEndAt.
-  presale       Boolean        @default(false)
-  sortOrder     Int            @default(0)
+  presale          Boolean        @default(false)
+  /// Descuento de preventa sobre el mismo tipo de entrada: durante la ventana se cobra
+  /// unitAmount menos este porcentaje; fuera de ella, el precio normal.
+  discountPercent  Int?
+  discountStartsAt DateTime?
+  discountEndsAt   DateTime?
+  sortOrder        Int            @default(0)
   /// Cómo se lee esta entrada en puerta: solo QR, solo código de barras, NFC o varias.
-  accessMethods AccessMethod[] @default([QR])
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  accessMethods    AccessMethod[] @default([QR])
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
   session    EventSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   section    Section?     @relation(fields: [sectionId], references: [id])

@@ -12,6 +12,8 @@ export type PickerSection = {
   currency: string;
   /** Precio de preventa: se marca en el mapa. */
   presale: boolean;
+  /** Descuento de preventa vigente (%): el unitAmount ya lo incluye. */
+  discountPercent?: number | null;
   seats: PickerSeat[];
 };
 
@@ -37,7 +39,7 @@ export function SeatPicker({
     const y = Math.min(...(middle.length ? middle : s.seats).map((seat) => seat.y));
     // Nombre, precio y butacas libres sobre el total, encima de la sección.
     const free = s.seats.filter((seat) => !seat.taken).length;
-    const price = `${s.presale ? "PREVENTA " : ""}${formatMoney(s.unitAmount, s.currency)}`;
+    const price = `${s.presale ? "PREVENTA " : ""}${s.discountPercent ? `-${s.discountPercent}% ` : ""}${formatMoney(s.unitAmount, s.currency)}`;
     const detail = free === 0 ? "AGOTADO" : `${price} · ${free}/${s.seats.length} libres`;
     return { name: s.name, color: s.color, x: midX, y: y - 36, detail };
   });

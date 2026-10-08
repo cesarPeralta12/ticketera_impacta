@@ -1,12 +1,4 @@
-import {
-  RESERVATION_MINUTES,
-  checkoutSchema,
-  findShortage,
-  orderTotals,
-  randomCode,
-  remainingByType,
-  type CheckoutInput,
-} from "@ticketera/core";
+import { RESERVATION_MINUTES, checkoutSchema, currentPrice, findShortage, orderTotals, randomCode, remainingByType, type CheckoutInput } from "@ticketera/core";
 import { prisma } from "../client";
 import type { OrderChannel } from "../generated/prisma/client";
 import { completeTurn, hasActiveTurn } from "./queue";
@@ -171,7 +163,8 @@ export async function createPendingOrder(
     // Entrada general: una línea por tipo. Butacas: una línea por butaca.
     const priced = data.items.flatMap((item) => {
       const type = byId.get(item.ticketTypeId)!;
-      const line = { ticketTypeId: type.id, unitAmount: type.unitAmount, name: type.name };
+      // El precio lo decide el servidor al crear la orden (descuento de preventa vigente, si hay).
+      const line = { ticketTypeId: type.id, unitAmount: currentPrice(type, now).unitAmount, name: type.name };
       return item.seatIds
         ? item.seatIds.map((seatId) => ({ ...line, quantity: 1, seatId }))
         : [{ ...line, quantity: item.quantity }];

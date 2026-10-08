@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { formatDateTime, formatMoney, saleState, utcToZonedInput, type SaleState } from "@ticketera/core";
+import { currentPrice, formatDateTime, formatMoney, saleState, utcToZonedInput, type SaleState } from "@ticketera/core";
 import { getSessionAvailability, prisma } from "@ticketera/db";
 import { AccessMethodsField } from "@/components/access-methods-field";
 import { ActionForm } from "@/components/action-form";
@@ -55,6 +55,7 @@ export default async function SessionPage({ params }: Props) {
   // En el selector, primero las que faltan por cargar.
   const sectionOptions = [...unpriced, ...session.venue.sections.filter((s) => pricedSections.has(s.id))];
   const tz = session.venue.timezone;
+  const now = new Date();
 
   return (
     <div className="space-y-8">
@@ -125,7 +126,18 @@ export default async function SessionPage({ params }: Props) {
                     <td className="py-2.5 pr-4 text-[var(--ink-muted)]">
                       {t.section ? `${t.section.name} · ${SEATING_LABEL[t.section.seatingMode]}` : "—"}
                     </td>
-                    <td className="py-2.5 pr-4 text-right font-mono">{formatMoney(t.unitAmount, t.currency)}</td>
+                    <td className="py-2.5 pr-4 text-right font-mono">
+                      {formatMoney(currentPrice(t, now).unitAmount, t.currency)}
+                      {currentPrice(t, now).discountPercent ? (
+                        <span className="block text-xs text-[var(--warn)]">
+                          -{t.discountPercent}% (lista {formatMoney(t.unitAmount, t.currency)})
+                        </span>
+                      ) : t.discountPercent ? (
+                        <span className="block text-xs text-[var(--ink-dim)]">
+                          {t.discountEndsAt && t.discountEndsAt <= now ? "descuento terminado" : `-${t.discountPercent}% programado`}
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="py-2.5 pr-4 text-right font-mono">
                       {remaining.get(t.id) ?? 0} / {t.capacity}
                     </td>
@@ -176,6 +188,34 @@ export default async function SessionPage({ params }: Props) {
                               type="datetime-local"
                               name="salesEndAt"
                               defaultValue={t.salesEndAt ? utcToZonedInput(t.salesEndAt, tz) : ""}
+                              className="field"
+                            />
+                          </label>
+                          <label className="label">
+                            Descuento de preventa (%)
+                            <input
+                              name="discountPercent"
+                              inputMode="numeric"
+                              defaultValue={t.discountPercent ?? ""}
+                              placeholder="sin descuento"
+                              className="field w-32"
+                            />
+                          </label>
+                          <label className="label">
+                            Descuento desde
+                            <input
+                              type="datetime-local"
+                              name="discountStartsAt"
+                              defaultValue={t.discountStartsAt ? utcToZonedInput(t.discountStartsAt, tz) : ""}
+                              className="field"
+                            />
+                          </label>
+                          <label className="label">
+                            Descuento hasta
+                            <input
+                              type="datetime-local"
+                              name="discountEndsAt"
+                              defaultValue={t.discountEndsAt ? utcToZonedInput(t.discountEndsAt, tz) : ""}
                               className="field"
                             />
                           </label>
@@ -284,6 +324,25 @@ export default async function SessionPage({ params }: Props) {
                 Hora del recinto. Ejemplo: &ldquo;Preventa&rdquo; a Bs 70 hasta el 20/10 a las 23:59: ese momento la
                 &ldquo;General&rdquo; de la misma sección empieza sola. En butacas numeradas siempre es así (un precio por
                 butaca a la vez).
+              </p>
+            </div>
+            <div className="flex basis-full flex-wrap items-end gap-3 rounded-md border border-dashed border-[var(--border)] p-3">
+              <p className="basis-full text-sm font-medium">Descuento de preventa (opcional)</p>
+              <label className="label">
+                Porcentaje (%)
+                <input name="discountPercent" inputMode="numeric" placeholder="ej. 20" className="field w-28" />
+              </label>
+              <label className="label">
+                Desde (opcional)
+                <input type="datetime-local" name="discountStartsAt" className="field" />
+              </label>
+              <label className="label">
+                Hasta
+                <input type="datetime-local" name="discountEndsAt" className="field" />
+              </label>
+              <p className="basis-full text-xs text-[var(--ink-dim)]">
+                Misma entrada, mismo cupo: hasta la fecha se cobra el precio con ese porcentaje menos y después vuelve al
+                precio normal solo. La web muestra el precio normal tachado y el descuento.
               </p>
             </div>
             <button type="submit" className="btn btn-dark">

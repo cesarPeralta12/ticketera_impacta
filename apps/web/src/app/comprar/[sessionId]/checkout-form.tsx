@@ -10,7 +10,12 @@ export type GeneralType = {
   id: string;
   name: string;
   detail: string | null;
+  /** Precio que se cobra ahora (con el descuento de preventa vigente, si hay). */
   unitAmount: number;
+  /** Precio normal tachado, solo si hay descuento vigente. */
+  listAmount: number | null;
+  /** Ej. "20% menos hasta 20 oct, 23:59". */
+  discountLabel: string | null;
   currency: string;
   /** Máximo seleccionable: el menor entre disponibles y el límite por compra. */
   max: number;
@@ -101,7 +106,8 @@ export function CheckoutForm({
               <li key={t.ticketTypeId} className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color }} />
                 {t.name}
-                {t.presale && <span className="font-semibold text-[var(--accent-2)]">(preventa)</span>}:{" "}
+                {t.presale && <span className="font-semibold text-[var(--accent-2)]">(preventa)</span>}
+                {t.discountPercent ? <span className="font-semibold text-[var(--accent-2)]"> (-{t.discountPercent}% preventa)</span> : null}:{" "}
                 <span className="text-[var(--ink)]">{formatMoney(t.unitAmount, t.currency)}</span>
                 {(seats[t.ticketTypeId]?.length ?? 0) > 0 && (
                   <span className="text-[var(--accent)]">× {seats[t.ticketTypeId]!.length}</span>
@@ -132,7 +138,13 @@ export function CheckoutForm({
                   </p>
                   {type.detail && <p className="text-xs text-[var(--ink-dim)]">{type.detail}</p>}
                   {type.presaleUntil && <p className="text-xs text-[var(--accent-2)]">Hasta {type.presaleUntil}</p>}
-                  <p className="font-display text-lg text-[var(--accent)]">{formatMoney(type.unitAmount, type.currency)}</p>
+                  <p className="font-display text-lg text-[var(--accent)]">
+                    {type.listAmount !== null && (
+                      <span className="mr-2 text-sm text-[var(--ink-dim)] line-through">{formatMoney(type.listAmount, type.currency)}</span>
+                    )}
+                    {formatMoney(type.unitAmount, type.currency)}
+                  </p>
+                  {type.discountLabel && <p className="text-xs font-semibold text-[var(--accent-2)]">Preventa: {type.discountLabel}</p>}
                 </div>
                 {type.opensAt ? (
                   <span className="text-right text-sm text-[var(--ink-dim)]">

@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
-import { MAX_TICKETS_PER_ORDER, formatDateTime, saleState } from "@ticketera/core";
+import { MAX_TICKETS_PER_ORDER, currentPrice, discountLabel, formatDateTime, saleState } from "@ticketera/core";
 import { getQueueStatus, getSessionAvailability, getTakenSeatIds, prisma } from "@ticketera/db";
 import { auth } from "@/lib/auth";
 import { queueCookieName } from "@/lib/queue-cookie";
@@ -60,13 +60,16 @@ export default async function BuyPage({ params }: Props) {
   // con su fecha (solo en generales: una butaca tiene un único precio a la vez).
   const tz = session.venue.timezone;
   const types = session.ticketTypes.filter((t) => saleState(t) !== "closed");
+  const now = new Date();
   const general: GeneralType[] = types
     .filter((t) => t.section?.seatingMode !== "RESERVED")
     .map((t) => ({
       id: t.id,
       name: t.name,
       detail: t.section ? `${t.section.name} · Entrada general` : null,
-      unitAmount: t.unitAmount,
+      unitAmount: currentPrice(t, now).unitAmount,
+      listAmount: currentPrice(t, now).discountPercent ? t.unitAmount : null,
+      discountLabel: discountLabel(t, now, tz),
       currency: t.currency,
       max: saleState(t) === "open" ? Math.min(remaining.get(t.id) ?? 0, t.maxPerOrder, MAX_TICKETS_PER_ORDER) : 0,
       presaleUntil: t.presale && t.salesEndAt ? formatDateTime(t.salesEndAt, tz) : null,
@@ -81,7 +84,8 @@ export default async function BuyPage({ params }: Props) {
       ticketTypeId: t.id,
       name: t.section!.name,
       color: t.section!.color,
-      unitAmount: t.unitAmount,
+      unitAmount: currentPrice(t, now).unitAmount,
+      discountPercent: currentPrice(t, now).discountPercent,
       currency: t.currency,
       presale: t.presale,
       maxPerOrder: Math.min(t.maxPerOrder, MAX_TICKETS_PER_ORDER),

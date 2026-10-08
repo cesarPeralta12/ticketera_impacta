@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { formatDateTime, normalizeImageUrl, slugify, windowsOverlap, zonedDateTimeToUtc } from "@ticketera/core";
+import { MAX_DISCOUNT_PERCENT, formatDateTime, normalizeImageUrl, slugify, windowsOverlap, zonedDateTimeToUtc } from "@ticketera/core";
 import { DomainError, EventCategory, EventMode, prisma, publicationProblem, submitEventForReview } from "@ticketera/db";
 import { formObject, intField, moneyField, zodErrors, type FormState } from "@/lib/forms";
 import { ROLES, requireStaff } from "@/lib/session";
@@ -216,6 +216,10 @@ const ticketTypeSchema = z.object({
   salesEndAt: z.string().optional(),
   /** Preventa: mientras dure, las otras entradas de la sección no se venden. */
   exclusive: z.literal("on").optional(),
+  /** Descuento de preventa sobre el mismo tipo de entrada. */
+  discountPercent: z.string().optional(),
+  discountStartsAt: z.string().optional(),
+  discountEndsAt: z.string().optional(),
 });
 
 const ACCESS_METHODS = ["QR", "BARCODE", "NFC"] as const;
@@ -251,6 +255,37 @@ function parseSaleWindow(
   return { ok: true, window };
 }
 
+type Discount = { discountPercent: number | null; discountStartsAt: Date | null; discountEndsAt: Date | null };
+const NO_DISCOUNT: Discount = { discountPercent: null, discountStartsAt: null, discountEndsAt: null };
+
+/** Descuento de preventa escrito en la hora del recinto: porcentaje, desde (opcional) y hasta (obligatorio). */
+function parseDiscount(
+  input: { discountPercent?: string; discountStartsAt?: string; discountEndsAt?: string },
+  timeZone: string,
+): { ok: true; discount: Discount } | { ok: false; error: FormState } {
+  const raw = input.discountPercent?.trim();
+  if (!raw) return { ok: true, discount: NO_DISCOUNT };
+  const percent = Number(raw.replace(",", "."));
+  if (!Number.isInteger(percent) || percent < 1 || percent > MAX_DISCOUNT_PERCENT) {
+    return { ok: false, error: { fieldErrors: { discountPercent: `El descuento debe ser un porcentaje entero de 1 a ${MAX_DISCOUNT_PERCENT}.` } } };
+  }
+  if (!input.discountEndsAt) {
+    return { ok: false, error: { fieldErrors: { discountEndsAt: "Indica hasta cuándo dura el descuento de preventa." } } };
+  }
+  let startsAt: Date | null;
+  let endsAt: Date;
+  try {
+    startsAt = input.discountStartsAt ? zonedDateTimeToUtc(input.discountStartsAt, timeZone) : null;
+    endsAt = zonedDateTimeToUtc(input.discountEndsAt, timeZone);
+  } catch {
+    return { ok: false, error: { fieldErrors: { discountEndsAt: "Fecha inválida." } } };
+  }
+  if (startsAt && endsAt <= startsAt) {
+    return { ok: false, error: { fieldErrors: { discountEndsAt: "El descuento tiene que terminar después de empezar." } } };
+  }
+  return { ok: true, discount: { discountPercent: percent, discountStartsAt: startsAt, discountEndsAt: endsAt } };
+}
+
 const seatedOverlapError = (sectionName: string) =>
   `"${sectionName}" es de butacas numeradas: solo puede tener un precio a la vez. Pon fecha de fin a la preventa y la general empieza cuando termina (casilla "no vender las otras").`;
 
@@ -273,6 +308,8 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
   const parsedWindow = parseSaleWindow(data, session.venue.timezone);
   if (!parsedWindow.ok) return parsedWindow.error;
   const window = parsedWindow.window;
+  const parsedDiscount = parseDiscount(data, session.venue.timezone);
+  if (!parsedDiscount.ok) return parsedDiscount.error;
   const presale = Boolean(data.presale);
   if (presale && window.salesEndAt && window.salesEndAt <= new Date()) {
     return { fieldErrors: { salesEndAt: "La fecha de fin de la preventa ya pasó." } };
@@ -320,6 +357,7 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
         capacity,
         maxPerOrder: data.maxPerOrder,
         presale,
+        ...parsedDiscount.discount,
         accessMethods: [...readAccessMethods(formData)],
         salesStartAt: window.salesStartAt,
         salesEndAt: window.salesEndAt,
@@ -354,6 +392,9 @@ export async function updateAccessMethodsAction(_prev: FormState, formData: Form
 
 const saleDatesSchema = z.object({
   ticketTypeId: z.string(),
+  discountPercent: z.string().optional(),
+  discountStartsAt: z.string().optional(),
+  discountEndsAt: z.string().optional(),
   presale: z.literal("on").optional(),
   salesStartAt: z.string().optional(),
   salesEndAt: z.string().optional(),
@@ -373,6 +414,8 @@ export async function updateTicketTypeSalesAction(_prev: FormState, formData: Fo
   const parsedWindow = parseSaleWindow(parsed.data, type.session.venue.timezone);
   if (!parsedWindow.ok) return parsedWindow.error;
   const window = parsedWindow.window;
+  const parsedDiscount = parseDiscount(parsed.data, type.session.venue.timezone);
+  if (!parsedDiscount.ok) return parsedDiscount.error;
   if (type.section?.seatingMode === "RESERVED") {
     const others = await prisma.ticketType.findMany({
       where: { sessionId: type.sessionId, sectionId: type.sectionId, id: { not: type.id } },
@@ -382,12 +425,19 @@ export async function updateTicketTypeSalesAction(_prev: FormState, formData: Fo
 
   await prisma.ticketType.update({
     where: { id: type.id },
-    data: { presale: Boolean(parsed.data.presale), salesStartAt: window.salesStartAt, salesEndAt: window.salesEndAt },
+    data: {
+      presale: Boolean(parsed.data.presale),
+      salesStartAt: window.salesStartAt,
+      salesEndAt: window.salesEndAt,
+      ...parsedDiscount.discount,
+    },
   });
   await audit(staff.id, "ticket_type.sales", "TicketType", type.id, {
     presale: Boolean(parsed.data.presale),
     salesStartAt: window.salesStartAt?.toISOString() ?? null,
     salesEndAt: window.salesEndAt?.toISOString() ?? null,
+    discountPercent: parsedDiscount.discount.discountPercent,
+    discountEndsAt: parsedDiscount.discount.discountEndsAt?.toISOString() ?? null,
   });
   revalidatePath(`/eventos/${type.session.eventId}/funciones/${type.sessionId}`);
   return { ok: true };
