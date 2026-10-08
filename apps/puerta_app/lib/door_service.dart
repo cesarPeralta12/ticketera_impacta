@@ -164,70 +164,56 @@ class DoorService extends ChangeNotifier {
 
   Future<({int total, int used})> gateCounts(String sessionId) => db.gateCounts(sessionId);
 
-  /// Valida una lectura en el teléfono y la deja guardada para subirla.
+  /// Revisa una lectura SIN marcarla como usada: el portero ve los datos y decide si acepta el ingreso.
   ///
-  /// Si el código no está en la lista descargada y hay internet, le pregunta al servidor:
-  /// puede ser una entrada vendida después de la descarga.
-  Future<ScanOutcome> scan(SessionMeta meta, String raw, AccessMethod? method) async {
+  /// Un rechazo (ya usada, otra puerta, anulada…) queda registrado de una vez, porque la persona no entra.
+  /// Si el código no está en la lista y hay internet, primero actualiza la lista (puede ser una entrada
+  /// vendida después de la descarga) y vuelve a revisar.
+  Future<ScanOutcome> inspect(SessionMeta meta, String raw, AccessMethod? method) async {
     var outcome = await validateScan(tickets: db, meta: meta, raw: raw, method: method);
+    if (outcome.verdict == ScanVerdict.notFound && extractTicketCode(raw) != null) {
+      try {
+        if (await sync(meta.sessionId)) {
+          final fresh = await db.meta(meta.sessionId) ?? meta;
+          outcome = await validateScan(tickets: db, meta: fresh, raw: raw, method: method);
+        }
+      } on ApiException {
+        // Sin internet o sesión vencida: se queda el "no existe" local.
+      }
+    }
+    if (!outcome.verdict.ok) await _record(meta, raw, method, outcome.verdict);
+    return outcome;
+  }
+
+  /// El portero aceptó el ingreso: se vuelve a validar (por si otra lectura la usó mientras tanto)
+  /// y recién ahí se marca como usada y se guarda para subirla.
+  Future<ScanOutcome> confirm(SessionMeta meta, String raw, AccessMethod? method) async {
+    final outcome = await validateScan(tickets: db, meta: meta, raw: raw, method: method);
     final code = extractTicketCode(raw);
-    final id = _scanId();
-    final now = DateTime.now();
-    final methodApi = scanMethodApi(method);
-
-    if (outcome.verdict == ScanVerdict.notFound) {
-      final live = await _askServer(meta, id, raw, methodApi, now);
-      if (live != null) outcome = live;
-    }
-
-    final scan = PendingScan(
-      id: id,
-      sessionId: meta.sessionId,
-      gateId: meta.gateId,
-      raw: raw,
-      method: methodApi,
-      scannedAt: now,
-      verdict: outcome.verdict,
-    );
     if (outcome.verdict.ok && code != null) {
+      final now = DateTime.now();
       await db.markUsed(meta.sessionId, code, now);
-    }
-    // Lo confirmado en vivo por el servidor ya quedó registrado allá: no se vuelve a subir.
-    if (!_confirmedLive.remove(id)) {
-      await db.addScan(scan, code: code);
-    } else if (outcome.verdict.ok && outcome.ticket != null) {
-      await db.upsertTicket(meta.sessionId, outcome.ticket!.copyWith(status: TicketStatus.used, usedAt: now));
+      await _record(meta, raw, method, ScanVerdict.accepted, at: now, code: code);
+    } else {
+      await _record(meta, raw, method, outcome.verdict);
     }
     await refreshCounters(meta.sessionId);
     return outcome;
   }
 
-  final Set<String> _confirmedLive = {};
-
-  Future<ScanOutcome?> _askServer(SessionMeta meta, String id, String raw, String method, DateTime at) async {
-    try {
-      final results = await _guard(
-        (api) => api.postScans(meta.sessionId, [
-          {
-            'id': id,
-            'raw': raw,
-            'method': method,
-            'scannedAt': at.toUtc().toIso8601String(),
-            'offline': false,
-            'accessPointId': ?meta.gateId,
-          },
-        ]),
-      );
-      final r = results.first;
-      _confirmedLive.add(id);
-      final verdict = ScanVerdict.values.firstWhere((v) => v.api == r.result, orElse: () => ScanVerdict.invalid);
-      return ScanOutcome(
+  Future<void> _record(SessionMeta meta, String raw, AccessMethod? method, ScanVerdict verdict, {DateTime? at, String? code}) async {
+    await db.addScan(
+      PendingScan(
+        id: _scanId(),
+        sessionId: meta.sessionId,
+        gateId: meta.gateId,
+        raw: raw,
+        method: scanMethodApi(method),
+        scannedAt: at ?? DateTime.now(),
         verdict: verdict,
-        ticket: r.ticket,
-        detail: verdict.ok ? null : 'Confirmado por el servidor.',
-      );
-    } on ApiException {
-      return null; // sin internet: se queda el "no existe" local
-    }
+      ),
+      code: code ?? extractTicketCode(raw),
+    );
+    await refreshCounters(meta.sessionId);
   }
 }

@@ -12,6 +12,20 @@ export const metadata: Metadata = { title: "Ticket" };
 
 type Props = { params: Promise<{ code: string }>; searchParams: Promise<{ formato?: string }> };
 
+type PaperFormat = "termico" | "a4" | "carta";
+
+const FORMAT_LABEL: Record<PaperFormat, string> = { termico: "Térmico 80 mm", a4: "A4", carta: "Carta" };
+
+/**
+ * Tamaño de hoja al imprimir o "Guardar como PDF". Chrome ignora `size: 80mm auto` (el alto no puede ser
+ * "auto") y cae en Carta, así que el ticket térmico lleva un alto fijo: una entrada por hoja de 80 × 150 mm.
+ */
+const PAGE_CSS: Record<PaperFormat, string> = {
+  termico: "@page { size: 80mm 150mm; margin: 3mm; }",
+  a4: "@page { size: A4; margin: 12mm; }",
+  carta: "@page { size: letter; margin: 12mm; }",
+};
+
 const METHOD_LABEL: Record<string, string> = { pos_efectivo: "Efectivo", pos_qr: "QR", pos_tarjeta: "Tarjeta" };
 
 /** Ticket de boletería: uno por entrada, con su QR, para impresora térmica de 80 mm o A4. */
@@ -23,7 +37,10 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
   if (!order || !session || order.channel !== "POS" || session.event.organizationId !== staff.organization.id) {
     notFound();
   }
-  const a4 = (await searchParams).formato === "a4";
+  const requested = (await searchParams).formato;
+  const format: PaperFormat = requested === "a4" || requested === "carta" ? requested : "termico";
+  // Térmico = un ticket por hoja de 80 mm; A4 y carta = varios tickets por hoja.
+  const sheet = format !== "termico";
   const cashier = order.issuedById
     ? await prisma.staffUser.findUnique({ where: { id: order.issuedById }, select: { name: true } })
     : null;
@@ -43,7 +60,7 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
   return (
     <div className="space-y-6">
       {/* Papel del ticket: rollo térmico de 80 mm (un ticket por corte) o A4. */}
-      <style>{a4 ? "@page { size: A4; margin: 12mm; }" : "@page { size: 80mm auto; margin: 3mm; }"}</style>
+      <style>{PAGE_CSS[format]}</style>
 
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
@@ -55,9 +72,17 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link href={a4 ? "?" : "?formato=a4"} className="btn text-xs">
-            {a4 ? "Formato térmico 80 mm" : "Formato A4"}
-          </Link>
+          <div className="flex overflow-hidden rounded-md border border-[var(--border)] text-xs" role="group" aria-label="Formato de papel">
+            {(Object.keys(FORMAT_LABEL) as PaperFormat[]).map((f) => (
+              <Link
+                key={f}
+                href={f === "termico" ? "?" : `?formato=${f}`}
+                className={`px-3 py-2 ${f === format ? "bg-[var(--ink)] text-white" : "bg-[var(--surface)] hover:bg-[var(--surface-2)]"}`}
+              >
+                {FORMAT_LABEL[f]}
+              </Link>
+            ))}
+          </div>
           <Link href={`/boleteria/${session.id}`} className="btn">
             Nueva venta
           </Link>
@@ -65,12 +90,12 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
         </div>
       </div>
 
-      <ul className={a4 ? "grid grid-cols-2 gap-4 print:gap-3" : "flex flex-col items-center gap-4 print:block"}>
+      <ul className={sheet ? "grid grid-cols-2 gap-4 print:gap-3" : "flex flex-col items-center gap-4 print:block"}>
         {tickets.map((t, i) => (
           <li
             key={t.id}
             className={`bg-white text-center text-[#14181b] ${
-              a4
+              sheet
                 ? "break-inside-avoid rounded-lg border border-dashed border-[#9a9c92] p-5"
                 : "w-[74mm] rounded-md border border-[var(--border)] p-3 shadow-sm print:break-after-page print:rounded-none print:border-0 print:p-0 print:shadow-none"
             }`}

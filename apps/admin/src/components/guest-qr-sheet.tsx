@@ -30,6 +30,8 @@ export async function GuestQrSheet({ eventId, sessionId, backHref }: { eventId: 
 
   return (
     <div className="space-y-6">
+      {/* Hoja carta (la más usada en Bolivia): sin esto el navegador elige el tamaño por su cuenta. */}
+      <style>{"@page { size: letter; margin: 10mm; }"}</style>
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
           <Link

@@ -222,7 +222,7 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
       holderName: true,
       ticketType: { select: { name: true, sectionId: true, accessMethods: true } },
       seat: { select: { label: true } },
-      order: { select: { buyerName: true } },
+      order: { select: { buyerName: true, buyerDocument: true } },
     },
   });
 
@@ -247,6 +247,7 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
         ? {
             ...base,
             holder: t.holderName ?? t.order.buyerName,
+            document: t.order.buyerDocument,
             type: t.ticketType.name,
             seat: t.seat?.label ?? null,
             methods: t.ticketType.accessMethods,

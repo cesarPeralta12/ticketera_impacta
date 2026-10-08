@@ -111,6 +111,7 @@ class TicketRow {
     required this.sectionId,
     required this.mine,
     this.holder,
+    this.document,
     this.type,
     this.seat,
     this.methods = const [],
@@ -124,6 +125,9 @@ class TicketRow {
   /// ¿Entra por la puerta de este teléfono?
   final bool mine;
   final String? holder;
+
+  /// Carnet o documento de quien compró (para cotejarlo en puerta).
+  final String? document;
   final String? type;
   final String? seat;
   final List<String> methods;
@@ -137,6 +141,7 @@ class TicketRow {
         sectionId: json['sectionId'] as String?,
         mine: json['mine'] as bool? ?? true,
         holder: json['holder'] as String?,
+        document: json['document'] as String?,
         type: json['type'] as String?,
         seat: json['seat'] as String?,
         methods: [for (final m in (json['methods'] as List? ?? const [])) m as String],
@@ -148,6 +153,7 @@ class TicketRow {
         sectionId: sectionId,
         mine: mine,
         holder: holder,
+        document: document,
         type: type,
         seat: seat,
         methods: methods,

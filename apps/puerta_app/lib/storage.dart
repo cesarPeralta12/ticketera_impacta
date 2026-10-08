@@ -57,12 +57,15 @@ class DoorDb implements TicketLookup {
   static Future<DoorDb> open() async {
     final db = await openDatabase(
       p.join(await getDatabasesPath(), 'puerta.db'),
-      version: 1,
+      version: 2,
+      onUpgrade: (db, oldVersion, _) async {
+        if (oldVersion < 2) await db.execute('ALTER TABLE tickets ADD COLUMN document TEXT');
+      },
       onCreate: (db, _) async {
         await db.execute('''
           CREATE TABLE tickets (
             session_id TEXT NOT NULL, code TEXT NOT NULL, status TEXT NOT NULL, section_id TEXT,
-            mine INTEGER NOT NULL, holder TEXT, type TEXT, seat TEXT, methods TEXT NOT NULL DEFAULT '',
+            mine INTEGER NOT NULL, holder TEXT, document TEXT, type TEXT, seat TEXT, methods TEXT NOT NULL DEFAULT '',
             used_at INTEGER, PRIMARY KEY (session_id, code)
           )''');
         await db.execute('''
@@ -85,6 +88,7 @@ class DoorDb implements TicketLookup {
         'section_id': t.sectionId,
         'mine': t.mine ? 1 : 0,
         'holder': t.holder,
+        'document': t.document,
         'type': t.type,
         'seat': t.seat,
         'methods': t.methods.join(','),
@@ -97,6 +101,7 @@ class DoorDb implements TicketLookup {
         sectionId: r['section_id'] as String?,
         mine: (r['mine'] as int) == 1,
         holder: r['holder'] as String?,
+        document: r['document'] as String?,
         type: r['type'] as String?,
         seat: r['seat'] as String?,
         methods: (r['methods'] as String).isEmpty ? const [] : (r['methods'] as String).split(','),

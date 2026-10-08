@@ -74,11 +74,32 @@ class _ScanScreenState extends State<ScanScreen> {
     _lastAt = now;
     _busy = true;
     try {
-      final outcome = await widget.service.scan(widget.meta, raw, method);
-      if (!mounted) return;
-      outcome.verdict.ok ? HapticFeedback.lightImpact() : HapticFeedback.heavyImpact();
-      setState(() => _outcome = outcome);
       _clearTimer?.cancel();
+      if (mounted) setState(() => _outcome = null);
+      final outcome = await widget.service.inspect(widget.meta, raw, method);
+      if (!mounted) return;
+
+      var shown = outcome;
+      if (outcome.verdict.ok) {
+        // Entrada válida: el portero ve todos los datos y decide. Nada se marca hasta que acepte.
+        HapticFeedback.selectionClick();
+        final accepted = await _askConfirm(outcome);
+        if (!mounted) return;
+        if (accepted) {
+          shown = await widget.service.confirm(widget.meta, raw, method);
+          HapticFeedback.lightImpact();
+        } else {
+          // Cancelada o se acabó el tiempo: la entrada sigue válida y se puede volver a leer ya.
+          _lastRaw = null;
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(const SnackBar(content: Text('Lectura cancelada. La entrada no se marcó como usada.')));
+          return;
+        }
+      } else {
+        HapticFeedback.heavyImpact();
+      }
+      setState(() => _outcome = shown);
       _clearTimer = Timer(const Duration(milliseconds: 3500), () {
         if (mounted) setState(() => _outcome = null);
       });
@@ -86,6 +107,20 @@ class _ScanScreenState extends State<ScanScreen> {
     } finally {
       _busy = false;
     }
+  }
+
+  /// Ventana con los datos de la entrada. Devuelve true solo si el portero toca Aceptar a tiempo.
+  Future<bool> _askConfirm(ScanOutcome outcome) async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => _ConfirmDialog(
+        ticket: outcome.ticket!,
+        sectionName: widget.meta.sections[outcome.ticket!.sectionId],
+        gateName: widget.meta.gate?.name,
+      ),
+    );
+    return accepted == true;
   }
 
   Future<void> _startNfc() async {
@@ -283,6 +318,104 @@ class _ResultBanner extends StatelessWidget {
           for (final line in lines) Text(line, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 16)),
         ],
       ),
+    );
+  }
+}
+
+/// Cuánto tiempo tiene el portero para aceptar antes de que la lectura se cancele sola.
+const _confirmSeconds = 12;
+
+class _ConfirmDialog extends StatefulWidget {
+  const _ConfirmDialog({required this.ticket, this.sectionName, this.gateName});
+
+  final TicketRow ticket;
+  final String? sectionName;
+  final String? gateName;
+
+  @override
+  State<_ConfirmDialog> createState() => _ConfirmDialogState();
+}
+
+class _ConfirmDialogState extends State<_ConfirmDialog> with SingleTickerProviderStateMixin {
+  late final AnimationController _timer = AnimationController(vsync: this, duration: const Duration(seconds: _confirmSeconds))
+    ..addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) Navigator.of(context).pop(false);
+    })
+    ..forward();
+
+  @override
+  void dispose() {
+    _timer.dispose();
+    super.dispose();
+  }
+
+  String _code(String c) => c.length == 10 ? '${c.substring(0, 5)}-${c.substring(5)}' : c;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.ticket;
+    final scheme = Theme.of(context).colorScheme;
+    final rows = <(String, String)>[
+      ('Tipo de entrada', t.type ?? '—'),
+      if (widget.sectionName != null) ('Sector', widget.sectionName!),
+      if (t.seat != null) ('Asiento', t.seat!),
+      if (t.document != null && t.document!.isNotEmpty) ('Carnet', t.document!),
+      ('Código', _code(t.code)),
+      if (widget.gateName != null) ('Puerta', widget.gateName!),
+    ];
+    return AlertDialog(
+      scrollable: true,
+      title: Row(
+        children: [
+          Icon(Icons.verified_outlined, color: scheme.primary),
+          const SizedBox(width: 10),
+          const Expanded(child: Text('Entrada válida')),
+        ],
+      ),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(t.holder ?? 'Sin nombre', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 12),
+          for (final (label, value) in rows)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: 120, child: Text(label, style: TextStyle(color: scheme.onSurfaceVariant))),
+                  Expanded(child: Text(value, style: const TextStyle(fontWeight: FontWeight.w600))),
+                ],
+              ),
+            ),
+          const SizedBox(height: 14),
+          AnimatedBuilder(
+            animation: _timer,
+            builder: (context, _) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LinearProgressIndicator(value: 1 - _timer.value, minHeight: 6, borderRadius: BorderRadius.circular(3)),
+                const SizedBox(height: 6),
+                Text(
+                  'Se cancela sola en ${(_confirmSeconds * (1 - _timer.value)).ceil()} s si no aceptas',
+                  style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      actionsAlignment: MainAxisAlignment.spaceBetween,
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
+        FilledButton.icon(
+          onPressed: () => Navigator.of(context).pop(true),
+          style: FilledButton.styleFrom(minimumSize: const Size(190, 52)),
+          icon: const Icon(Icons.login),
+          label: const Text('ACEPTAR INGRESO'),
+        ),
+      ],
     );
   }
 }
