@@ -48,7 +48,7 @@ class _ScanScreenState extends State<ScanScreen> {
     _refreshCounts();
     if (widget.method == AccessMethod.nfc) _startNfc();
     // Mientras se lee, sube las lecturas en cuanto hay internet.
-    _syncTimer = Timer.periodic(const Duration(seconds: 20), (_) => widget.service.sync(widget.meta.sessionId).catchError((_) => false));
+    _syncTimer = Timer.periodic(const Duration(seconds: 15), (_) => widget.service.sync(widget.meta.sessionId).catchError((_) => false));
   }
 
   @override
@@ -88,6 +88,8 @@ class _ScanScreenState extends State<ScanScreen> {
         if (accepted) {
           shown = await widget.service.confirm(widget.meta, raw, method);
           HapticFeedback.lightImpact();
+          // Sube el ingreso al servidor de una vez (si hay internet), para que el panel lo vea en vivo.
+          unawaited(widget.service.sync(widget.meta.sessionId).catchError((_) => false));
         } else {
           // Cancelada o se acabó el tiempo: la entrada sigue válida y se puede volver a leer ya.
           _lastRaw = null;

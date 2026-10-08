@@ -65,8 +65,8 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
         <section className="card p-6">
           <h2 className="eyebrow mb-1">Funciones asignadas</h2>
           <p className="mb-4 text-sm text-[var(--ink-muted)]">
-            En la app solo verá estas funciones y podrá descargar sus entradas. Si eliges una puerta, solo trabaja esa
-            puerta; sin puerta, puede elegir la suya al abrir la app.
+            Una cuenta por puerta: al iniciar sesión en la app, el portero ve estas funciones y la app descarga
+            sola las entradas de su puerta, sin pedirle que la elija.
           </p>
 
           {assignments.length === 0 ? (
@@ -81,7 +81,7 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
                     <span className="block font-medium">{a.session.event.title}</span>
                     <span className="text-sm text-[var(--ink-muted)]">
                       {formatDateTime(a.session.startsAt, a.session.venue.timezone)} · {a.session.venue.name} ·{" "}
-                      {a.accessPoint ? a.accessPoint.name : "todas las puertas"}
+                      {a.accessPoint ? a.accessPoint.name : "sin puerta (asígnala)"}
                     </span>
                   </span>
                   <ActionForm action={unassignDoorAction} confirm="¿Quitar esta función del portero?">
@@ -112,8 +112,10 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
               </label>
               <label className="label">
                 Puerta
-                <select name="accessPointId" defaultValue="" className="field">
-                  <option value="">Todas / la elige él</option>
+                <select name="accessPointId" required defaultValue="" className="field">
+                  <option value="" disabled>
+                    Elige la puerta
+                  </option>
                   {[...new Map(sessions.flatMap((s) => s.venue.accessPoints).map((g) => [g.id, g])).values()].map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.name}

@@ -56,7 +56,7 @@ const GUESTS = [
 async function ensureStaff(
   db: Db,
   orgId: string,
-  data: { email: string; name: string; password: string; role: "CLIENT" | "CASHIER"; clientId?: string },
+  data: { email: string; name: string; password: string; role: "CLIENT" | "CASHIER" | "OPERATOR"; clientId?: string },
 ) {
   // Devuelve la cuenta solo si la creó (si ya existía, no la toca).
   if (await db.prisma.staffUser.findUnique({ where: { email: data.email } })) return null;
@@ -135,18 +135,25 @@ export async function seedArchitectureDemo(db: Db, orgId: string) {
       if (section) await prisma.ticketType.updateMany({ where: { sectionId: section.id }, data: { accessMethods: methods } });
     }
 
-    // El portero de prueba ve en la app las funciones de Arena 26.
-    const doorman = await prisma.staffUser.findUnique({ where: { email: "puerta@impacta.test" } });
-    if (doorman) {
-      const sessions = await prisma.eventSession.findMany({ where: { venueId: arena.id }, select: { id: true } });
+    // Una cuenta de portero por puerta: cada una descarga solo las entradas de su puerta.
+    await ensureStaff(db, orgId, { email: "puerta.sur@impacta.test", name: "Puerta Acceso sur", password: seedPassword("Puerta2026!"), role: "OPERATOR" });
+    const sessions = await prisma.eventSession.findMany({ where: { venueId: arena.id }, select: { id: true } });
+    const perGate: [string, string][] = [
+      ["puerta@impacta.test", "Acceso norte"],
+      ["puerta.sur@impacta.test", "Acceso sur"],
+    ];
+    for (const [email, gateName] of perGate) {
+      const doorman = await prisma.staffUser.findUnique({ where: { email } });
+      const gate = arena.accessPoints.find((g) => g.name === gateName);
+      if (!doorman || !gate) continue;
       for (const session of sessions) {
         await prisma.doorAssignment.upsert({
           where: { userId_sessionId: { userId: doorman.id, sessionId: session.id } },
-          create: { userId: doorman.id, sessionId: session.id },
-          update: {},
+          create: { userId: doorman.id, sessionId: session.id, accessPointId: gate.id },
+          update: { accessPointId: gate.id },
         });
       }
-      log.push(`Portero de prueba asignado a ${sessions.length} función(es) de Arena 26`);
+      log.push(`${email} → ${gateName} (${sessions.length} función(es))`);
     }
   }
 

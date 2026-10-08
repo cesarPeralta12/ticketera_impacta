@@ -25,14 +25,15 @@ export async function assignDoorAction(_prev: FormState, formData: FormData): Pr
   });
   if (!session) return { error: "Elige una función." };
 
+  // Cada cuenta de portero trabaja una sola puerta: la app descarga sus datos sin preguntar.
   const gateId = String(formData.get("accessPointId") ?? "");
   const gate = gateId ? await prisma.accessPoint.findFirst({ where: { id: gateId, venueId: session.venueId } }) : null;
-  if (gateId && !gate) return { error: "La puerta no es de este recinto." };
+  if (!gate) return { error: "Elige la puerta de esta cuenta (debe ser una puerta del recinto de la función)." };
 
   await prisma.doorAssignment.upsert({
     where: { userId_sessionId: { userId: operator.id, sessionId: session.id } },
-    create: { userId: operator.id, sessionId: session.id, accessPointId: gate?.id ?? null },
-    update: { accessPointId: gate?.id ?? null },
+    create: { userId: operator.id, sessionId: session.id, accessPointId: gate.id },
+    update: { accessPointId: gate.id },
   });
   revalidatePath(`/usuarios/${operator.id}`);
   return { ok: true };

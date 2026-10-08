@@ -15,6 +15,7 @@ import {
   revokeDevice,
   startDeviceSession,
 } from "../src/operations/mobile";
+import { getLiveAccess } from "../src/operations/live";
 import { sellAtBoxOffice } from "../src/operations/sales";
 import { createGeneralAdmissionEvent } from "./fixtures";
 
@@ -145,5 +146,38 @@ describe("descarga para validar sin internet", () => {
     await scanTicket({ sessionId: session.id, raw: first!.code, method: "QR", accessPointId: gates[0]!.id });
     const afterScan = await getDoorDownload({ sessionId: session.id, accessPointId: gates[0]!.id, since });
     expect(afterScan!.tickets).toMatchObject([{ code: first!.code, status: "U" }]);
+  });
+});
+
+describe("ingreso en vivo", () => {
+  it("muestra quién entró, por qué puerta y a qué hora, y cada intento rechazado", async () => {
+    const { session, type, cashier, operator } = await setup(["QR", "BARCODE"]);
+    const [first, second] = await sell(session.id, type.id, cashier.id, 2);
+    const gate = await prisma.accessPoint.findFirstOrThrow({ where: { venueId: session.venueId }, orderBy: { name: "asc" } });
+    const at = new Date(Date.now() - 60_000);
+
+    await scanTicket({ sessionId: session.id, raw: first!.code, method: "QR", accessPointId: gate.id, operatorId: operator.id, scannedAt: at, offline: true });
+    // Reingreso por otra puerta, decidido por el teléfono sin conexión.
+    await scanTicket({
+      sessionId: session.id,
+      raw: first!.code,
+      method: "QR",
+      accessPointId: gate.id,
+      operatorId: operator.id,
+      offline: true,
+      offlineResult: "ALREADY_USED",
+    });
+
+    const live = (await getLiveAccess(session.id))!;
+    expect(live.totals).toMatchObject({ issued: 2, entered: 1, rejected: 1 });
+    const entered = live.tickets.find((t) => t.id === first!.id)!;
+    expect(entered.status).toBe("USED");
+    expect(entered.entry).toMatchObject({ gate: gate.name, operator: "Portero", method: "QR" });
+    expect(entered.entry!.at).toBe(at.toISOString());
+    expect(entered.attempts).toHaveLength(1);
+    expect(entered.attempts[0]).toMatchObject({ result: "ALREADY_USED", gate: gate.name });
+    expect(live.tickets.find((t) => t.id === second!.id)!.entry).toBeNull();
+    expect(live.rejected[0]).toMatchObject({ result: "ALREADY_USED", code: first!.code });
+    expect(live.sections[0]).toMatchObject({ issued: 2, entered: 1 });
   });
 });

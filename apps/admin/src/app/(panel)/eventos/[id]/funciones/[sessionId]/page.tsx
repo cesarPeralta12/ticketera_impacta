@@ -63,6 +63,19 @@ export default async function SessionPage({ params }: Props) {
       </div>
 
       <Link
+        href={`/eventos/${id}/funciones/${session.id}/en-vivo`}
+        className="card flex flex-wrap items-center justify-between gap-3 border-[var(--accent)] p-5 transition-colors hover:bg-[var(--accent-soft)]"
+      >
+        <span>
+          <span className="block font-medium">Ingreso en vivo</span>
+          <span className="text-sm text-[var(--ink-muted)]">
+            Mapa del recinto y lista de entradas: se van pintando de verde las que ingresan, con hora, puerta y rechazos.
+          </span>
+        </span>
+        <span className="font-mono text-sm text-[var(--accent)]">Abrir →</span>
+      </Link>
+
+      <Link
         href={`/eventos/${id}/funciones/${session.id}/invitados`}
         className={`card flex flex-wrap items-center justify-between gap-3 p-5 transition-colors hover:border-[var(--accent)] ${guestList ? "border-[var(--accent)]" : ""}`}
       >

@@ -79,6 +79,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (a != null && _meta != null) _counts = await _s.gateCounts(a.sessionId);
     if (a != null) await _s.refreshCounters(a.sessionId);
     if (mounted) setState(() {});
+    // Cuenta de una sola puerta: si todavía no hay datos de esta puerta, se descargan solos.
+    final gate = a?.gates.length == 1 ? a!.gates.first : null;
+    if (gate != null && (_meta == null || _meta!.gateId != gate.id)) unawaited(_download());
   }
 
   Future<void> _backgroundSync() async {
@@ -150,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final a = _selected;
     final meta = _meta;
     // Los datos descargados son de otra puerta que la elegida: hay que volver a descargar.
-    final gateChanged = meta != null && (meta.gateId ?? '') != (_gateId ?? '');
+    final gateChanged = meta != null && (meta.gateId ?? '') != (_gateId ?? '') && !_downloading;
     final ready = meta != null && !gateChanged;
 
     return Scaffold(
