@@ -1,5 +1,5 @@
 import QRCode from "qrcode";
-import { TRANSFER_OFFER_HOURS, signTicketPayload } from "@ticketera/core";
+import { entranceText, signTicketPayload, TRANSFER_OFFER_HOURS } from "@ticketera/core";
 import {
   RESET_PASSWORD_MINUTES,
   VERIFY_EMAIL_HOURS,
@@ -64,6 +64,7 @@ export async function sendTicketsEmail(orderCode: string): Promise<boolean> {
   const session = order.items[0]?.ticketType.session;
   if (!session) return false;
   const secret = requireEnv("TICKET_QR_SECRET");
+  const gates = session.venue.accessPoints.map((g) => ({ name: g.name, sectionIds: g.sections.map((s) => s.id) }));
 
   const tickets = await Promise.all(
     order.tickets
@@ -71,6 +72,7 @@ export async function sendTicketsEmail(orderCode: string): Promise<boolean> {
       .map(async (t) => ({
         code: t.code,
         typeName: t.ticketType.name,
+        entrance: entranceText(gates, t.ticketType.sectionId),
         seat: t.seat ? `${t.seat.section.name} · ${t.seat.label}` : null,
         // Solo si el tipo de entrada se lee por QR fijo: una entrada solo NFC o solo código de barras no lleva QR,
         // y una de QR dinámico se abre en el sitio (una imagen en el correo sería una foto fija).
@@ -105,6 +107,7 @@ type TransferTicket = {
   startsAt: Date;
   venueName: string;
   timezone: string;
+  entrance?: string | null;
 };
 
 /** Avisa a la persona a quien le ofrecieron una entrada. */
@@ -154,6 +157,7 @@ export async function sendTransferAcceptedEmails(done: {
           code: done.ticket.code,
           typeName: done.ticket.typeName,
           seat: done.ticket.seat,
+          entrance: done.ticket.entrance,
           qrPng,
           dynamicUrl: dynamic ? `${baseUrl()}/entrada/${done.ticket.code}` : null,
         },

@@ -77,6 +77,8 @@ export type TicketMail = {
   seat: string | null;
   /** PNG del QR, si el tipo de entrada se lee por QR fijo. */
   qrPng: Buffer | null;
+  /** Por qué puerta ingresa ("Ingreso por: Acceso norte"). */
+  entrance?: string | null;
   /** QR dinámico: no lleva QR en el correo (una imagen fija no sirve); este enlace abre la entrada en el sitio. */
   dynamicUrl?: string | null;
 };
@@ -117,6 +119,7 @@ export function ticketsMessage(input: {
         <div style="font-size:12px;color:#7a7d76;text-transform:uppercase;letter-spacing:1px">Entrada ${i + 1} de ${input.tickets.length}</div>
         <div style="font-size:18px;font-weight:700;margin-top:4px">${esc(t.typeName)}</div>
         ${t.seat ? `<div style="font-size:15px;font-weight:700;margin-top:2px">${esc(t.seat)}</div>` : ""}
+        ${t.entrance ? `<div style="font-size:14px;font-weight:700;margin-top:6px;color:#0f8a6b">${esc(t.entrance)}</div>` : ""}
         ${qr}${dynamic}
         <div style="font-family:Consolas,monospace;font-size:16px;letter-spacing:2px">${esc(formatCode(t.code))}</div>
       </td></tr></table>`;
@@ -137,7 +140,7 @@ export function ticketsMessage(input: {
     input.tickets
       .map(
         (t, i) =>
-          `Entrada ${i + 1}: ${t.typeName}${t.seat ? ` · ${t.seat}` : ""} · ${formatCode(t.code)}` +
+          `Entrada ${i + 1}: ${t.typeName}${t.seat ? ` · ${t.seat}` : ""} · ${formatCode(t.code)}${t.entrance ? ` · ${t.entrance}` : ""}` +
           (t.dynamicUrl ? `\n  QR dinámico (cambia cada 30 s): ábrela con internet antes de salir: ${t.dynamicUrl}` : ""),
       )
       .join("\n") +

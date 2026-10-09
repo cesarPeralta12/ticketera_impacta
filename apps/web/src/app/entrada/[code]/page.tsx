@@ -39,6 +39,7 @@ export default async function TicketPage({ params }: Props) {
         typeName={ticket.typeName}
         seat={ticket.seat}
         holder={ticket.holderName}
+        entrance={ticket.entrance}
         initialStatus={ticket.status === "USED" ? "USED" : "VALID"}
       />
     </main>

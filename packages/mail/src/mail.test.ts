@@ -62,6 +62,25 @@ describe("correo", () => {
     expect(email.text).toContain("https://ticketera.proshop.lat/entrada/K7Q3MXPA2B");
   });
 
+  it("cada entrada del correo dice por qué puerta ingresar", () => {
+    const email = ticketsMessage({
+      to: "ana@prueba.test",
+      buyerName: "Ana Rojas",
+      eventTitle: "Loko Fest",
+      startsAt: new Date("2026-11-12T20:00:00Z"),
+      timezone: "America/La_Paz",
+      venueName: "Arena 26",
+      orderUrl: "https://ticketera.proshop.lat/mis-entradas",
+      tickets: [
+        { code: "K7Q3MXPA2B", typeName: "Campo", seat: null, qrPng: null, entrance: "Ingreso por: Acceso norte" },
+        { code: "ZZ9988AABB", typeName: "Palco", seat: null, qrPng: null, entrance: "Ingreso por: Acceso sur" },
+      ],
+    });
+    expect(email.html).toContain("Ingreso por: Acceso norte");
+    expect(email.html).toContain("Ingreso por: Acceso sur");
+    expect(email.text).toContain("Ingreso por: Acceso norte");
+  });
+
   it("con Resend manda la API key, el remitente y las imágenes como adjuntos en línea", async () => {
     vi.stubEnv("MAIL_PROVIDER", "resend");
     vi.stubEnv("RESEND_API_KEY", "re_test");

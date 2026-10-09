@@ -281,7 +281,12 @@ export async function getOrderByCode(code: string) {
     include: {
       items: {
         include: {
-          ticketType: { include: { session: { include: { event: true, venue: true } }, section: true } },
+          ticketType: {
+            include: {
+              session: { include: { event: true, venue: { include: { accessPoints: { include: { sections: { select: { id: true } } } } } } } },
+              section: true,
+            },
+          },
           seat: true,
         },
       },

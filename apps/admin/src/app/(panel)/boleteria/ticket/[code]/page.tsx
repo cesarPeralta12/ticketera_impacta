@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { code128Svg, formatCode, formatDateTime, formatMoney } from "@ticketera/core";
+import { code128Svg, entranceText, formatCode, formatDateTime, formatMoney } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, getOrderByCode, prisma } from "@ticketera/db";
 import { PrintButton } from "@/components/print-button";
 import { ticketQrSvg } from "@/lib/qr";
@@ -53,6 +53,10 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
       // Código de barras: lo lee cualquier lector láser, ideal para el ticket térmico.
       barcode: t.ticketType.accessMethods.includes("BARCODE") ? code128Svg(t.code, { height: 48 }) : null,
       price: order.items.find((i) => i.id === t.orderItemId)?.unitAmount ?? 0,
+      entrance: entranceText(
+        session.venue.accessPoints.map((g) => ({ name: g.name, sectionIds: g.sections.map((s) => s.id) })),
+        t.ticketType.sectionId,
+      ),
     })),
   );
   const buyer = order.buyerName === BOX_OFFICE_BUYER.name ? null : order.buyerName;
@@ -111,6 +115,7 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
                 {t.seat.section.name} · {t.seat.label}
               </p>
             )}
+            {t.entrance && <p className="mt-1 text-sm font-bold">{t.entrance}</p>}
             {t.qr && <div className="mx-auto my-2 w-[46mm]" dangerouslySetInnerHTML={{ __html: t.qr }} />}
             {t.barcode && (
               <div className="mx-auto my-2 w-[60mm] [&>svg]:h-auto [&>svg]:w-full" dangerouslySetInnerHTML={{ __html: t.barcode }} />

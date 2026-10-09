@@ -117,6 +117,7 @@ export default async function MyTicketsPage({ searchParams }: Props) {
               </p>
               <p className="mt-1 font-semibold">{t.typeName}</p>
               {t.seat && <p className="text-sm font-semibold">{t.seat}</p>}
+              {t.entrance && <p className="mt-1 text-sm font-bold text-[#0f8a6b]">{t.entrance}</p>}
               {t.qrMode === "DYNAMIC" && (
                 <div className="my-3">
                   <Link href={`/entrada/${t.code}`} className="btn-accent inline-block">

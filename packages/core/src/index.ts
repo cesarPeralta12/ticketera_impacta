@@ -3,6 +3,7 @@ export * from "./barcode";
 export * from "./categories";
 export * from "./checkout";
 export * from "./codes";
+export * from "./entrance";
 export * from "./dynamic-qr";
 export * from "./guests";
 export * from "./images";

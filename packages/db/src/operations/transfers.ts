@@ -9,30 +9,26 @@
  * Mientras la oferta esté pendiente, la entrada sigue siendo del titular y puede usarla: si ingresa antes
  * de que la acepten, la oferta ya no se puede aceptar.
  */
-import {
-  MAX_TRANSFER_REQUESTS_PER_HOUR,
-  isValidDocument,
-  normalizeDocument,
-  offerExpiry,
-  randomCode,
-  transferBlockReason,
-  transferDeadline,
-} from "@ticketera/core";
+import { entranceText, isValidDocument, MAX_TRANSFER_REQUESTS_PER_HOUR, normalizeDocument, offerExpiry, randomCode, transferBlockReason, transferDeadline } from "@ticketera/core";
 import { prisma } from "../client";
 import { DomainError, audit } from "./shared";
 
 const eventInclude = {
-  session: { include: { event: { select: { title: true, transfersEnabled: true } }, venue: { select: { name: true, timezone: true } } } },
-  ticketType: { select: { name: true, accessMethods: true, qrMode: true } },
+  session: { include: { event: { select: { title: true, transfersEnabled: true } }, venue: { select: { name: true, timezone: true, accessPoints: { select: { name: true, sections: { select: { id: true } } } } } } } },
+  ticketType: { select: { name: true, accessMethods: true, qrMode: true, sectionId: true } },
   seat: { include: { section: { select: { name: true } } } },
 } as const;
 
 /** Datos del evento y de la entrada que se muestran en las pantallas y correos de una transferencia. */
 function describe(ticket: {
   code: string;
-  ticketType: { name: string; accessMethods: ("QR" | "BARCODE" | "NFC")[]; qrMode: "STATIC" | "DYNAMIC" };
+  ticketType: { name: string; accessMethods: ("QR" | "BARCODE" | "NFC")[]; qrMode: "STATIC" | "DYNAMIC"; sectionId: string | null };
   seat: { label: string; section: { name: string } } | null;
-  session: { startsAt: Date; event: { title: string }; venue: { name: string; timezone: string } };
+  session: {
+    startsAt: Date;
+    event: { title: string };
+    venue: { name: string; timezone: string; accessPoints: { name: string; sections: { id: string }[] }[] };
+  };
 }) {
   return {
     code: ticket.code,
@@ -45,6 +41,11 @@ function describe(ticket: {
     startsAt: ticket.session.startsAt,
     venueName: ticket.session.venue.name,
     timezone: ticket.session.venue.timezone,
+    /** Por qué puerta ingresa ("Ingreso por: Acceso norte"), o null si el recinto no tiene puertas cargadas. */
+    entrance: entranceText(
+      ticket.session.venue.accessPoints.map((g) => ({ name: g.name, sectionIds: g.sections.map((s) => s.id) })),
+      ticket.ticketType.sectionId,
+    ),
   };
 }
 

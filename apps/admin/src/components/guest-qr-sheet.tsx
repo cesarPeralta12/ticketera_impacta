@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { code128Svg, formatCode, formatDateTime } from "@ticketera/core";
+import { code128Svg, entranceText, formatCode, formatDateTime } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { PrintButton } from "@/components/print-button";
 import { ticketQrSvg } from "@/lib/qr";
@@ -11,20 +11,24 @@ import { ticketQrSvg } from "@/lib/qr";
 export async function GuestQrSheet({ eventId, sessionId, backHref }: { eventId: string; sessionId: string; backHref: string }) {
   const session = await prisma.eventSession.findFirst({
     where: { id: sessionId, eventId },
-    include: { event: true, venue: true },
+    include: { event: true, venue: { include: { accessPoints: { include: { sections: { select: { id: true } } } } } } },
   });
   if (!session) return null;
 
   const tickets = await prisma.ticket.findMany({
     where: { sessionId: session.id, order: { channel: "GUEST" }, status: "VALID" },
     orderBy: { holderName: "asc" },
-    include: { ticketType: { select: { name: true, accessMethods: true } } },
+    include: { ticketType: { select: { name: true, accessMethods: true, sectionId: true } } },
   });
   const cards = await Promise.all(
     tickets.map(async (t) => ({
       ...t,
       qr: t.ticketType.accessMethods.includes("QR") ? await ticketQrSvg(t.code) : null,
       barcode: t.ticketType.accessMethods.includes("BARCODE") ? code128Svg(t.code, { height: 48 }) : null,
+      entrance: entranceText(
+        session.venue.accessPoints.map((g) => ({ name: g.name, sectionIds: g.sections.map((s) => s.id) })),
+        t.ticketType.sectionId,
+      ),
     })),
   );
 
@@ -63,6 +67,7 @@ export async function GuestQrSheet({ eventId, sessionId, backHref }: { eventId: 
               <div className="mx-auto my-2 w-full max-w-56 [&>svg]:h-auto [&>svg]:w-full" dangerouslySetInnerHTML={{ __html: t.barcode }} />
             )}
             <p className="font-semibold">{t.holderName}</p>
+            {t.entrance && <p className="text-sm font-bold">{t.entrance}</p>}
             <p className="text-xs text-[var(--ink-muted)]">{t.ticketType.name}</p>
             <p className="font-mono text-xs tracking-wider">{formatCode(t.code)}</p>
           </li>

@@ -15,6 +15,8 @@ type Props = {
   typeName: string;
   seat: string | null;
   holder: string | null;
+  /** Por qué puerta ingresa. */
+  entrance: string | null;
   initialStatus: "VALID" | "USED";
 };
 
@@ -151,6 +153,7 @@ export function DynamicTicket(props: Props) {
           {props.seat ? ` · ${props.seat}` : ""}
         </p>
         {props.holder && <p className="text-sm text-[#6b687a]">{props.holder}</p>}
+        {props.entrance && <p className="mt-1 text-sm font-bold text-[#0f8a6b]">{props.entrance}</p>}
 
         {problem ? (
           <div role="alert" className="mt-4 rounded-xl bg-[#fde8e8] p-4 text-sm text-[#9b1c1c]">

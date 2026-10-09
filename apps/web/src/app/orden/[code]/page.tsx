@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import QRCode from "qrcode";
-import { code128Svg, formatCode, formatDateTime, formatMoney, signTicketPayload } from "@ticketera/core";
+import { code128Svg, entranceText, formatCode, formatDateTime, formatMoney, signTicketPayload, type GateInfo } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, expireStaleOrders, getOrderByCode, requireEnv } from "@ticketera/db";
 import { payOrderAction } from "./actions";
 import { auth } from "@/lib/auth";
@@ -114,7 +114,12 @@ export default async function OrderPage({ params }: Props) {
             </p>
             {isOwner && order.channel === "ONLINE" && <ResendTickets code={order.code} />}
           </div>
-          <TicketList tickets={order.tickets} guest={guest} ownerId={order.customerId} />
+          <TicketList
+            tickets={order.tickets}
+            guest={guest}
+            ownerId={order.customerId}
+            gates={(session?.venue.accessPoints ?? []).map((g) => ({ name: g.name, sectionIds: g.sections.map((s) => s.id) }))}
+          />
           {isOwner && order.channel === "ONLINE" && (
             <p className="text-sm text-[var(--ink-muted)]">
               ¿Quieres darle una entrada a otra persona?{" "}
@@ -166,11 +171,21 @@ type TicketForList = {
   status: string;
   customerId: string | null;
   holderName: string | null;
-  ticketType: { name: string; accessMethods: ("QR" | "BARCODE" | "NFC")[]; qrMode: "STATIC" | "DYNAMIC" };
+  ticketType: { name: string; accessMethods: ("QR" | "BARCODE" | "NFC")[]; qrMode: "STATIC" | "DYNAMIC"; sectionId: string | null };
   seat: { label: string; section: { name: string } } | null;
 };
 
-async function TicketList({ tickets, guest, ownerId }: { tickets: TicketForList[]; guest: boolean; ownerId: string | null }) {
+async function TicketList({
+  tickets,
+  guest,
+  ownerId,
+  gates,
+}: {
+  tickets: TicketForList[];
+  guest: boolean;
+  ownerId: string | null;
+  gates: GateInfo[];
+}) {
   const secret = requireEnv("TICKET_QR_SECRET");
   const rendered = await Promise.all(
     tickets.map(async (ticket) => ({
@@ -205,6 +220,9 @@ async function TicketList({ tickets, guest, ownerId }: { tickets: TicketForList[
             <p className="text-sm font-semibold">
               {ticket.seat.section.name} · {ticket.seat.label}
             </p>
+          )}
+          {!ticket.transferred && entranceText(gates, ticket.ticketType.sectionId) && (
+            <p className="mt-1 text-sm font-bold text-[#0f8a6b]">{entranceText(gates, ticket.ticketType.sectionId)}</p>
           )}
           {ticket.transferred && (
             <p className="my-4 rounded-lg bg-[#fff4d6] px-3 py-3 text-sm font-semibold">Esta entrada fue transferida a otra persona.</p>
