@@ -75,8 +75,10 @@ export type TicketMail = {
   code: string;
   typeName: string;
   seat: string | null;
-  /** PNG del QR, si el tipo de entrada se lee por QR. */
+  /** PNG del QR, si el tipo de entrada se lee por QR fijo. */
   qrPng: Buffer | null;
+  /** QR dinámico: no lleva QR en el correo (una imagen fija no sirve); este enlace abre la entrada en el sitio. */
+  dynamicUrl?: string | null;
 };
 
 /**
@@ -107,11 +109,15 @@ export function ticketsMessage(input: {
         images.push({ cid, filename: `entrada-${t.code}.png`, content: t.qrPng, contentType: "image/png" });
         qr = `<img src="cid:${cid}" width="200" height="200" alt="QR de la entrada ${esc(formatCode(t.code))}" style="display:block;margin:12px auto;border:0">`;
       }
+      const dynamic = t.dynamicUrl
+        ? `<div style="margin:14px 0 6px">${button(t.dynamicUrl, "Abrir mi entrada")}</div>
+        <div style="font-size:12px;color:#62655f;line-height:1.5;max-width:340px">Esta entrada es de <strong>QR dinámico</strong>: el QR cambia cada 30 segundos y no sirve una captura. <strong>Ábrela una vez con internet antes de salir</strong> y después funciona aunque no haya señal.</div>`
+        : "";
       return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e1dfd7;border-radius:12px;margin:14px 0"><tr><td align="center" style="padding:16px">
         <div style="font-size:12px;color:#7a7d76;text-transform:uppercase;letter-spacing:1px">Entrada ${i + 1} de ${input.tickets.length}</div>
         <div style="font-size:18px;font-weight:700;margin-top:4px">${esc(t.typeName)}</div>
         ${t.seat ? `<div style="font-size:15px;font-weight:700;margin-top:2px">${esc(t.seat)}</div>` : ""}
-        ${qr}
+        ${qr}${dynamic}
         <div style="font-family:Consolas,monospace;font-size:16px;letter-spacing:2px">${esc(formatCode(t.code))}</div>
       </td></tr></table>`;
     })
@@ -128,7 +134,13 @@ export function ticketsMessage(input: {
   );
   const text =
     `¡Listo, ${input.buyerName}! Tus entradas para ${input.eventTitle}\n${when} · ${input.venueName}\n\n` +
-    input.tickets.map((t, i) => `Entrada ${i + 1}: ${t.typeName}${t.seat ? ` · ${t.seat}` : ""} · ${formatCode(t.code)}`).join("\n") +
+    input.tickets
+      .map(
+        (t, i) =>
+          `Entrada ${i + 1}: ${t.typeName}${t.seat ? ` · ${t.seat}` : ""} · ${formatCode(t.code)}` +
+          (t.dynamicUrl ? `\n  QR dinámico (cambia cada 30 s): ábrela con internet antes de salir: ${t.dynamicUrl}` : ""),
+      )
+      .join("\n") +
     `\n\nVer mis entradas: ${input.orderUrl}\n\nLleva tu carnet de identidad. Cada entrada vale para un solo ingreso.`;
   return { to: input.to, subject, html, text, images };
 }

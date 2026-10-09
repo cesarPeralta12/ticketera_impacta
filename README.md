@@ -211,6 +211,9 @@ orden). Los enlaces sirven una sola vez, vencen (24 h confirmar, 1 h contraseña
 
 Los topes cambian: confirma en la página de precios de cada proveedor antes de decidir.
 
+## QR dinámico
+Por tipo de entrada se puede activar un QR que **cambia cada 30 segundos** y funciona sin internet, en la puerta y en el celular del comprador (no sirve una captura). Solo QR y solo venta online. Detalle, límites y pendientes en [`docs/qr-dinamico.md`](docs/qr-dinamico.md).
+
 ## Seguridad
 Detalle en [`docs/seguridad.md`](docs/seguridad.md).
 

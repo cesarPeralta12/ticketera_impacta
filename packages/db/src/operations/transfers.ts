@@ -23,14 +23,14 @@ import { DomainError, audit } from "./shared";
 
 const eventInclude = {
   session: { include: { event: { select: { title: true, transfersEnabled: true } }, venue: { select: { name: true, timezone: true } } } },
-  ticketType: { select: { name: true, accessMethods: true } },
+  ticketType: { select: { name: true, accessMethods: true, qrMode: true } },
   seat: { include: { section: { select: { name: true } } } },
 } as const;
 
 /** Datos del evento y de la entrada que se muestran en las pantallas y correos de una transferencia. */
 function describe(ticket: {
   code: string;
-  ticketType: { name: string; accessMethods: ("QR" | "BARCODE" | "NFC")[] };
+  ticketType: { name: string; accessMethods: ("QR" | "BARCODE" | "NFC")[]; qrMode: "STATIC" | "DYNAMIC" };
   seat: { label: string; section: { name: string } } | null;
   session: { startsAt: Date; event: { title: string }; venue: { name: string; timezone: string } };
 }) {
@@ -38,6 +38,8 @@ function describe(ticket: {
     code: ticket.code,
     typeName: ticket.ticketType.name,
     accessMethods: ticket.ticketType.accessMethods,
+    /** DYNAMIC: no lleva QR fijo; se abre en el sitio, donde el QR cambia cada 30 segundos. */
+    qrMode: ticket.ticketType.qrMode,
     seat: ticket.seat ? `${ticket.seat.section.name} · ${ticket.seat.label}` : null,
     eventTitle: ticket.session.event.title,
     startsAt: ticket.session.startsAt,

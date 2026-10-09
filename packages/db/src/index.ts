@@ -17,4 +17,5 @@ export * from "./operations/rate-limit";
 export * from "./operations/report";
 export * from "./operations/security";
 export * from "./operations/sales";
+export * from "./operations/ticket-keys";
 export * from "./operations/transfers";

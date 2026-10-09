@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { auth, signOut } from "@/lib/auth";
+import { SignOutButton } from "./sign-out-button";
 
 export async function Nav() {
   const session = await auth();
@@ -30,12 +31,7 @@ export async function Nav() {
                 className="flex items-center gap-3"
               >
                 <span className="hidden text-[var(--ink-dim)] sm:inline">{session.user.name}</span>
-                <button
-                  type="submit"
-                  className="text-[var(--ink-muted)] underline decoration-[var(--border-light)] underline-offset-4 transition-colors hover:text-[var(--ink)]"
-                >
-                  Salir
-                </button>
+                <SignOutButton className="text-[var(--ink-muted)] underline decoration-[var(--border-light)] underline-offset-4 transition-colors hover:text-[var(--ink)]" />
               </form>
             </>
           ) : (

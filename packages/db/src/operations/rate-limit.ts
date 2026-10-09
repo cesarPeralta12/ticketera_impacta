@@ -45,6 +45,8 @@ export const LIMITS = {
   loginFailuresByAccount: { limit: 6, windowSeconds: 15 * 60 },
   /** Renovaciones de sesión de la app por IP (varios teléfonos pueden compartir el wifi de una puerta). */
   refreshByIp: { limit: 120, windowSeconds: 10 * 60 },
+  /** Entrega de llaves del QR dinámico por cuenta (una por entrada cada vez que se abre). */
+  ticketKeyByAccount: { limit: 120, windowSeconds: 60 * 60 },
   /** Cuentas nuevas por IP. */
   registerByIp: { limit: 5, windowSeconds: 60 * 60 },
   /** "Olvidé mi contraseña" por IP. */

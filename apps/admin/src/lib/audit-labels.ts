@@ -9,6 +9,8 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   "auth.sessions_revoked": "Todas las sesiones cerradas",
   "auth.refresh_reuse": "Token reutilizado (posible robo)",
   "device.revoked": "Teléfono desconectado",
+  "auth.key_shared": "Entrada abierta desde muchos aparatos (posible entrada compartida)",
+  "ticket.key_issued": "Entrada de QR dinámico abierta en un celular",
   "scan.batch": "Lecturas en puerta",
   "staff.create": "Cuenta creada",
   "staff.activate": "Cuenta activada",
@@ -28,6 +30,7 @@ export const SECURITY_FILTERS = [
   { value: "auth.sessions_revoked", label: "Sesiones cerradas" },
   { value: "device.revoked", label: "Teléfonos desconectados" },
   { value: "auth.refresh_reuse", label: "Tokens reutilizados" },
+  { value: "auth.key_shared", label: "Entradas compartidas" },
   { value: "scan.batch", label: "Lecturas en puerta" },
 ] as const;
 
@@ -52,8 +55,12 @@ export function describeData(action: string, data: unknown): string {
       return typeof d.deviceName === "string" ? d.deviceName : "";
     case "auth.refresh_reuse":
       return `${typeof d.deviceName === "string" ? `${d.deviceName} · ` : ""}la sesión del teléfono se cerró`;
+    case "auth.key_shared":
+      return `entrada ${typeof d.code === "string" ? d.code : ""} abierta desde ${d.devices ?? "varios"} aparatos distintos en 24 h`;
+    case "ticket.key_issued":
+      return typeof d.code === "string" ? `entrada ${d.code}` : "";
     case "scan.batch":
-      return `${d.total ?? 0} lectura(s): ${d.accepted ?? 0} entraron, ${d.rejected ?? 0} rechazadas${d.offline ? `, ${d.offline} sin conexión` : ""}`;
+      return `${d.total ?? 0} lectura(s): ${d.accepted ?? 0} entraron, ${d.rejected ?? 0} rechazadas${d.expired ? `, ${d.expired} QR vencidos` : ""}${d.offline ? `, ${d.offline} sin conexión` : ""}${d.BAD_PROOF ? ` · ${d.BAD_PROOF} con prueba SOSPECHOSA` : ""}`;
     default: {
       const text = data ? JSON.stringify(data) : "";
       return text.length > 140 ? `${text.slice(0, 140)}…` : text;

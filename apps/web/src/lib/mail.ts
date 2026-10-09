@@ -72,8 +72,10 @@ export async function sendTicketsEmail(orderCode: string): Promise<boolean> {
         code: t.code,
         typeName: t.ticketType.name,
         seat: t.seat ? `${t.seat.section.name} · ${t.seat.label}` : null,
-        // Solo si el tipo de entrada se lee por QR: una entrada solo NFC o solo código de barras no lleva QR.
-        qrPng: t.ticketType.accessMethods.includes("QR")
+        // Solo si el tipo de entrada se lee por QR fijo: una entrada solo NFC o solo código de barras no lleva QR,
+        // y una de QR dinámico se abre en el sitio (una imagen en el correo sería una foto fija).
+        dynamicUrl: t.ticketType.qrMode === "DYNAMIC" ? `${baseUrl()}/entrada/${t.code}` : null,
+        qrPng: t.ticketType.qrMode !== "DYNAMIC" && t.ticketType.accessMethods.includes("QR")
           ? await QRCode.toBuffer(await signTicketPayload(t.code, secret), { type: "png", margin: 1, width: 400, errorCorrectionLevel: "M" })
           : null,
       })),
@@ -97,6 +99,7 @@ type TransferTicket = {
   code: string;
   typeName: string;
   accessMethods: ("QR" | "BARCODE" | "NFC")[];
+  qrMode: "STATIC" | "DYNAMIC";
   seat: string | null;
   eventTitle: string;
   startsAt: Date;
@@ -133,7 +136,8 @@ export async function sendTransferAcceptedEmails(done: {
   to: { name: string; email: string };
 }) {
   const secret = requireEnv("TICKET_QR_SECRET");
-  const qrPng = done.ticket.accessMethods.includes("QR")
+  const dynamic = done.ticket.qrMode === "DYNAMIC";
+  const qrPng = !dynamic && done.ticket.accessMethods.includes("QR")
     ? await QRCode.toBuffer(await signTicketPayload(done.ticket.code, secret), { type: "png", margin: 1, width: 400, errorCorrectionLevel: "M" })
     : null;
   await sendEmailSafely(
@@ -145,7 +149,15 @@ export async function sendTransferAcceptedEmails(done: {
       timezone: done.ticket.timezone,
       venueName: done.ticket.venueName,
       orderUrl: `${baseUrl()}/mis-entradas`,
-      tickets: [{ code: done.ticket.code, typeName: done.ticket.typeName, seat: done.ticket.seat, qrPng }],
+      tickets: [
+        {
+          code: done.ticket.code,
+          typeName: done.ticket.typeName,
+          seat: done.ticket.seat,
+          qrPng,
+          dynamicUrl: dynamic ? `${baseUrl()}/entrada/${done.ticket.code}` : null,
+        },
+      ],
     }),
   );
   await sendEmailSafely(

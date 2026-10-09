@@ -3,12 +3,14 @@
  * no sirve, el respaldo escrito exige el OTP, y las lecturas sin conexión se vuelven a verificar al sincronizar.
  */
 import { afterAll, describe, expect, it } from "vitest";
-import { STEP_SECONDS, deriveTicketKey, dynamicOtp, fromBase64Url, signDynamicPayload, signTicketPayload, stepAt, verifyDynamicPayload, parseDynamicPayload } from "@ticketera/core";
+import { STEP_SECONDS, toBase64Url, deriveTicketKey, dynamicOtp, fromBase64Url, signDynamicPayload, signTicketPayload, stepAt, verifyDynamicPayload, parseDynamicPayload } from "@ticketera/core";
 import { prisma } from "../src/client";
 import { scanTicket } from "../src/operations/access";
 import { createStaffUser } from "../src/operations/accounts";
 import { getDoorDownload } from "../src/operations/mobile";
+import { applyPaymentUpdate, startPayment } from "../src/operations/payments";
 import { setTicketTypeQrMode } from "../src/operations/qr-mode";
+import { issueTicketKey } from "../src/operations/ticket-keys";
 import { issueGuestTickets, sellAtBoxOffice } from "../src/operations/sales";
 import { buyer, createGeneralAdmissionEvent, createPendingOrder } from "./fixtures";
 
@@ -216,5 +218,73 @@ describe("reglas del modo dinámico", () => {
 
     const online = await createPendingOrder({ sessionId: session.id, items: [{ ticketTypeId: type.id, quantity: 1 }], buyer: buyer(2) });
     expect(online.code).toBeTruthy();
+  });
+});
+
+describe("llave para el celular del comprador", () => {
+  async function ownedTicket(mode: "STATIC" | "DYNAMIC" = "DYNAMIC") {
+    const { session, types } = await createGeneralAdmissionEvent({ sectionCapacity: 20, types: [{ name: "VIP", capacity: 10 }] });
+    const full = await prisma.eventSession.findUniqueOrThrow({ where: { id: session.id }, include: { event: true } });
+    await prisma.ticketType.update({ where: { id: types[0]!.id }, data: { qrMode: mode } });
+    const order = await createPendingOrder({ sessionId: session.id, items: [{ ticketTypeId: types[0]!.id, quantity: 1 }], buyer: buyer(Math.floor(Math.random() * 1e6)) });
+    const payment = await startPayment(order.code, "directo");
+    await applyPaymentUpdate({ paymentId: payment.id, provider: "directo", providerPaymentId: `directo_${payment.id}`, status: "APPROVED", providerStatus: "x", amount: payment.amount, currency: payment.currency });
+    const ticket = await prisma.ticket.findFirstOrThrow({ where: { orderId: order.id } });
+    return { ticket, customerId: ticket.customerId!, orgId: full.event.organizationId, session };
+  }
+
+  it("el dueño recibe la llave (la misma que el servidor deriva) y queda registrado desde dónde", async () => {
+    const { ticket, customerId, orgId } = await ownedTicket();
+    const r = await issueTicketKey(customerId, ticket.code, { ip: "200.87.1.1", userAgent: "Chrome en Android" });
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.key).toBe(toBase64Url(await deriveTicketKey(SECRET, ticket.code)));
+    expect(r.status).toBe("VALID");
+    expect(Math.abs(new Date(r.serverTime).getTime() - Date.now())).toBeLessThan(60_000);
+    expect(new Date(r.validUntil).getTime()).toBeGreaterThan(Date.now());
+    const log = await prisma.auditLog.findFirstOrThrow({ where: { action: "ticket.key_issued", entityId: ticket.id } });
+    expect(log).toMatchObject({ ip: "200.87.1.1", userAgent: "Chrome en Android", organizationId: orgId, actorId: customerId });
+    // Y con esa llave el QR del celular entra en la puerta.
+    const qr = await signDynamicPayload(fromBase64Url(r.key), ticket.code, Date.now());
+    expect((await scan(ticket.sessionId, qr)).result).toBe("ACCEPTED");
+  });
+
+  it("solo se entrega al dueño actual, para entradas dinámicas, vigentes y de venta pagada", async () => {
+    const a = await ownedTicket();
+    const b = await ownedTicket();
+    expect(await issueTicketKey(b.customerId, a.ticket.code)).toEqual({ ok: false, reason: "NOT_FOUND" }); // la de otra persona
+    expect(await issueTicketKey(a.customerId, "ZZZZZZZZZZ")).toEqual({ ok: false, reason: "NOT_FOUND" });
+
+    const staticOne = await ownedTicket("STATIC");
+    expect(await issueTicketKey(staticOne.customerId, staticOne.ticket.code)).toEqual({ ok: false, reason: "NOT_DYNAMIC" });
+
+    await prisma.ticket.update({ where: { id: a.ticket.id }, data: { status: "CANCELLED" } });
+    expect(await issueTicketKey(a.customerId, a.ticket.code)).toEqual({ ok: false, reason: "NOT_AVAILABLE" });
+
+    // Pasado el evento (24 h después del inicio) deja de entregarse.
+    const late = new Date(b.session.startsAt.getTime() + 25 * 3_600_000);
+    expect(await issueTicketKey(b.customerId, b.ticket.code, {}, late)).toEqual({ ok: false, reason: "NOT_AVAILABLE" });
+  });
+
+  it("una entrada usada sigue entregando la llave (se muestra como ya usada)", async () => {
+    const { ticket, customerId } = await ownedTicket();
+    await prisma.ticket.update({ where: { id: ticket.id }, data: { status: "USED", usedAt: new Date() } });
+    const r = await issueTicketKey(customerId, ticket.code);
+    expect(r).toMatchObject({ ok: true, status: "USED" });
+  });
+
+  it("si la misma entrada se abre desde 4 aparatos distintos en un día, queda una alerta (una sola)", async () => {
+    const { ticket, customerId, orgId } = await ownedTicket();
+    for (let i = 1; i <= 5; i++) await issueTicketKey(customerId, ticket.code, { ip: `190.0.0.${i}`, userAgent: `Aparato ${i}` });
+    const flags = await prisma.auditLog.findMany({ where: { action: "auth.key_shared", entityId: ticket.id } });
+    expect(flags).toHaveLength(1);
+    expect(flags[0]).toMatchObject({ severity: "warn", organizationId: orgId, data: { devices: 4 } });
+  });
+
+  it("una transferencia cambia el código y con él la llave: la anterior ya no sirve", async () => {
+    const { ticket, customerId } = await ownedTicket();
+    const before = await issueTicketKey(customerId, ticket.code);
+    if (!before.ok) throw new Error("sin llave");
+    const newCode = "ABCDEFGH23";
+    expect(toBase64Url(await deriveTicketKey(SECRET, newCode))).not.toBe(before.key);
   });
 });

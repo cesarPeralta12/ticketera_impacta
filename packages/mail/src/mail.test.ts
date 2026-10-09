@@ -44,6 +44,24 @@ describe("correo", () => {
     expect(saved).not.toContain("cid:qr-1");
   });
 
+  it("una entrada de QR dinámico no lleva imagen: lleva un botón para abrirla y la advertencia de abrirla con internet", () => {
+    const email = ticketsMessage({
+      to: "ana@prueba.test",
+      buyerName: "Ana Rojas",
+      eventTitle: "Noche Electrónica",
+      startsAt: new Date("2026-11-12T20:00:00Z"),
+      timezone: "America/La_Paz",
+      venueName: "Sonilum Plaza",
+      orderUrl: "https://ticketera.proshop.lat/mis-entradas",
+      tickets: [{ code: "K7Q3MXPA2B", typeName: "VIP", seat: null, qrPng: null, dynamicUrl: "https://ticketera.proshop.lat/entrada/K7Q3MXPA2B" }],
+    });
+    expect(email.images ?? []).toHaveLength(0);
+    expect(email.html).not.toContain("cid:");
+    expect(email.html).toContain("https://ticketera.proshop.lat/entrada/K7Q3MXPA2B");
+    expect(email.html).toContain("antes de salir");
+    expect(email.text).toContain("https://ticketera.proshop.lat/entrada/K7Q3MXPA2B");
+  });
+
   it("con Resend manda la API key, el remitente y las imágenes como adjuntos en línea", async () => {
     vi.stubEnv("MAIL_PROVIDER", "resend");
     vi.stubEnv("RESEND_API_KEY", "re_test");

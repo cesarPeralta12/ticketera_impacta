@@ -1,6 +1,19 @@
 # QR dinámico (plan)
 
-Estado: **plan, sin implementar**. Opción elegida: secreto compartido por entrada (estilo TOTP), con validación sin internet.
+Estado: **implementado en local** (fases 1 a 5; sin subir al servidor). Opción elegida: secreto compartido por entrada (estilo TOTP), con validación sin internet.
+
+### Qué quedó hecho
+- Núcleo (`packages/core/src/dynamic-qr.ts`) y app de puerta (`apps/puerta_app/lib/dynamic_qr.dart`) con **vectores de prueba idénticos** (TypeScript y Dart calculan lo mismo).
+- Servidor: `qrMode` por tipo de entrada, lectura `TK2`/código+OTP, resultados `QR_EXPIRED` y `STATIC_NOT_ALLOWED`, re-verificación de lecturas sin conexión, llaves en la descarga de la puerta (solo las de su puerta).
+- Panel: interruptor por tipo de entrada (bloqueado tras la primera venta), boletería e invitaciones lo rechazan, contador de “QR vencidos” en el ingreso en vivo.
+- Comprador: `/entrada/[código]` (QR calculado en el celular con anillo vivo y OTP de respaldo), `/api/entradas/[código]/llave`, service worker + manifest (PWA), preparación automática en *Mis entradas*, correo sin QR con botón “Abrir mi entrada”, borrado al cerrar sesión.
+- Probado de punta a punta en local: el OTP del navegador coincide con el del servidor, una captura de hace 10 min da `QR_EXPIRED`, el código estático da `STATIC_NOT_ALLOWED`, el QR vivo entra, y la página abre **sin servidor** desde la caché (compilación de producción).
+
+### Pendiente
+- **Recordatorio por correo el día anterior** (“abre tu entrada con internet”): requiere una tarea programada y un campo `reminderSentAt`; no está hecho.
+- Probar con celulares reales en modo avión y una APK nueva (el APK actual no entiende `TK2`).
+- Cambiar el modo del QR de un tipo con ventas, y el esquema asimétrico: fuera de alcance (ver más abajo).
+
 
 ## 1. Idea en una línea
 La entrada es siempre la misma (`código`). Lo que cambia cada 30 segundos es una **prueba** calculada con un secreto propio de esa entrada. La puerta, que descarga el secreto antes del evento, recalcula la prueba sin internet y compara. Una captura de pantalla vieja no pasa.

@@ -166,7 +166,7 @@ type TicketForList = {
   status: string;
   customerId: string | null;
   holderName: string | null;
-  ticketType: { name: string; accessMethods: ("QR" | "BARCODE" | "NFC")[] };
+  ticketType: { name: string; accessMethods: ("QR" | "BARCODE" | "NFC")[]; qrMode: "STATIC" | "DYNAMIC" };
   seat: { label: string; section: { name: string } } | null;
 };
 
@@ -178,14 +178,15 @@ async function TicketList({ tickets, guest, ownerId }: { tickets: TicketForList[
       // Si la entrada se transfirió a otra cuenta, su QR ya no se muestra aquí (lo ve su nueva dueña en "Mis entradas").
       transferred: Boolean(ownerId && ticket.customerId && ticket.customerId !== ownerId),
       // Cada tipo de entrada define cómo se lee en puerta: se muestra solo lo que el lector admite.
-      qr: !(ownerId && ticket.customerId && ticket.customerId !== ownerId) && ticket.ticketType.accessMethods.includes("QR")
+      qr: !(ownerId && ticket.customerId && ticket.customerId !== ownerId) && ticket.ticketType.qrMode !== "DYNAMIC" && ticket.ticketType.accessMethods.includes("QR")
         ? await QRCode.toString(await signTicketPayload(ticket.code, secret), {
             type: "svg",
             margin: 1,
             errorCorrectionLevel: "M",
           })
         : null,
-      barcode: !(ownerId && ticket.customerId && ticket.customerId !== ownerId) && ticket.ticketType.accessMethods.includes("BARCODE") ? code128Svg(ticket.code, { height: 56 }) : null,
+      barcode: !(ownerId && ticket.customerId && ticket.customerId !== ownerId) && ticket.ticketType.qrMode !== "DYNAMIC" && ticket.ticketType.accessMethods.includes("BARCODE") ? code128Svg(ticket.code, { height: 56 }) : null,
+      dynamic: !(ownerId && ticket.customerId && ticket.customerId !== ownerId) && ticket.ticketType.qrMode === "DYNAMIC" && ticket.status === "VALID",
       nfc: ticket.ticketType.accessMethods.includes("NFC"),
     })),
   );
@@ -207,6 +208,14 @@ async function TicketList({ tickets, guest, ownerId }: { tickets: TicketForList[
           )}
           {ticket.transferred && (
             <p className="my-4 rounded-lg bg-[#fff4d6] px-3 py-3 text-sm font-semibold">Esta entrada fue transferida a otra persona.</p>
+          )}
+          {ticket.dynamic && (
+            <div className="my-3">
+              <Link href={`/entrada/${ticket.code}`} className="btn-accent inline-block">
+                Abrir entrada (QR dinámico)
+              </Link>
+              <p className="mt-2 text-xs text-[#6b687a]">Ábrela con internet antes de salir: el QR cambia cada 30 segundos y funciona sin señal.</p>
+            </div>
           )}
           {ticket.qr && (
             <div

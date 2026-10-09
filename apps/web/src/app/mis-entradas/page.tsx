@@ -7,6 +7,7 @@ import { MAX_TRANSFERS_PER_TICKET, code128Svg, formatCode, formatDateTime, signT
 import { listCustomerTickets, listTransfers, requireEnv } from "@ticketera/db";
 import { auth } from "@/lib/auth";
 import { acceptTransferAction, cancelTransferAction, declineTransferAction } from "./actions";
+import { OfflineReady } from "./offline-ready";
 import { TransferForm } from "./transfer-form";
 
 export const metadata: Metadata = { title: "Mis entradas", robots: { index: false } };
@@ -25,12 +26,15 @@ export default async function MyTicketsPage({ searchParams }: Props) {
   const cards = await Promise.all(
     tickets.map(async (t) => ({
       ...t,
-      qr: t.accessMethods.includes("QR")
-        ? await QRCode.toString(await signTicketPayload(t.code, secret), { type: "svg", margin: 1, errorCorrectionLevel: "M" })
-        : null,
-      barcode: t.accessMethods.includes("BARCODE") ? code128Svg(t.code, { height: 56 }) : null,
+      // Una entrada de QR dinámico no lleva QR fijo: se abre en su propia página, donde el QR cambia cada 30 s.
+      qr:
+        t.qrMode !== "DYNAMIC" && t.accessMethods.includes("QR")
+          ? await QRCode.toString(await signTicketPayload(t.code, secret), { type: "svg", margin: 1, errorCorrectionLevel: "M" })
+          : null,
+      barcode: t.qrMode !== "DYNAMIC" && t.accessMethods.includes("BARCODE") ? code128Svg(t.code, { height: 56 }) : null,
     })),
   );
+  const dynamicCodes = cards.filter((t) => t.qrMode === "DYNAMIC" && t.status === "VALID").map((t) => t.code);
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-8 px-6 py-12">
@@ -49,6 +53,8 @@ export default async function MyTicketsPage({ searchParams }: Props) {
           {aviso}
         </p>
       )}
+
+      {dynamicCodes.length > 0 && <OfflineReady userId={session.user.id} codes={dynamicCodes} />}
 
       {transfers.incoming.length > 0 && (
         <section className="space-y-3">
@@ -111,6 +117,14 @@ export default async function MyTicketsPage({ searchParams }: Props) {
               </p>
               <p className="mt-1 font-semibold">{t.typeName}</p>
               {t.seat && <p className="text-sm font-semibold">{t.seat}</p>}
+              {t.qrMode === "DYNAMIC" && (
+                <div className="my-3">
+                  <Link href={`/entrada/${t.code}`} className="btn-accent inline-block">
+                    Abrir entrada (QR dinámico)
+                  </Link>
+                  <p className="mt-2 text-xs text-[#6b687a]">El QR cambia cada 30 segundos y funciona sin internet. No sirve una captura.</p>
+                </div>
+              )}
               {t.qr && <div className={`mx-auto my-3 w-44 ${t.status === "USED" ? "opacity-30" : ""}`} dangerouslySetInnerHTML={{ __html: t.qr }} />}
               {t.barcode && (
                 <div className={`mx-auto my-3 w-full max-w-60 overflow-hidden rounded-md bg-white [&>svg]:h-auto [&>svg]:w-full ${t.status === "USED" ? "opacity-30" : ""}`} dangerouslySetInnerHTML={{ __html: t.barcode }} />

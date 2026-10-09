@@ -34,6 +34,8 @@ export type AuditEntry = {
 export const SECURITY_RETENTION_DAYS = 365;
 /** Prefijos de los eventos de acceso (los que caducan). */
 export const SECURITY_ACTION_PREFIXES = ["auth.", "device."] as const;
+/** Lo que caduca a los 12 meses: los eventos de acceso y las entregas de llaves de QR dinámico (una por cada apertura). */
+const PURGE_ACTION_PREFIXES = [...SECURITY_ACTION_PREFIXES, "ticket.key_"] as const;
 
 const clip = (value: string | null | undefined, max: number) => (value ? value.slice(0, max) : null);
 
@@ -85,7 +87,7 @@ export async function recordAuditSafely(entry: AuditEntry, now = new Date()) {
 export async function purgeOldSecurityEvents(now = new Date()) {
   const { count } = await prisma.auditLog.deleteMany({
     where: {
-      OR: SECURITY_ACTION_PREFIXES.map((p) => ({ action: { startsWith: p } })),
+      OR: PURGE_ACTION_PREFIXES.map((p) => ({ action: { startsWith: p } })),
       createdAt: { lt: new Date(now.getTime() - SECURITY_RETENTION_DAYS * 24 * 3_600_000) },
     },
   });
