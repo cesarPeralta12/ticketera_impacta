@@ -22,7 +22,8 @@
     "db:migrate": "npm run db:migrate -w @ticketera/db",
     "db:deploy": "npm run db:deploy -w @ticketera/db",
     "db:seed": "npm run db:seed -w @ticketera/db",
-    "db:studio": "npm run db:studio -w @ticketera/db"
+    "db:studio": "npm run db:studio -w @ticketera/db",
+    "db:bootstrap": "npm run db:bootstrap -w @ticketera/db"
   },
   "devDependencies": {
     "turbo": "^2.11.5",

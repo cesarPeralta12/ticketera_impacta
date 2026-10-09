@@ -213,7 +213,8 @@ Los topes cambian: confirma en la página de precios de cada proveedor antes de 
 
 ## Despliegue (Coolify u otro servidor con Nixpacks)
 
-Dos aplicaciones desde este mismo repo (Base Directory `/`) y una base PostgreSQL:
+Guía completa, paso a paso: **[docs/despliegue-coolify.md](docs/despliegue-coolify.md)** (base de datos, las dos apps, variables
+de entorno, primer arranque, revisión y la APK de puerta). Resumen:
 
 | | Web | Panel |
 |---|---|---|
@@ -222,18 +223,22 @@ Dos aplicaciones desde este mismo repo (Base Directory `/`) y una base PostgreSQ
 | Start Command | `npm run start -w @ticketera/web` | `npm run start -w @ticketera/admin` |
 | Pre-deployment | `npm run db:deploy` (migraciones) | — |
 
-Variables en las dos: `DATABASE_URL`, `WEB_URL` (URL pública de la web), `PAYMENT_PROVIDER=directo`,
-`NIXPACKS_NODE_VERSION=22` y un secreto aleatorio distinto para `TICKET_QR_SECRET`,
+Variables en las dos: `DATABASE_URL`, `WEB_URL`, `ADMIN_URL`, `NIXPACKS_NODE_VERSION=22`, `PAYMENT_PROVIDER`, el correo
+(`MAIL_PROVIDER`, `RESEND_API_KEY`, `MAIL_FROM`) y un secreto aleatorio para `TICKET_QR_SECRET` (el mismo en las dos),
 `WEB_AUTH_SECRET` y `ADMIN_AUTH_SECRET`.
 
-Datos de demostración en un servidor nuevo (la semilla **borra todo**; sin `SEED_PASSWORD` se
-niega, porque las contraseñas de prueba de arriba son públicas). Desde la terminal de la app web:
+Primer arranque de un servidor **real** (no borra nada; crea Impacta y su primer dueño con contraseña temporal):
+
+```bash
+BOOTSTRAP_EMAIL=tu@correo.com BOOTSTRAP_NAME="Tu Nombre" npm run db:bootstrap
+```
+
+Datos de **demostración** en un servidor de pruebas (la semilla **borra todo**; sin `SEED_PASSWORD` se niega, porque
+las contraseñas de prueba de arriba son públicas). Nunca en producción:
 
 ```bash
 SEED_ALLOW=si SEED_PASSWORD='una-contraseña-propia' npm run db:seed
 ```
-
-Todas las cuentas de la tabla quedan con esa contraseña.
 
 ## Problemas comunes
 
