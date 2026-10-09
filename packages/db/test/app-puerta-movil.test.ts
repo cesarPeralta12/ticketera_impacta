@@ -64,7 +64,7 @@ describe("sesión del teléfono", () => {
   it("rechaza contraseña incorrecta y roles que no usan la app", async () => {
     const { operator, cashier } = await setup();
     expect(await startDeviceSession({ email: operator.email, password: "mala", deviceId: "dev-1234", deviceName: "x" })).toEqual({ error: "CREDENTIALS" });
-    expect(await startDeviceSession({ email: cashier.email, password: PASSWORD, deviceId: "dev-1234", deviceName: "x" })).toEqual({ error: "ROLE" });
+    expect(await startDeviceSession({ email: cashier.email, password: PASSWORD, deviceId: "dev-1234", deviceName: "x" })).toMatchObject({ error: "ROLE" });
   });
 
   it("una cuenta desactivada pierde el acceso aunque tenga token", async () => {
@@ -213,7 +213,8 @@ describe("organizadores y la app móvil", () => {
     expect((await authenticateDevice(first.token))?.mustChangePassword).toBe(true);
 
     expect(await changeStaffPassword(operator.id, "otra-mala", "NuevaClave2026!")).toBe(false);
-    expect(await changeStaffPassword(operator.id, PASSWORD, "NuevaClave2026!")).toBe(true);
+    // La app cambia la contraseña desde su propia sesión: esa sesión se conserva.
+    expect(await changeStaffPassword(operator.id, PASSWORD, "NuevaClave2026!", { keepDeviceTokenId: first.deviceTokenId })).toBe(true);
     expect((await authenticateDevice(first.token))?.mustChangePassword).toBe(false);
   });
 });

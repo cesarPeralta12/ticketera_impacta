@@ -77,6 +77,8 @@ model StaffUser {
   emailVerified      Boolean  @default(false)
   /// Creada con contraseña temporal: tiene que cambiarla al entrar.
   mustChangePassword Boolean  @default(false)
+  /// Sube al cambiar la contraseña o al "cerrar todas las sesiones": las sesiones web anteriores dejan de valer.
+  sessionVersion     Int      @default(0)
   image              String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -117,8 +119,19 @@ model DeviceToken {
   deviceName String
   createdAt  DateTime  @default(now())
   lastSeenAt DateTime  @default(now())
+  /// Vencimiento del token de acceso (corto: se renueva con el token de renovación).
   expiresAt  DateTime
   revokedAt  DateTime?
+  /// Token de renovación (hash). Se cambia por uno nuevo en cada uso; el anterior queda en prevRefreshHash
+  /// para detectar que alguien lo reutiliza (robo) y cerrar la sesión.
+  refreshHash      String?   @unique
+  prevRefreshHash  String?   @unique
+  refreshExpiresAt DateTime?
+  rotatedAt        DateTime?
+  /// Dónde y con qué se inició la sesión (para la lista de dispositivos).
+  ip         String?
+  appVersion String?
+  platform   String?
 
   user StaffUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -167,6 +180,8 @@ model Customer {
   /// y único: una persona, una cuenta. Nulo solo en cuentas antiguas, que deben completarlo.
   documentId    String?  @unique
   phone         String?
+  /// Igual que en StaffUser: subirla cierra todas las sesiones del comprador.
+  sessionVersion Int     @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

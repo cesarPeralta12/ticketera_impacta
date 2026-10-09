@@ -6,12 +6,19 @@ import { verifyStaffCredentials } from "./accounts";
 /** Roles que pueden usar la app de puerta. */
 export const DOOR_APP_ROLES: StaffRole[] = ["OWNER", "ADMIN", "OPERATOR"];
 
-/** Cuánto dura la sesión de un teléfono antes de pedir login de nuevo. */
-const DEVICE_SESSION_DAYS = 30;
+/** El token de acceso es corto; la app lo renueva con su token de renovación (que rota en cada uso). */
+export const ACCESS_TOKEN_MINUTES = 60;
+/** Cuánto dura la sesión de un teléfono sin renovarse antes de pedir login de nuevo. */
+const REFRESH_TOKEN_DAYS = 30;
+/** Si el teléfono repite una renovación (la respuesta se perdió) dentro de este margen, no es un robo. */
+const REFRESH_GRACE_MS = 60_000;
 
 export const ALL_ACCESS_METHODS: AccessMethod[] = ["QR", "BARCODE", "NFC"];
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
+
+/** Datos de la petición de un teléfono, para la lista de dispositivos y el registro de seguridad. */
+export type DeviceContext = { ip?: string; appVersion?: string; platform?: string };
 
 export type DoorStaff = {
   id: string;
@@ -32,31 +39,42 @@ export async function startDeviceSession(input: {
   password: string;
   deviceId: string;
   deviceName: string;
-}): Promise<{ token: string; staff: DoorStaff } | { error: "CREDENTIALS" | "ROLE" }> {
+  context?: DeviceContext;
+}): Promise<{ token: string; refreshToken: string; expiresAt: Date; staff: DoorStaff; deviceTokenId: string } | { error: "CREDENTIALS" | "ROLE"; userId?: string }> {
   // verifyStaffCredentials ya rechaza cuentas desactivadas y organizadores suspendidos.
   const staff = await verifyStaffCredentials(input.email, input.password);
   if (!staff) return { error: "CREDENTIALS" };
-  if (!DOOR_APP_ROLES.includes(staff.role)) return { error: "ROLE" };
+  if (!DOOR_APP_ROLES.includes(staff.role)) return { error: "ROLE", userId: staff.id };
 
   const token = randomBytes(32).toString("base64url");
+  const refreshToken = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(Date.now() + ACCESS_TOKEN_MINUTES * 60_000);
   const deviceId = input.deviceId.slice(0, 64);
   // Un teléfono tiene una sola sesión por cuenta: iniciar de nuevo reemplaza la anterior.
   await prisma.deviceToken.updateMany({
     where: { userId: staff.id, deviceId, revokedAt: null },
     data: { revokedAt: new Date() },
   });
-  await prisma.deviceToken.create({
+  const created = await prisma.deviceToken.create({
     data: {
       userId: staff.id,
       tokenHash: hashToken(token),
+      refreshHash: hashToken(refreshToken),
       deviceId,
       deviceName: input.deviceName.slice(0, 80) || "Teléfono",
-      expiresAt: new Date(Date.now() + DEVICE_SESSION_DAYS * 24 * 60 * 60_000),
+      expiresAt,
+      refreshExpiresAt: new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60_000),
+      ip: input.context?.ip,
+      appVersion: input.context?.appVersion,
+      platform: input.context?.platform,
     },
   });
   const user = await prisma.staffUser.findUniqueOrThrow({ where: { id: staff.id }, select: { mustChangePassword: true } });
   return {
     token,
+    refreshToken,
+    expiresAt,
+    deviceTokenId: created.id,
     staff: {
       id: staff.id,
       name: staff.name,
@@ -69,7 +87,9 @@ export async function startDeviceSession(input: {
 }
 
 /** Usuario dueño de un token de la app, o null si no existe, venció, se revocó o la cuenta se desactivó. */
-export async function authenticateDevice(token: string): Promise<(DoorStaff & { deviceId: string }) | null> {
+export async function authenticateDevice(
+  token: string,
+): Promise<(DoorStaff & { deviceId: string; deviceTokenId: string; deviceName: string }) | null> {
   if (!token) return null;
   const row = await prisma.deviceToken.findUnique({
     where: { tokenHash: hashToken(token) },
@@ -96,7 +116,74 @@ export async function authenticateDevice(token: string): Promise<(DoorStaff & { 
     organizationId: membership.organizationId,
     mustChangePassword: row.user.mustChangePassword,
     deviceId: row.deviceId,
+    deviceTokenId: row.id,
+    deviceName: row.deviceName,
   };
+}
+
+export type RefreshResult =
+  | { ok: true; token: string; refreshToken: string; expiresAt: Date; userId: string; deviceName: string; deviceTokenId: string }
+  /** REUSED: alguien presentó un token de renovación ya usado (posible robo): la sesión del teléfono se cerró. */
+  | { ok: false; reason: "INVALID" | "REUSED" | "BUSY"; userId?: string; deviceName?: string; deviceTokenId?: string };
+
+/**
+ * Renueva la sesión de un teléfono con su token de renovación y entrega un par nuevo (el anterior deja de valer).
+ * Si se presenta un token de renovación que ya se había cambiado, se asume robo: se revoca esa sesión y el
+ * teléfono legítimo tiene que volver a iniciar sesión.
+ */
+export async function refreshDeviceSession(refreshToken: string, context: DeviceContext = {}, now = new Date()): Promise<RefreshResult> {
+  if (!refreshToken) return { ok: false, reason: "INVALID" };
+  const hash = hashToken(refreshToken);
+  const include = {
+    user: {
+      include: { memberships: { orderBy: { createdAt: "asc" as const }, take: 1, include: { organization: { select: { status: true } } } } },
+    },
+  };
+
+  let row = await prisma.deviceToken.findUnique({ where: { refreshHash: hash }, include });
+  if (!row) {
+    const old = await prisma.deviceToken.findUnique({ where: { prevRefreshHash: hash }, include });
+    if (!old || old.revokedAt) return { ok: false, reason: "INVALID" };
+    const retry = old.rotatedAt !== null && now.getTime() - old.rotatedAt.getTime() <= REFRESH_GRACE_MS;
+    if (!retry) {
+      await prisma.deviceToken.update({ where: { id: old.id }, data: { revokedAt: now } });
+      return { ok: false, reason: "REUSED", userId: old.userId, deviceName: old.deviceName, deviceTokenId: old.id };
+    }
+    row = old; // reintento legítimo: se rota otra vez a partir del vigente
+  }
+
+  const membership = row.user.memberships[0];
+  const valid =
+    !row.revokedAt &&
+    row.refreshExpiresAt !== null &&
+    row.refreshExpiresAt > now &&
+    row.user.active &&
+    membership !== undefined &&
+    membership.organization.status === "ACTIVE" &&
+    DOOR_APP_ROLES.includes(membership.role);
+  if (!valid) return { ok: false, reason: "INVALID", userId: row.userId, deviceName: row.deviceName, deviceTokenId: row.id };
+
+  const token = randomBytes(32).toString("base64url");
+  const next = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(now.getTime() + ACCESS_TOKEN_MINUTES * 60_000);
+  // Condicional sobre el hash vigente: si dos renovaciones llegan a la vez, solo una gana.
+  const { count } = await prisma.deviceToken.updateMany({
+    where: { id: row.id, refreshHash: row.refreshHash },
+    data: {
+      tokenHash: hashToken(token),
+      refreshHash: hashToken(next),
+      prevRefreshHash: hash,
+      rotatedAt: now,
+      expiresAt,
+      refreshExpiresAt: new Date(now.getTime() + REFRESH_TOKEN_DAYS * 24 * 60 * 60_000),
+      lastSeenAt: now,
+      ip: context.ip ?? row.ip,
+      appVersion: context.appVersion ?? row.appVersion,
+      platform: context.platform ?? row.platform,
+    },
+  });
+  if (count === 0) return { ok: false, reason: "BUSY", userId: row.userId, deviceName: row.deviceName, deviceTokenId: row.id };
+  return { ok: true, token, refreshToken: next, expiresAt, userId: row.userId, deviceName: row.deviceName, deviceTokenId: row.id };
 }
 
 export async function endDeviceSession(token: string) {

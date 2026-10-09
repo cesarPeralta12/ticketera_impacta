@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   const parsed = bodySchema.safeParse(raw.data);
   if (!parsed.success) return json({ error: `La contraseña nueva debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.` }, 400);
   if (parsed.data.current === parsed.data.next) return json({ error: "La contraseña nueva debe ser distinta." }, 400);
-  if (!(await changeStaffPassword(staff.id, parsed.data.current, parsed.data.next))) {
+  if (!(await changeStaffPassword(staff.id, parsed.data.current, parsed.data.next, { keepDeviceTokenId: staff.deviceTokenId }))) {
     return json({ error: "La contraseña actual no es correcta." }, 400);
   }
   return json({ ok: true });

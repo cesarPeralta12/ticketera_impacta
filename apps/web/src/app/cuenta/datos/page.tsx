@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { MIN_PASSWORD_LENGTH, prisma } from "@ticketera/db";
 import { auth } from "@/lib/auth";
+import { signOutEverywhereAction } from "./actions";
 import { PasswordForm, ProfileForm } from "./profile-form";
 
 export const metadata: Metadata = { title: "Mis datos", robots: { index: false } };
@@ -36,6 +37,17 @@ export default async function ProfilePage({ searchParams }: Props) {
       <section className="mt-6 flex flex-col gap-4 border-t border-[var(--border)] pt-6">
         <h2 className="font-display text-xl">Cambiar contraseña</h2>
         <PasswordForm minLength={MIN_PASSWORD_LENGTH} />
+      </section>
+      <section className="flex flex-col gap-3 border-t border-[var(--border)] pt-6">
+        <h2 className="font-display text-xl">Sesiones</h2>
+        <p className="text-sm text-[var(--ink-muted)]">
+          ¿Entraste desde un aparato que no es tuyo? Cierra la sesión en todos los aparatos; tendrás que volver a ingresar.
+        </p>
+        <form action={signOutEverywhereAction}>
+          <button type="submit" className="btn w-full">
+            Cerrar sesión en todos los aparatos
+          </button>
+        </form>
       </section>
     </main>
   );

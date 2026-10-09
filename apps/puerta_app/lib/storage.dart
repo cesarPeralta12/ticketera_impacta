@@ -18,15 +18,29 @@ class SessionStore {
   final FlutterSecureStorage _s;
 
   Future<String?> get token => _s.read(key: 'token');
+  Future<String?> get refreshToken => _s.read(key: 'refreshToken');
   Future<String?> get serverUrl => _s.read(key: 'server');
   Future<String?> get email => _s.read(key: 'email');
   Future<String?> get name => _s.read(key: 'name');
 
-  Future<void> save({required String server, required String token, required String email, required String name}) async {
+  Future<void> save({
+    required String server,
+    required String token,
+    required String refreshToken,
+    required String email,
+    required String name,
+  }) async {
     await _s.write(key: 'server', value: server);
     await _s.write(key: 'token', value: token);
+    await _s.write(key: 'refreshToken', value: refreshToken);
     await _s.write(key: 'email', value: email);
     await _s.write(key: 'name', value: name);
+  }
+
+  /// Guarda el par nuevo tras renovar la sesión.
+  Future<void> saveTokens(String token, String refreshToken) async {
+    await _s.write(key: 'token', value: token);
+    await _s.write(key: 'refreshToken', value: refreshToken);
   }
 
   Future<void> saveServer(String server) => _s.write(key: 'server', value: server);
@@ -34,6 +48,7 @@ class SessionStore {
   /// Cierra la sesión pero recuerda el servidor y el email para el próximo ingreso.
   Future<void> clearSession() async {
     await _s.delete(key: 'token');
+    await _s.delete(key: 'refreshToken');
     await _s.delete(key: 'name');
   }
 

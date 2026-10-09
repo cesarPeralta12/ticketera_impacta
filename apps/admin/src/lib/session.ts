@@ -43,12 +43,14 @@ export async function currentStaff() {
   const membership = await prisma.membership.findFirst({
     where: { userId: session.user.id, organizationId: session.user.organizationId, user: { active: true } },
     include: {
-      user: { select: { name: true, email: true, mustChangePassword: true } },
+      user: { select: { name: true, email: true, mustChangePassword: true, sessionVersion: true } },
       organization: true,
       client: true,
     },
   });
   if (!membership) return null;
+  // Sesión cerrada desde la cuenta (cambió la contraseña o "cerrar todas las sesiones").
+  if (membership.user.sessionVersion !== session.user.sessionVersion) return null;
   const home = membership.organization;
   const platform = home.isPlatform && (membership.role === "OWNER" || membership.role === "ADMIN");
   // Un organizador suspendido pierde el acceso en la siguiente acción, aunque tenga sesión.

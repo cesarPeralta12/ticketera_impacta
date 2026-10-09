@@ -105,6 +105,7 @@ export async function verifyStaffCredentials(email: string, password: string) {
     role: membership.role,
     organizationId: membership.organizationId,
     clientId: membership.clientId,
+    sessionVersion: staff.sessionVersion,
   };
 }
 
@@ -141,12 +142,35 @@ export async function createStaffUser(input: {
  * Cambia la contraseña de una cuenta del panel verificando la actual. Devuelve false si
  * la actual no coincide. Al cambiarla deja de ser temporal.
  */
-export async function changeStaffPassword(userId: string, current: string, next: string) {
+export async function changeStaffPassword(userId: string, current: string, next: string, options: { keepDeviceTokenId?: string } = {}) {
   const staff = await prisma.staffUser.findUnique({ where: { id: userId } });
   if (!staff || !(await passwordMatches(current, staff.passwordHash))) return false;
   await prisma.staffUser.update({
     where: { id: userId },
-    data: { passwordHash: await hashPassword(next), mustChangePassword: false },
+    // Subir la versión cierra todas las sesiones web abiertas con la contraseña anterior.
+    data: { passwordHash: await hashPassword(next), mustChangePassword: false, sessionVersion: { increment: 1 } },
+  });
+  // Los teléfonos también: salvo el que está haciendo el cambio (la app lo hace al primer ingreso).
+  await prisma.deviceToken.updateMany({
+    where: { userId, revokedAt: null, ...(options.keepDeviceTokenId ? { id: { not: options.keepDeviceTokenId } } : {}) },
+    data: { revokedAt: new Date() },
   });
   return true;
+}
+
+/**
+ * "Cerrar todas las sesiones" de una cuenta: las sesiones web dejan de valer (versión de sesión) y, si es
+ * personal del panel, también los teléfonos con la app de puerta. `exceptDeviceTokenId` conserva uno.
+ */
+export async function revokeAllSessions(kind: "staff" | "customer", id: string, options: { exceptDeviceTokenId?: string } = {}) {
+  if (kind === "customer") {
+    await prisma.customer.update({ where: { id }, data: { sessionVersion: { increment: 1 } } });
+    return { devices: 0 };
+  }
+  await prisma.staffUser.update({ where: { id }, data: { sessionVersion: { increment: 1 } } });
+  const { count } = await prisma.deviceToken.updateMany({
+    where: { userId: id, revokedAt: null, ...(options.exceptDeviceTokenId ? { id: { not: options.exceptDeviceTokenId } } : {}) },
+    data: { revokedAt: new Date() },
+  });
+  return { devices: count };
 }

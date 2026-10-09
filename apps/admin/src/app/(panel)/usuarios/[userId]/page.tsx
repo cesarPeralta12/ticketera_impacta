@@ -6,13 +6,16 @@ import { formatDateTime } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { assignDoorAction, revokeDeviceAction, unassignDoorAction } from "@/lib/actions/door";
+import { revokeUserSessionsAction } from "@/lib/actions/users";
 import { ROLE_LABEL } from "@/lib/labels";
 import { ROLES, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Portero" };
 
 const dayAgo = () => new Date(Date.now() - 24 * 60 * 60_000);
-const sessionOpen = (d: { revokedAt: Date | null; expiresAt: Date }) => !d.revokedAt && d.expiresAt > new Date();
+/** La sesión del teléfono sigue abierta mientras su token de renovación valga (el de acceso es corto). */
+const sessionOpen = (d: { revokedAt: Date | null; expiresAt: Date; refreshExpiresAt: Date | null }) =>
+  !d.revokedAt && (d.refreshExpiresAt ?? d.expiresAt) > new Date();
 
 /** Un portero: qué funciones puede controlar con la app y qué teléfonos tienen su sesión abierta. */
 export default async function OperatorPage({ params }: { params: Promise<{ userId: string }> }) {
@@ -137,7 +140,15 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
       )}
 
       <section className="card p-6">
-        <h2 className="eyebrow mb-3">Teléfonos con sesión</h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="eyebrow">Teléfonos con sesión</h2>
+          <ActionForm action={revokeUserSessionsAction} confirm="¿Cerrar TODAS las sesiones de esta cuenta (navegadores y teléfonos)? Tendrá que volver a iniciar sesión.">
+            <input type="hidden" name="userId" value={userId} />
+            <button type="submit" className="text-xs text-[var(--danger)] hover:underline">
+              Cerrar todas las sesiones de la cuenta
+            </button>
+          </ActionForm>
+        </div>
         {devices.length === 0 ? (
           <p className="text-sm text-[var(--ink-muted)]">Todavía no inició sesión en ningún teléfono.</p>
         ) : (
@@ -146,6 +157,7 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
               <thead className="eyebrow border-b border-[var(--border)]">
                 <tr>
                   <th className="py-2 pr-4 font-normal">Teléfono</th>
+                  <th className="py-2 pr-4 font-normal">Desde</th>
                   <th className="py-2 pr-4 font-normal">Última actividad</th>
                   <th className="py-2 pr-4 font-normal">Estado</th>
                   <th className="py-2" />
@@ -157,6 +169,9 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
                   return (
                     <tr key={d.id}>
                       <td className="py-2.5 pr-4 font-medium">{d.deviceName}</td>
+                      <td className="py-2.5 pr-4 text-xs text-[var(--ink-muted)]">
+                        {[d.ip, d.appVersion && `app ${d.appVersion}`, d.platform].filter(Boolean).join(" · ") || "—"}
+                      </td>
                       <td className="py-2.5 pr-4 text-[var(--ink-muted)]">
                         {formatDateTime(d.lastSeenAt, "America/La_Paz")}
                       </td>

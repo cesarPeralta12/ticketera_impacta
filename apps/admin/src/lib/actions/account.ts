@@ -1,7 +1,7 @@
 "use server";
 
-import { redirect } from "next/navigation";
-import { MIN_PASSWORD_LENGTH, changeStaffPassword, prisma } from "@ticketera/db";
+import { MIN_PASSWORD_LENGTH, changeStaffPassword, prisma, revokeAllSessions } from "@ticketera/db";
+import { signIn, signOut } from "@/lib/auth";
 import type { FormState } from "@/lib/forms";
 import { HOME_BY_ROLE, ROLES, requireStaff } from "@/lib/session";
 
@@ -23,5 +23,17 @@ export async function changePasswordAction(_prev: FormState, formData: FormData)
   await prisma.auditLog.create({
     data: { actorType: "staff", actorId: staff.id, action: "staff.password", entity: "StaffUser", entityId: staff.id },
   });
-  redirect(`${HOME_BY_ROLE[staff.role]}?clave=ok`);
+  // El cambio cierra todas las sesiones y teléfonos; esta se vuelve a abrir con la clave nueva y sigue su camino.
+  await signIn("credentials", { email: staff.email, password: next, redirectTo: `${HOME_BY_ROLE[staff.role]}?clave=ok` });
+  return undefined;
+}
+
+/** "Cerrar todas mis sesiones": otros navegadores y teléfonos pierden el acceso; también cierra esta. */
+export async function signOutEverywhereAction() {
+  const staff = await requireStaff(ROLES.any);
+  await revokeAllSessions("staff", staff.id);
+  await prisma.auditLog.create({
+    data: { actorType: "staff", actorId: staff.id, action: "auth.sessions_revoked", entity: "StaffUser", entityId: staff.id },
+  });
+  await signOut({ redirectTo: "/login" });
 }

@@ -108,7 +108,7 @@ export async function resetCustomerPassword(token: string, newPassword: string, 
   if (!owner?.customerId) return { ok: false as const, reason: "INVALID_LINK" as const };
   const customer = await prisma.customer.update({
     where: { id: owner.customerId },
-    data: { passwordHash: await hashPassword(newPassword), emailVerified: true },
+    data: { passwordHash: await hashPassword(newPassword), emailVerified: true, sessionVersion: { increment: 1 } },
     select: { email: true, name: true },
   });
   return { ok: true as const, ...customer };
@@ -122,7 +122,10 @@ export async function changeCustomerPassword(customerId: string, current: string
     select: { passwordHash: true, email: true, name: true },
   });
   if (!customer || !(await passwordMatches(current, customer.passwordHash))) return { ok: false as const, reason: "WRONG_PASSWORD" as const };
-  await prisma.customer.update({ where: { id: customerId }, data: { passwordHash: await hashPassword(next) } });
+  await prisma.customer.update({
+    where: { id: customerId },
+    data: { passwordHash: await hashPassword(next), sessionVersion: { increment: 1 } },
+  });
   return { ok: true as const, email: customer.email, name: customer.name };
 }
 
@@ -147,7 +150,7 @@ export async function resetStaffPassword(token: string, newPassword: string, now
   const staff = await prisma.staffUser.update({
     where: { id: owner.staffUserId },
     // Con una contraseña elegida por la persona deja de ser temporal.
-    data: { passwordHash: await hashPassword(newPassword), mustChangePassword: false, emailVerified: true },
+    data: { passwordHash: await hashPassword(newPassword), mustChangePassword: false, emailVerified: true, sessionVersion: { increment: 1 } },
     select: { email: true, name: true },
   });
   // Un teléfono robado no debe seguir dentro: al cambiar la contraseña se cierran las sesiones de la app.

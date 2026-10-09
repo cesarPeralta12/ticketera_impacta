@@ -2,8 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { DOCUMENT_ERROR } from "@ticketera/core";
-import { MIN_PASSWORD_LENGTH, changeCustomerPassword, updateCustomerProfile } from "@ticketera/db";
-import { auth } from "@/lib/auth";
+import { MIN_PASSWORD_LENGTH, changeCustomerPassword, revokeAllSessions, updateCustomerProfile } from "@ticketera/db";
+import { auth, signIn, signOut } from "@/lib/auth";
 import { sendPasswordChangedEmail } from "@/lib/mail";
 
 export type ProfileState = { error?: string; ok?: boolean } | undefined;
@@ -50,5 +50,15 @@ export async function changePasswordAction(_prev: PasswordState, formData: FormD
   const result = await changeCustomerPassword(session.user.id, String(formData.get("current") ?? ""), next);
   if (!result.ok) return { error: result.reason === "WRONG_PASSWORD" ? "La contraseña actual no es correcta." : "La contraseña nueva es muy corta." };
   await sendPasswordChangedEmail(result.email, result.name);
+  // El cambio cierra todas las sesiones (también una abierta en otro aparato); esta se vuelve a abrir.
+  await signIn("credentials", { email: result.email, password: next, redirect: false });
   return { ok: true };
+}
+
+/** "Cerrar todas las sesiones": sirve si dejó la cuenta abierta en un aparato ajeno. También cierra esta. */
+export async function signOutEverywhereAction() {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+  await revokeAllSessions("customer", session.user.id);
+  await signOut({ redirectTo: "/login" });
 }

@@ -43,6 +43,8 @@ export const LIMITS = {
   loginByIp: { limit: 20, windowSeconds: 10 * 60 },
   /** Contraseñas incorrectas por cuenta: al llegar, se bloquea el ingreso un rato. */
   loginFailuresByAccount: { limit: 6, windowSeconds: 15 * 60 },
+  /** Renovaciones de sesión de la app por IP (varios teléfonos pueden compartir el wifi de una puerta). */
+  refreshByIp: { limit: 120, windowSeconds: 10 * 60 },
   /** Cuentas nuevas por IP. */
   registerByIp: { limit: 5, windowSeconds: 60 * 60 },
   /** "Olvidé mi contraseña" por IP. */

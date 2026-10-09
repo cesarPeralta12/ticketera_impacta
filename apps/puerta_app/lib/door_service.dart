@@ -73,7 +73,7 @@ class DoorService extends ChangeNotifier {
       deviceId: await sessionStore.deviceId,
       deviceName: await _deviceName(),
     );
-    await sessionStore.save(server: url, token: result.token, email: email.trim(), name: result.name);
+    await sessionStore.save(server: url, token: result.token, refreshToken: result.refreshToken, email: email.trim(), name: result.name);
     serverUrl = url;
     staffName = result.name;
     mustChangePassword = result.mustChangePassword;
@@ -99,6 +99,27 @@ class DoorService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool>? _refreshing;
+
+  /// Renueva el token de acceso con el de renovación. Una sola renovación a la vez: si dos llamadas vencen
+  /// juntas, esperan la misma (renovar dos veces con el mismo token de renovación cerraría la sesión).
+  /// Devuelve false si la sesión ya no es válida; si falla por falta de conexión, lanza el error de red.
+  Future<bool> _refreshSession() => _refreshing ??= _doRefresh().whenComplete(() => _refreshing = null);
+
+  Future<bool> _doRefresh() async {
+    final refresh = await sessionStore.refreshToken;
+    if (refresh == null) return false; // sesión de una versión anterior: pide iniciar sesión otra vez
+    try {
+      final pair = await ApiClient(baseUrl: serverUrl).refresh(refresh);
+      await sessionStore.saveTokens(pair.token, pair.refreshToken);
+      _api = ApiClient(baseUrl: serverUrl, token: pair.token);
+      return true;
+    } on ApiException catch (e) {
+      if (e.unauthorized) return false;
+      rethrow; // sin conexión u otro fallo pasajero: la sesión sigue, se reintenta luego
+    }
+  }
+
   Future<T> _guard<T>(Future<T> Function(ApiClient api) call) async {
     final api = _api;
     if (api == null || api.token == null) throw const ApiException('Inicia sesión.', status: 401);
@@ -110,6 +131,8 @@ class DoorService extends ChangeNotifier {
         notifyListeners();
       }
       if (e.unauthorized) {
+        // El token de acceso es corto: antes de dar la sesión por perdida, se intenta renovar.
+        if (await _refreshSession()) return await call(_api!);
         await sessionStore.clearSession();
         _api = ApiClient(baseUrl: serverUrl);
         onSessionExpired?.call();

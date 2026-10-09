@@ -25,6 +25,7 @@ export const authConfig = {
       if (user) {
         token.role = user.role;
         token.organizationId = user.organizationId;
+        token.sv = user.sessionVersion;
       }
       return token;
     },
@@ -33,6 +34,8 @@ export const authConfig = {
       // El JWT de NextAuth v5 no toma la extensión de tipos: se tipan aquí.
       session.user.role = token.role as StaffRole;
       session.user.organizationId = token.organizationId as string;
+      // Versión de sesión con la que se inició: si la cuenta la subió (cambio de clave, "cerrar sesiones"), ya no vale.
+      session.user.sessionVersion = (token.sv as number | undefined) ?? 0;
       return session;
     },
   },

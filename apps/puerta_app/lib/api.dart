@@ -31,10 +31,28 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
-class LoginResult {
-  const LoginResult({required this.token, required this.name, required this.role, this.mustChangePassword = false});
+/// Versión de la app: viaja en cada petición para que el panel muestre qué versión tiene cada teléfono.
+const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.1.0');
+
+/// Par de tokens: el de acceso es corto; el de renovación lo cambia por uno nuevo (y él mismo se renueva).
+class TokenPair {
+  const TokenPair({required this.token, required this.refreshToken});
 
   final String token;
+  final String refreshToken;
+}
+
+class LoginResult {
+  const LoginResult({
+    required this.token,
+    required this.refreshToken,
+    required this.name,
+    required this.role,
+    this.mustChangePassword = false,
+  });
+
+  final String token;
+  final String refreshToken;
   final String name;
   final String role;
 
@@ -68,6 +86,9 @@ class ApiClient {
 
   Map<String, String> get _headers => {
         'content-type': 'application/json',
+        'user-agent': 'impacta-puerta/$appVersion (${defaultTargetPlatform.name.toLowerCase()})',
+        'x-app-version': appVersion,
+        'x-app-platform': defaultTargetPlatform.name.toLowerCase(),
         if (token != null) 'authorization': 'Bearer $token',
       };
 
@@ -109,10 +130,21 @@ class ApiClient {
     final staff = body['staff'] as Map<String, dynamic>;
     return LoginResult(
       token: body['token'] as String,
+      refreshToken: body['refreshToken'] as String,
       name: staff['name'] as String,
       role: staff['role'] as String,
       mustChangePassword: staff['mustChangePassword'] as bool? ?? false,
     );
+  }
+
+  /// Cambia el token de renovación por un par nuevo. 401 = sesión vencida o revocada (hay que iniciar sesión).
+  Future<TokenPair> refresh(String refreshToken) async {
+    final response = await _send(
+      () => _http.post(_uri('/auth/refresh'), headers: _headers, body: jsonEncode({'refreshToken': refreshToken})),
+      timeout: const Duration(seconds: 15),
+    );
+    final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    return TokenPair(token: body['token'] as String, refreshToken: body['refreshToken'] as String);
   }
 
   Future<void> changePassword({required String current, required String next}) async {

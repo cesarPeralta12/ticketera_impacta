@@ -2,9 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { MIN_PASSWORD_LENGTH, StaffRole, createStaffUser, prisma } from "@ticketera/db";
+import { MIN_PASSWORD_LENGTH, StaffRole, createStaffUser, prisma, revokeAllSessions } from "@ticketera/db";
 import { formObject, zodErrors, type FormState } from "@/lib/forms";
-import { requirePlatform } from "@/lib/session";
+import { ROLES, requirePlatform, requireStaff } from "@/lib/session";
 
 const staffSchema = z.object({
   name: z.string({ error: "Ingresa el nombre." }).min(3).max(120),
@@ -92,5 +92,25 @@ export async function toggleStaffActiveAction(_prev: FormState, formData: FormDa
     },
   });
   revalidatePath("/usuarios");
+  return { ok: true };
+}
+
+/**
+ * Cierra TODAS las sesiones de una cuenta (navegadores y teléfonos): para cuando se perdió un aparato o se
+ * sospecha de la cuenta. La persona tiene que volver a iniciar sesión.
+ */
+export async function revokeUserSessionsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireStaff(ROLES.users);
+  const target = await prisma.staffUser.findFirst({
+    where: { id: String(formData.get("userId")), memberships: { some: { organizationId: staff.organization.id } } },
+    include: { memberships: { where: { organizationId: staff.organization.id } } },
+  });
+  if (!target) return { error: "Usuario no encontrado." };
+  if (target.memberships[0]?.role === "OWNER" && staff.role !== "OWNER") return { error: "Solo un dueño puede cerrar las sesiones de otro dueño." };
+  const { devices } = await revokeAllSessions("staff", target.id);
+  await prisma.auditLog.create({
+    data: { actorType: "staff", actorId: staff.id, action: "auth.sessions_revoked", entity: "StaffUser", entityId: target.id, data: { by: "admin", devices } },
+  });
+  revalidatePath("/usuarios", "layout");
   return { ok: true };
 }
