@@ -26,7 +26,8 @@ export class DomainError extends Error {
       | "RECIPIENT_NOT_FOUND"
       | "NOT_FOUND"
       | "INVALID_STATE"
-      | "DUPLICATE",
+      | "DUPLICATE"
+      | "EVENT_LIMIT",
     message: string,
   ) {
     super(message);

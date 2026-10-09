@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { MAX_DISCOUNT_PERCENT, formatDateTime, normalizeImageUrl, slugify, windowsOverlap, zonedDateTimeToUtc } from "@ticketera/core";
-import { DomainError, EventCategory, EventMode, prisma, publicationProblem, setTicketTypeQrMode, submitEventForReview } from "@ticketera/db";
+import { DomainError, EventCategory, EventMode, createEventWithinLimit, prisma, publicationProblem, setTicketTypeQrMode, submitEventForReview } from "@ticketera/db";
 import { formObject, intField, moneyField, zodErrors, type FormState } from "@/lib/forms";
 import { ROLES, requireStaff } from "@/lib/session";
 import { logAudit } from "@/lib/audit";
@@ -60,14 +60,22 @@ export async function createEventAction(_prev: FormState, formData: FormData): P
   const client = await checkClient(staff.organization.id, parsed.data.clientId);
   if (!client.ok) return { fieldErrors: { clientId: "Cliente no encontrado." } };
 
-  const event = await prisma.event.create({
-    data: {
-      organizationId: staff.organization.id,
-      slug: await uniqueSlug(parsed.data.title),
-      ...parsed.data,
-      clientId: client.clientId,
-    },
-  });
+  let event;
+  try {
+    // IMPACTA no tiene tope (puede trabajar dentro de un organizador sin importar su límite); el organizador, sí.
+    event = await createEventWithinLimit(
+      {
+        organizationId: staff.organization.id,
+        slug: await uniqueSlug(parsed.data.title),
+        ...parsed.data,
+        clientId: client.clientId,
+      },
+      { ignoreLimit: staff.platform },
+    );
+  } catch (error) {
+    if (error instanceof DomainError && error.code === "EVENT_LIMIT") return { error: error.message };
+    throw error;
+  }
   await audit(staff.id, "event.create", "Event", event.id);
   redirect(`/eventos/${event.id}`);
 }

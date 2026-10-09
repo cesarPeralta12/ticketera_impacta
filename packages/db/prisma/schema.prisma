@@ -36,6 +36,9 @@ model Organization {
   status       OrganizationStatus @default(ACTIVE)
   taxId        String?
   contactEmail String?
+  /// Máximo de eventos activos (borrador, en revisión o publicados que no pasaron) que puede tener a la vez.
+  /// Nulo = sin límite. Lo fija IMPACTA; la plataforma misma no tiene límite.
+  maxActiveEvents Int?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 

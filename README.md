@@ -211,6 +211,9 @@ orden). Los enlaces sirven una sola vez, vencen (24 h confirmar, 1 h contraseña
 
 Los topes cambian: confirma en la página de precios de cada proveedor antes de decidir.
 
+## Organizadores y límite de eventos
+Cada organizador es una organización propia: crea y edita **sus** eventos, recintos y entradas, ve sus ventas e ingresos, y nunca ve ni modifica lo de otro. IMPACTA aprueba sus eventos antes de publicarlos. En *Organizadores → (organizador)* IMPACTA fija el **máximo de eventos activos** (vacío = sin límite): cuentan los borradores, los eventos en revisión y los publicados con funciones por venir; no cuentan los cancelados ni los ya realizados. El límite solo frena crear eventos nuevos (bajarlo no borra nada) y se comprueba en el servidor aunque se intente saltar el formulario. IMPACTA no tiene límite.
+
 ## QR dinámico
 Por tipo de entrada se puede activar un QR que **cambia cada 30 segundos** y funciona sin internet, en la puerta y en el celular del comprador (no sirve una captura). Solo QR y solo venta online. Detalle, límites y pendientes en [`docs/qr-dinamico.md`](docs/qr-dinamico.md).
 

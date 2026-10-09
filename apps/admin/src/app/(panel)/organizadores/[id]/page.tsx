@@ -3,9 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { DEFAULT_TIMEZONE, formatDateTime } from "@ticketera/core";
-import { prisma } from "@ticketera/db";
+import { getEventQuota, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
-import { enterOrganizationAction, setOrganizerStatusAction } from "@/lib/actions/platform";
+import { enterOrganizationAction, setEventLimitAction, setOrganizerStatusAction } from "@/lib/actions/platform";
 import { EVENT_STATUS, ROLE_LABEL } from "@/lib/labels";
 import { requirePlatform } from "@/lib/session";
 
@@ -41,6 +41,7 @@ export default async function OrganizerPage({ params }: Props) {
   });
   if (!organizer) notFound();
   const active = organizer.status === "ACTIVE";
+  const quota = await getEventQuota(organizer.id);
 
   return (
     <div className="space-y-6">
@@ -81,6 +82,33 @@ export default async function OrganizerPage({ params }: Props) {
             {active ? "Suspender" : "Reactivar"}
           </button>
         </ActionForm>
+      </section>
+
+      <section className="card p-5">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h2 className="eyebrow mb-1">Límite de eventos</h2>
+            <p className="text-sm">
+              <strong className={`tabular-nums ${quota.reached ? "text-[var(--warn)]" : ""}`}>{quota.used}</strong>
+              {quota.limit === null ? " eventos activos · sin límite" : ` de ${quota.limit} ${quota.limit === 1 ? "evento activo" : "eventos activos"}`}
+              {quota.reached && <span className="badge ml-2 bg-[var(--warn-soft)] text-[var(--warn)]">límite alcanzado</span>}
+            </p>
+            <p className="mt-1 text-xs text-[var(--ink-dim)]">
+              Cuenta los borradores, los eventos en revisión y los publicados que todavía tienen funciones por venir. No cuenta los cancelados ni los ya
+              realizados. Solo frena la creación de eventos nuevos: bajar el límite no borra nada.
+            </p>
+          </div>
+          <ActionForm action={setEventLimitAction} successMessage="Límite guardado." className="flex items-end gap-2">
+            <input type="hidden" name="organizationId" value={organizer.id} />
+            <label className="label">
+              Máximo de eventos activos
+              <input name="maxActiveEvents" type="number" min={0} max={10000} defaultValue={quota.limit ?? ""} placeholder="sin límite" className="field w-40" />
+            </label>
+            <button type="submit" className="btn">
+              Guardar
+            </button>
+          </ActionForm>
+        </div>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">

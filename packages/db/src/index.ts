@@ -4,6 +4,7 @@ export { DomainError, requireEnv } from "./operations/shared";
 export * from "./operations/access";
 export * from "./operations/accounts";
 export * from "./operations/bootstrap";
+export * from "./operations/event-limit";
 export * from "./operations/email-tokens";
 export * from "./operations/live";
 export * from "./operations/mobile";
