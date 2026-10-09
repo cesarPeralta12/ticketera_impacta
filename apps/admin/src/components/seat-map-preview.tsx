@@ -1,4 +1,5 @@
-import { CANVAS_HEIGHT, CANVAS_WIDTH, zoneLabelPoint, zonePath, type ZoneShape } from "@ticketera/core";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, zoneLabelPoint, zonePath, type GatePoint, type ZoneShape } from "@ticketera/core";
+import { GateMarkers } from "./map-gates";
 
 export type PreviewSection = {
   id: string;
@@ -19,7 +20,7 @@ export function positioned(seats: { x: number | null; y: number | null }[]) {
 }
 
 /** Mapa de butacas de solo lectura (mismo lienzo que el editor y que el sitio público). */
-export function SeatMapPreview({ sections }: { sections: PreviewSection[] }) {
+export function SeatMapPreview({ sections, gates = [] }: { sections: PreviewSection[]; gates?: (GatePoint & { auto?: boolean })[] }) {
   return (
     <svg
       viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
@@ -52,6 +53,7 @@ export function SeatMapPreview({ sections }: { sections: PreviewSection[] }) {
           ))}
         </g>
       ))}
+      <GateMarkers gates={gates} />
     </svg>
   );
 }

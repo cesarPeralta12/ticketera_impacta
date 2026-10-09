@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useState, useTransition, type FormEvent } from "react";
-import { MAX_TICKETS_PER_ORDER, RESERVATION_MINUTES, formatMoney } from "@ticketera/core";
+import { MAX_TICKETS_PER_ORDER, RESERVATION_MINUTES, formatMoney, type GatePoint } from "@ticketera/core";
 import { createOrderAction, previewPromoAction, type CheckoutState, type PromoPreview } from "./actions";
 import { SeatPicker, type PickerSection, type PickerZone } from "./seat-picker";
 
@@ -37,6 +37,7 @@ export function CheckoutForm({
   general,
   seated,
   zones = [],
+  gates = [],
   buyer,
 }: {
   sessionId: string;
@@ -44,6 +45,8 @@ export function CheckoutForm({
   seated: SeatedType[];
   /** Zonas generales dibujadas en el mapa. */
   zones?: PickerZone[];
+  /** Puertas de ingreso dibujadas en el mapa. */
+  gates?: GatePoint[];
   buyer: { name: string; email: string; document: string };
 }) {
   const router = useRouter();
@@ -157,10 +160,10 @@ export function CheckoutForm({
         ids.length ? <input key={type} type="hidden" name={`seats:${type}`} value={ids.join(",")} /> : null,
       )}
 
-      {(seated.length > 0 || zones.length > 0) && (
+      {(seated.length > 0 || zones.length > 0 || gates.length > 0) && (
         <section className="card space-y-4 p-4 sm:p-6">
           <h2 className="font-display text-xl">{seated.length > 0 ? "1. Elige tus butacas" : "Mapa del recinto"}</h2>
-          <SeatPicker sections={seated} selected={selected} onToggle={toggleSeat} zones={zones} zoneCounts={zoneCounts} onZoneClick={goToZone} />
+          <SeatPicker sections={seated} selected={selected} onToggle={toggleSeat} zones={zones} zoneCounts={zoneCounts} onZoneClick={goToZone} gates={gates} />
           <ul className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-[var(--ink-muted)]">
             {seated.map((t) => (
               <li key={t.ticketTypeId} className="flex items-center gap-2">

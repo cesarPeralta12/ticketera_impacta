@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { MAX_ROWS, MAX_SEATS_PER_ROW, computeSeatPositions, parseZoneLayout, type SectionShape, type ZoneShape } from "@ticketera/core";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, MAX_ROWS, MAX_SEATS_PER_ROW, computeSeatPositions, parseZoneLayout, type SectionShape, type ZoneShape } from "@ticketera/core";
 import { Prisma, prisma } from "@ticketera/db";
 import { formObject, intField, zodErrors, type FormState } from "@/lib/forms";
 import { ROLES, requireStaff } from "@/lib/session";
@@ -272,6 +272,57 @@ export async function updateSeatSectionAction(_prev: FormState, formData: FormDa
       data: { shapeChanged },
     });
   revalidatePath(`/recintos/${section.venueId}`);
+  return { ok: true };
+}
+
+/**
+ * Crea o edita una puerta desde el mapa: nombre, dónde está dibujada y qué secciones entran por ella. Sin
+ * secciones marcadas, la puerta acepta todas. Sin posición, la puerta no se dibuja (el mapa la muestra al borde).
+ * Con `accessPointId` edita esa puerta; sin él, crea una nueva.
+ */
+export async function saveAccessPointAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireStaff(ROLES.manage);
+  const name = String(formData.get("name") ?? "").trim();
+  if (name.length < 2 || name.length > 40) return { fieldErrors: { name: "El nombre debe tener de 2 a 40 caracteres." } };
+
+  const coordinate = (key: string, max: number) => {
+    const raw = String(formData.get(key) ?? "").trim();
+    if (raw === "") return null;
+    const n = Number(raw);
+    return Number.isInteger(n) && n >= 0 && n <= max ? n : undefined;
+  };
+  const mapX = coordinate("mapX", CANVAS_WIDTH);
+  const mapY = coordinate("mapY", CANVAS_HEIGHT);
+  if (mapX === undefined || mapY === undefined || (mapX === null) !== (mapY === null)) return { error: "La posición de la puerta en el mapa no es válida." };
+
+  const existingId = String(formData.get("accessPointId") ?? "");
+  const gate = existingId
+    ? await prisma.accessPoint.findFirst({ where: { id: existingId, venue: { organizationId: staff.organization.id } } })
+    : null;
+  if (existingId && !gate) return { error: "Puerta no encontrada." };
+  const venue = gate ? { id: gate.venueId } : await ownedVenue(staff.organization.id, String(formData.get("venueId")));
+  if (!venue) return { error: "Recinto no encontrado." };
+
+  const requested = formData.getAll("sectionIds").map(String);
+  const sections = await prisma.section.findMany({ where: { id: { in: requested }, venueId: venue.id }, select: { id: true } });
+
+  try {
+    const saved = gate
+      ? await prisma.accessPoint.update({ where: { id: gate.id }, data: { name, mapX, mapY, sections: { set: sections } } })
+      : await prisma.accessPoint.create({ data: { venueId: venue.id, name, mapX, mapY, sections: { connect: sections } } });
+    await logAudit({
+      actorType: "staff",
+      actorId: staff.id,
+      action: gate ? "access_point.update" : "access_point.create",
+      entity: "AccessPoint",
+      entityId: saved.id,
+      data: { name, mapX, mapY, sections: sections.map((s) => s.id) },
+    });
+  } catch (error) {
+    if (isUnique(error)) return { fieldErrors: { name: "Ya existe una puerta con ese nombre." } };
+    throw error;
+  }
+  revalidatePath(`/recintos/${venue.id}`);
   return { ok: true };
 }
 

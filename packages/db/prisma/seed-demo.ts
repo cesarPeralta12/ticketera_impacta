@@ -280,7 +280,7 @@ async function seedOrganizers(db: Db) {
         name: o.venue.name,
         city: o.venue.city,
         timezone: DEFAULT_TIMEZONE,
-        accessPoints: { create: [{ name: "Puerta principal" }] },
+        accessPoints: { create: [{ name: "Puerta principal", mapX: 500, mapY: 612 }] },
         sections: {
           create: {
             name: o.venue.section,

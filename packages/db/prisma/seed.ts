@@ -41,7 +41,16 @@ type SectionSeed =
   | { name: string; color: string; capacity: number; /** Forma en el mapa (zona general). */ zone?: ZoneShape }
   | { name: string; color: string; shape: SectionShape };
 
-type VenueSeed = { key: string; name: string; address: string; city: string; sections: SectionSeed[]; gates: string[] };
+type VenueSeed = {
+  key: string;
+  name: string;
+  address: string;
+  city: string;
+  sections: SectionSeed[];
+  gates: string[];
+  /** Dónde está cada puerta en el mapa (x, y). */
+  gatePositions?: Record<string, [number, number]>;
+};
 
 const [AMBAR, ROSA, VERDE, AZUL, VIOLETA] = SECTION_COLORS as [string, string, string, string, string, string];
 
@@ -52,6 +61,7 @@ const VENUES: VenueSeed[] = [
     address: "Calle Genaro Sanjinés",
     city: "La Paz",
     gates: ["Puerta principal", "Puerta lateral"],
+    gatePositions: { "Puerta principal": [500, 610], "Puerta lateral": [70, 330] },
     sections: [
       { name: "Platea", color: AMBAR, shape: { type: "grid", rows: 8, seatsPerRow: 16, x: 320, y: 200, seatGap: 24, rowGap: 26 } },
       { name: "Palco Izquierdo", color: ROSA, shape: { type: "grid", rows: 4, seatsPerRow: 4, x: 110, y: 150, seatGap: 24, rowGap: 26 } },
@@ -69,6 +79,7 @@ const VENUES: VenueSeed[] = [
     address: "Av. Ballivián",
     city: "Cochabamba",
     gates: ["Puerta principal"],
+    gatePositions: { "Puerta principal": [500, 612] },
     sections: [
       { name: "Platea", color: VERDE, shape: { type: "grid", rows: 6, seatsPerRow: 12, x: 368, y: 220, seatGap: 24, rowGap: 28 } },
       {
@@ -84,6 +95,7 @@ const VENUES: VenueSeed[] = [
     address: "Av. San Martín",
     city: "Santa Cruz de la Sierra",
     gates: ["Acceso general", "Acceso VIP"],
+    gatePositions: { "Acceso general": [300, 612], "Acceso VIP": [140, 115] },
     sections: [
       { name: "Cancha", color: AMBAR, capacity: 400, zone: { type: "zone", shape: "rect", x: 100, y: 190, width: 800, height: 380 } },
       { name: "VIP", color: ROSA, capacity: 60, zone: { type: "zone", shape: "trapezoid", x: 280, y: 70, width: 440, height: 90, taper: 0.3 } },
@@ -95,6 +107,7 @@ const VENUES: VenueSeed[] = [
     address: "Av. Cristo Redentor",
     city: "Santa Cruz de la Sierra",
     gates: ["Acceso norte", "Acceso sur"],
+    gatePositions: { "Acceso norte": [500, 128], "Acceso sur": [500, 614] },
     sections: [
       { name: "Campo", color: VERDE, capacity: 800, zone: { type: "zone", shape: "rect", x: 100, y: 150, width: 800, height: 340 } },
       { name: "Palco", color: VIOLETA, capacity: 40, zone: { type: "zone", shape: "rect", x: 100, y: 510, width: 800, height: 90 } },
@@ -106,6 +119,7 @@ const VENUES: VenueSeed[] = [
     address: "4to Anillo",
     city: "Santa Cruz de la Sierra",
     gates: ["Acceso principal"],
+    gatePositions: { "Acceso principal": [500, 612] },
     sections: [
       { name: "Pista", color: AZUL, capacity: 500, zone: { type: "zone", shape: "ellipse", x: 150, y: 210, width: 700, height: 360 } },
       { name: "VIP", color: ROSA, capacity: 100, zone: { type: "zone", shape: "trapezoid", x: 290, y: 70, width: 420, height: 110, taper: 0.3 } },
@@ -117,6 +131,7 @@ const VENUES: VenueSeed[] = [
     address: "Av. Piraí",
     city: "Santa Cruz de la Sierra",
     gates: ["Puerta 1", "Puerta 2", "Puerta 3"],
+    gatePositions: { "Puerta 1": [140, 300], "Puerta 2": [860, 300], "Puerta 3": [500, 612] },
     sections: [
       { name: "General", color: AMBAR, capacity: 3000, zone: { type: "zone", shape: "arc", centerX: 500, centerY: 70, innerRadius: 190, outerRadius: 420, startAngleDeg: 15, spanDeg: 150 } },
       { name: "Preferencial", color: AZUL, capacity: 500, zone: { type: "zone", shape: "rect", x: 250, y: 70, width: 500, height: 80 } },
@@ -288,7 +303,7 @@ async function main() {
         address: v.address,
         city: v.city,
         timezone: DEFAULT_TIMEZONE,
-        accessPoints: { create: v.gates.map((name) => ({ name })) },
+        accessPoints: { create: v.gates.map((name) => ({ name, mapX: v.gatePositions?.[name]?.[0] ?? null, mapY: v.gatePositions?.[name]?.[1] ?? null })) },
       },
     });
     const sections = new Map<string, { id: string; capacity: number }>();

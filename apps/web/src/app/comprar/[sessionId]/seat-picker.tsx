@@ -1,7 +1,7 @@
 "use client";
 
 import type { KeyboardEvent } from "react";
-import { CANVAS_HEIGHT, CANVAS_WIDTH, formatMoney, zoneLabelPoint, zonePath, zoneSize, type ZoneShape } from "@ticketera/core";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, formatMoney, gateLabelWidth, zoneLabelPoint, zonePath, zoneSize, type GatePoint, type ZoneShape } from "@ticketera/core";
 
 export type PickerSeat = { id: string; label: string; x: number; y: number; taken: boolean };
 export type PickerSection = {
@@ -42,6 +42,7 @@ export function SeatPicker({
   zones = [],
   zoneCounts = {},
   onZoneClick,
+  gates = [],
 }: {
   sections: PickerSection[];
   selected: Set<string>;
@@ -50,6 +51,8 @@ export function SeatPicker({
   /** Cuántas entradas lleva elegidas el comprador en cada zona (por sectionId). */
   zoneCounts?: Record<string, number>;
   onZoneClick?: (sectionId: string) => void;
+  /** Puertas del recinto: dónde están las entradas. */
+  gates?: GatePoint[];
 }) {
   // Etiqueta sobre el centro de la sección (en un arco, las puntas suben más que el centro):
   // nombre, precio y butacas libres sobre el total.
@@ -142,6 +145,20 @@ export function SeatPicker({
           );
         })}
 
+        {gates.map((g) => {
+          const w = gateLabelWidth(g.name);
+          return (
+            <g key={g.id} transform={`translate(${g.x} ${g.y})`} role="img" aria-label={`Entrada: ${g.name}`} style={{ pointerEvents: "none" }}>
+              <title>{`Ingreso: ${g.name}`}</title>
+              <rect x={-w / 2} y={-13} width={w} height={26} rx={13} fill="#f5f3ef" stroke="#35c48f" strokeWidth={2} />
+              <circle cx={-w / 2 + 14} cy={0} r={5} fill="#0f8a6b" />
+              <text x={-w / 2 + 25} y={4.5} fontSize="12.5" fontWeight="800" fill="#14181b">
+                {g.name}
+              </text>
+            </g>
+          );
+        })}
+
         {labels.map((l) => (
           <g key={l.name}>
             <text x={l.x} y={l.y} textAnchor="middle" fontSize="15" fontWeight="700" fill={l.color}>
@@ -192,6 +209,11 @@ export function SeatPicker({
         <span className="flex items-center gap-1.5">
           <span className="h-3 w-3 rounded-full bg-[#2a2a36]" /> Ocupada
         </span>
+        {gates.length > 0 && (
+          <span className="flex items-center gap-1.5">
+            <span className="h-3 w-5 rounded-full border-2 border-[#35c48f] bg-[#f5f3ef]" /> Puertas de ingreso
+          </span>
+        )}
         {zones.length > 0 && (
           <span className="flex items-center gap-1.5">
             <span className="h-3 w-4 rounded-sm border border-[var(--border-light)] bg-white/10" /> Zona general: elige la cantidad abajo

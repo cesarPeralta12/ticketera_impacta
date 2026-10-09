@@ -16,9 +16,11 @@ import {
   computeSeatPositions,
   zoneLabelPoint,
   zonePath,
+  type GatePoint,
   type SectionShape,
   type ZoneShape,
 } from "@ticketera/core";
+import { GateMarkers } from "@/components/map-gates";
 import { addSeatSectionAction, deleteSectionAction, updateSeatSectionAction } from "@/lib/actions/venues";
 
 export type DesignerSection = {
@@ -75,11 +77,14 @@ export function SeatDesigner({
   venueId,
   existingSections,
   zones = [],
+  gates = [],
 }: {
   venueId: string;
   existingSections: DesignerSection[];
   /** Zonas de entrada general ya dibujadas: se ven de fondo para ubicar las butacas sin pisarlas. */
   zones?: { id: string; name: string; color: string; layout: ZoneShape }[];
+  /** Puertas del recinto, de fondo. */
+  gates?: (GatePoint & { auto?: boolean })[];
 }) {
   const [initialSpot] = useState(() => freeGridSpot(existingSections));
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -287,6 +292,8 @@ export function SeatDesigner({
               </g>
             );
           })}
+
+          <GateMarkers gates={gates} dim />
 
           <rect
             x={minX}

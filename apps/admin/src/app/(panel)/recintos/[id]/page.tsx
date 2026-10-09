@@ -2,20 +2,19 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { isZoneLayout, type SectionShape, type ZoneShape } from "@ticketera/core";
+import { autoPlaceGates, boxOfPoints, isZoneLayout, resolveZones, type GatePoint, type SectionShape, type ZoneShape } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import {
-  addAccessPointAction,
-  deleteAccessPointAction,
   deleteSectionAction,
-  updateAccessPointSectionsAction,
 } from "@/lib/actions/venues";
 import { positioned } from "@/components/seat-map-preview";
 import { SEATING_LABEL } from "@/lib/labels";
 import { ROLES, requireStaff } from "@/lib/session";
-import { SeatDesigner, type DesignerSection } from "./seat-designer";
-import { ZoneDesigner, type DesignerZone } from "./zone-designer";
+import type { DesignerGate } from "./gate-designer";
+import { MapEditor } from "./map-editor";
+import type { DesignerSection } from "./seat-designer";
+import type { DesignerZone } from "./zone-designer";
 
 export const metadata: Metadata = { title: "Recinto" };
 
@@ -63,6 +62,26 @@ export default async function VenuePage({ params }: Props) {
     .map((s) => ({ id: s.id, name: s.name, color: s.color, capacity: s.capacity, layout: isZoneLayout(s.layout) ? (s.layout as ZoneShape) : null }));
   const backgroundSeats = sections.flatMap((s) => (s.seatingMode === "RESERVED" ? positioned(s.seats).map((p) => ({ ...p, color: s.color })) : []));
 
+  // Puertas: las ubicadas, y las que no (al borde de abajo, marcadas "sin ubicar").
+  const gates: DesignerGate[] = venue.accessPoints.map((g) => ({
+    id: g.id,
+    name: g.name,
+    x: g.mapX,
+    y: g.mapY,
+    sectionIds: g.sections.map((x) => x.id),
+    scans: g._count.scans,
+  }));
+  const gateMarkers: (GatePoint & { auto?: boolean })[] = [
+    ...gates.flatMap((g) => (g.x !== null && g.y !== null ? [{ id: g.id, name: g.name, x: g.x, y: g.y }] : [])),
+    ...autoPlaceGates(gates.filter((g) => g.x === null || g.y === null)).map((g) => ({ ...g, auto: true })),
+  ];
+  // Todas las zonas con forma: la guardada, o la que el mapa del comprador les da hasta que las ubiques.
+  const seatBoxes = seated.flatMap((s) => {
+    const box = boxOfPoints(s.seats, 12);
+    return box ? [box] : [];
+  });
+  const resolvedZones = resolveZones(zones, seatBoxes).map((r) => ({ id: r.zone.id, name: r.zone.name, color: r.zone.color, shape: r.shape, auto: r.auto }));
+
   return (
     <div className="space-y-8">
       <div>
@@ -108,73 +127,19 @@ export default async function VenuePage({ params }: Props) {
       </section>
 
       <section className="space-y-3">
-        <h2 className="eyebrow">Zonas de entrada general (sin butacas)</h2>
-        <p className="text-sm text-[var(--ink-muted)]">
-          Cada zona se dibuja en el mapa con la forma que elijas (rectángulo, óvalo, trapecio o arco) y su aforo. El comprador la ve en el mismo
-          mapa de las butacas y elige cuántas entradas quiere de la lista de abajo.
-        </p>
-        <ZoneDesigner venueId={venue.id} zones={zones} seats={backgroundSeats} />
+        <h2 className="eyebrow">Mapa del recinto</h2>
+        <MapEditor
+          venueId={venue.id}
+          seated={seated}
+          zones={zones}
+          resolvedZones={resolvedZones}
+          gates={gates}
+          gateMarkers={gateMarkers}
+          seats={backgroundSeats}
+          sections={sections.map((x) => ({ id: x.id, name: x.name, color: x.color }))}
+        />
       </section>
 
-      <section className="space-y-3">
-        <h2 className="eyebrow">Mapa de butacas numeradas</h2>
-        <SeatDesigner venueId={venue.id} existingSections={seated} zones={zones.flatMap((z) => (z.layout ? [{ id: z.id, name: z.name, color: z.color, layout: z.layout }] : []))} />
-      </section>
-
-      <section className="card p-6">
-        <h2 className="eyebrow mb-2">Puertas de acceso</h2>
-        <p className="mb-4 text-sm text-[var(--ink-muted)]">
-          Marca qué secciones entran por cada puerta. Una puerta sin secciones marcadas acepta todas. Con secciones
-          asignadas, una entrada solo vale en sus puertas: así, aunque se corte internet, dos puertas nunca aceptan la
-          misma entrada.
-        </p>
-        {venue.accessPoints.length === 0 ? (
-          <p className="mb-4 text-sm text-[var(--ink-dim)]">Sin puertas cargadas.</p>
-        ) : (
-          <ul className="mb-5 flex flex-col gap-3">
-            {venue.accessPoints.map((gate) => {
-              const assigned = new Set(gate.sections.map((s) => s.id));
-              return (
-                <li key={gate.id} className="rounded-md border border-[var(--border)] p-4">
-                  <ActionForm action={updateAccessPointSectionsAction} successMessage="Guardado." className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                    <input type="hidden" name="accessPointId" value={gate.id} />
-                    <span className="min-w-32 font-medium">{gate.name}</span>
-                    {venue.sections.map((s) => (
-                      <label key={s.id} className="flex items-center gap-1.5 text-sm">
-                        <input type="checkbox" name="sectionIds" value={s.id} defaultChecked={assigned.has(s.id)} />
-                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: s.color }} />
-                        {s.name}
-                      </label>
-                    ))}
-                    <span className="text-xs text-[var(--ink-dim)]">{assigned.size === 0 ? "(acepta todas)" : ""}</span>
-                    <button type="submit" className="btn ml-auto text-xs">
-                      Guardar
-                    </button>
-                  </ActionForm>
-                  {gate._count.scans === 0 && (
-                    <ActionForm action={deleteAccessPointAction} confirm={`¿Borrar la puerta "${gate.name}"?`} className="mt-2">
-                      <input type="hidden" name="accessPointId" value={gate.id} />
-                      <button type="submit" className="text-xs text-[var(--danger)] hover:underline">
-                        Borrar puerta
-                      </button>
-                    </ActionForm>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        <ActionForm action={addAccessPointAction} resetOnSuccess className="flex flex-wrap items-end gap-3">
-          <input type="hidden" name="venueId" value={venue.id} />
-          <label className="label">
-            Nombre
-            <input name="name" required placeholder="Puerta 1, Acceso VIP…" className="field" />
-          </label>
-          <button type="submit" className="btn">
-            Agregar puerta
-          </button>
-        </ActionForm>
-      </section>
     </div>
   );
 }

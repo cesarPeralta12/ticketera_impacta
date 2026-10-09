@@ -625,6 +625,9 @@ model AccessPoint {
   id      String @id @default(cuid())
   venueId String
   name    String
+  /// Dónde está la puerta en el mapa del recinto (mismo lienzo que las butacas). Nulo: sin ubicar.
+  mapX    Int?
+  mapY    Int?
 
   venue       Venue            @relation(fields: [venueId], references: [id], onDelete: Cascade)
   scans       AccessScan[]

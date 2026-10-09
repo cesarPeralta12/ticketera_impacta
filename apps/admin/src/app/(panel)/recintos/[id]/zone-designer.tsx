@@ -16,10 +16,12 @@ import {
   zoneBounds,
   zoneLabelPoint,
   zonePath,
+  type GatePoint,
   zonesOverlap,
   type ZoneShape,
   type ZoneShapeName,
 } from "@ticketera/core";
+import { GateMarkers } from "@/components/map-gates";
 import { addGeneralSectionAction, updateGeneralSectionAction } from "@/lib/actions/venues";
 
 export type DesignerZone = {
@@ -36,6 +38,10 @@ type Props = {
   zones: DesignerZone[];
   /** Butacas de las secciones numeradas, de fondo, para ubicar la zona sin pisarlas. */
   seats: { x: number; y: number; color: string }[];
+  /** Dónde se dibuja cada zona que todavía no tiene forma (el mapa del comprador la coloca sola ahí). */
+  autoShapes?: Record<string, ZoneShape>;
+  /** Puertas del recinto, de fondo. */
+  gates?: (GatePoint & { auto?: boolean })[];
 };
 
 const SHAPES: ZoneShapeName[] = ["rect", "ellipse", "trapezoid", "arc"];
@@ -56,7 +62,7 @@ function freeSpot(zones: DesignerZone[], seats: Props["seats"]) {
 
 const num = (v: string) => (v === "" ? Number.NaN : Number(v));
 
-export function ZoneDesigner({ venueId, zones, seats }: Props) {
+export function ZoneDesigner({ venueId, zones, seats, autoShapes = {}, gates = [] }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [capacity, setCapacity] = useState(200);
@@ -191,6 +197,27 @@ export function ZoneDesigner({ venueId, zones, seats }: Props) {
               </g>
             );
           })}
+
+          {/* Zonas sin forma: así las colocaría el mapa del comprador hasta que las ubiques tú */}
+          {zones
+            .filter((z) => !z.layout && z.id !== editingId && autoShapes[z.id])
+            .map((z) => {
+              const shape = autoShapes[z.id]!;
+              const p = zoneLabelPoint(shape);
+              return (
+                <g key={z.id} onClick={() => startEdit(z)} style={{ cursor: "pointer" }} opacity={0.65}>
+                  <title>{`${z.name} · sin ubicar: se muestra aquí hasta que la coloques · clic para colocarla`}</title>
+                  <path d={zonePath(shape)} fill={z.color} fillOpacity={0.15} stroke={z.color} strokeWidth={2} strokeDasharray="7 5" />
+                  <text x={p.x} y={p.y} textAnchor="middle" fontSize="14" fontWeight="700" fill="#1a1a18">
+                    {z.name}
+                  </text>
+                  <text x={p.x} y={p.y + 17} textAnchor="middle" fontSize="11" fill="#6b6b64">
+                    sin ubicar
+                  </text>
+                </g>
+              );
+            })}
+          <GateMarkers gates={gates} dim />
 
           {draw && check.ok && (
             <g>

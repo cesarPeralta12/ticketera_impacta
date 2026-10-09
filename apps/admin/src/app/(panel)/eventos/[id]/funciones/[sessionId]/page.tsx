@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { currentPrice, formatDateTime, formatMoney, isZoneLayout, saleState, utcToZonedInput, type SaleState, type ZoneShape } from "@ticketera/core";
+import { autoPlaceGates, boxOfPoints, currentPrice, formatDateTime, formatMoney, isZoneLayout, resolveZones, saleState, utcToZonedInput, type GatePoint, type SaleState, type ZoneShape } from "@ticketera/core";
 import { getSessionAvailability, getZoneAvailability, prisma } from "@ticketera/db";
 import { AccessMethodsField } from "@/components/access-methods-field";
 import { ActionForm } from "@/components/action-form";
@@ -38,7 +38,12 @@ export default async function SessionPage({ params }: Props) {
     where: { id: sessionId, eventId: id, event: { organizationId: staff.organization.id } },
     include: {
       event: true,
-      venue: { include: { sections: { orderBy: { sortOrder: "asc" }, include: { seats: { select: { x: true, y: true } } } } } },
+      venue: {
+        include: {
+          sections: { orderBy: { sortOrder: "asc" }, include: { seats: { select: { x: true, y: true } } } },
+          accessPoints: { select: { id: true, name: true, mapX: true, mapY: true } },
+        },
+      },
       ticketTypes: { orderBy: { sortOrder: "asc" }, include: { section: true, _count: { select: { orderItems: true } } } },
     },
   });
@@ -52,10 +57,21 @@ export default async function SessionPage({ params }: Props) {
   const guestList = session.event.mode === "GUEST_LIST";
   const pricedSections = new Set(session.ticketTypes.map((t) => t.sectionId));
   const seatedSections = session.venue.sections.filter((s) => s.seatingMode === "RESERVED");
-  // Zonas generales dibujadas en el mapa del recinto (con lo que queda en esta función).
-  const drawnZones = session.venue.sections.flatMap((s) =>
-    s.seatingMode === "GENERAL_ADMISSION" && isZoneLayout(s.layout) ? [{ section: s, zone: s.layout as ZoneShape }] : [],
-  );
+  // Zonas generales en el mapa del recinto: con su forma o, si todavía no la tienen, colocadas solas en una franja libre.
+  const seatBoxes = seatedSections.flatMap((s) => {
+    const box = boxOfPoints(positioned(s.seats), 12);
+    return box ? [box] : [];
+  });
+  const gaSections = session.venue.sections.filter((s) => s.seatingMode === "GENERAL_ADMISSION");
+  const drawnZones = resolveZones(
+    gaSections.map((s) => ({ id: s.id, section: s, layout: isZoneLayout(s.layout) ? (s.layout as ZoneShape) : null })),
+    seatBoxes,
+  ).map((r) => ({ section: r.zone.section, zone: r.shape }));
+  const gatePoints: (GatePoint & { auto?: boolean })[] = [
+    ...session.venue.accessPoints.flatMap((g) => (g.mapX !== null && g.mapY !== null ? [{ id: g.id, name: g.name, x: g.mapX, y: g.mapY }] : [])),
+    ...autoPlaceGates(session.venue.accessPoints.filter((g) => g.mapX === null || g.mapY === null)).map((g) => ({ ...g, auto: true })),
+  ];
+
   // Secciones del recinto que no se venden en esta función: no aparecen en el sitio.
   const unpriced = session.venue.sections.filter((s) => !pricedSections.has(s.id));
   // En el selector, primero las que faltan por cargar.
@@ -413,7 +429,7 @@ export default async function SessionPage({ params }: Props) {
         </p>
       </section>
 
-      {(seatedSections.length > 0 || drawnZones.length > 0) && (
+      {(seatedSections.length > 0 || drawnZones.length > 0 || gatePoints.length > 0) && (
         <section className="card space-y-3 p-6">
           <div className="flex items-center justify-between">
             <h2 className="eyebrow">Mapa del recinto</h2>
@@ -422,6 +438,7 @@ export default async function SessionPage({ params }: Props) {
             </Link>
           </div>
           <SeatMapPreview
+            gates={gatePoints}
             sections={[
               ...drawnZones.map(({ section, zone }) => {
                 const availability = zones.find((z) => z.id === section.id);

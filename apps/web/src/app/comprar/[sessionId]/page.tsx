@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
-import { MAX_TICKETS_PER_ORDER, currentPrice, discountLabel, formatDateTime, formatMoney, isZoneLayout, saleState, type ZoneShape } from "@ticketera/core";
+import { MAX_TICKETS_PER_ORDER, autoPlaceGates, boxOfPoints, currentPrice, discountLabel, formatDateTime, formatMoney, isZoneLayout, resolveZones, saleState, type GatePoint, type ZoneShape } from "@ticketera/core";
 import { getQueueStatus, getSessionAvailability, getTakenSeatIds, getZoneAvailability, prisma } from "@ticketera/db";
 import { requireBuyer } from "@/lib/customer";
 import { queueCookieName } from "@/lib/queue-cookie";
@@ -23,7 +23,7 @@ export default async function BuyPage({ params }: Props) {
     where: { id: sessionId },
     include: {
       event: { include: { organization: { select: { status: true } } } },
-      venue: true,
+      venue: { include: { accessPoints: { select: { id: true, name: true, mapX: true, mapY: true } } } },
       ticketTypes: {
         orderBy: { sortOrder: "asc" },
         include: { section: { include: { seats: { orderBy: [{ row: "asc" }, { number: "asc" }] } } } },
@@ -104,24 +104,36 @@ export default async function BuyPage({ params }: Props) {
     }))
     .filter((t) => t.seats.length > 0);
 
-  // Zonas generales con forma en el mapa: una por sección, con lo que queda de TODA la zona y el precio más bajo
-  // a la venta ahora. Las que no tienen forma siguen apareciendo solo en la lista.
-  const zones: PickerZone[] = [];
-  for (const section of new Map(types.flatMap((t) => (t.section?.seatingMode === "GENERAL_ADMISSION" && t.section ? [[t.section.id, t.section] as const] : []))).values()) {
-    if (!isZoneLayout(section.layout)) continue;
+  // Zonas generales en el mapa: una por sección, con lo que queda de TODA la zona y el precio más bajo a la venta
+  // ahora. Las que todavía no tienen forma se colocan solas en una franja libre: el mapa muestra todas las zonas.
+  const gaSections = [...new Map(types.flatMap((t) => (t.section?.seatingMode === "GENERAL_ADMISSION" ? [[t.section.id, t.section] as const] : []))).values()];
+  const seatBoxes = seated.flatMap((s) => {
+    const box = boxOfPoints(s.seats, 12);
+    return box ? [box] : [];
+  });
+  const zones: PickerZone[] = resolveZones(
+    gaSections.map((section) => ({ id: section.id, section, layout: isZoneLayout(section.layout) ? (section.layout as ZoneShape) : null })),
+    seatBoxes,
+  ).map(({ zone: { section }, shape }) => {
     const open = types.filter((t) => t.sectionId === section.id && saleState(t) === "open");
     const cheapest = open.length ? Math.min(...open.map((t) => currentPrice(t, now).unitAmount)) : null;
     const currency = types.find((t) => t.sectionId === section.id)?.currency ?? "BOB";
-    zones.push({
+    return {
       sectionId: section.id,
       name: section.name,
       color: section.color,
-      zone: section.layout as ZoneShape,
+      zone: shape,
       left: zoneAvailability.find((z) => z.id === section.id)?.remaining ?? 0,
       capacity: section.capacity,
       fromPrice: cheapest === null ? null : `desde ${formatMoney(cheapest, currency)}`,
-    });
-  }
+    };
+  });
+
+  // Puertas del recinto: las ubicadas por el organizador y, las demás, al borde de abajo.
+  const gates: GatePoint[] = [
+    ...session.venue.accessPoints.flatMap((g) => (g.mapX !== null && g.mapY !== null ? [{ id: g.id, name: g.name, x: g.mapX, y: g.mapY }] : [])),
+    ...autoPlaceGates(session.venue.accessPoints.filter((g) => g.mapX === null || g.mapY === null)),
+  ];
 
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 px-6 py-10">
@@ -144,6 +156,7 @@ export default async function BuyPage({ params }: Props) {
           general={general}
           seated={seated}
           zones={zones}
+          gates={gates}
           buyer={{ name: buyer.name, email: buyer.email, document: buyer.documentId }}
         />
       )}

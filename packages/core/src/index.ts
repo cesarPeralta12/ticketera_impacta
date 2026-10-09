@@ -10,6 +10,7 @@ export * from "./images";
 export * from "./inventory";
 export * from "./landing";
 export * from "./locale";
+export * from "./map-layout";
 export * from "./money";
 export * from "./net";
 export * from "./promo";

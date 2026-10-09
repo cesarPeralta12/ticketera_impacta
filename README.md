@@ -211,6 +211,9 @@ orden). Los enlaces sirven una sola vez, vencen (24 h confirmar, 1 h contraseña
 
 Los topes cambian: confirma en la página de precios de cada proveedor antes de decidir.
 
+## Mapa del recinto (butacas, zonas y puertas)
+En *Recintos → (recinto)* hay **un solo mapa** con tres pestañas: **Con butacas** (secciones numeradas), **Sin butacas** (zonas de entrada general con la forma que elijas) y **Puertas** (dónde están las entradas, con nombre, y qué secciones entran por cada una). Las tres pestañas dibujan el mismo mapa completo. El comprador ve ese mapa con las butacas, las zonas (con "quedan N") y las puertas de ingreso. Una zona que todavía no se ubicó no desaparece: se coloca sola en una franja libre hasta que la ubiques; lo mismo con las puertas sin ubicar (al borde de abajo, marcadas "sin ubicar").
+
 ## Zonas de entrada general en el mapa
 Las secciones de entrada general (sin butacas) se dibujan en el mismo mapa que las butacas, con la forma que elijas: rectángulo, óvalo, trapecio o arco. En *Recintos → (recinto)* el editor deja arrastrar la forma y ajustar sus medidas, avisa si pisa otra zona o butacas, y permite colocar en el mapa las zonas antiguas que solo estaban en la lista. En la web, el comprador ve cada zona en el mapa con lo que queda y el precio desde, toca una zona para saltar a su selector de cantidad abajo, y la zona se marca con su cantidad elegida. El aforo no cambia con la forma.
 
