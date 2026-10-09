@@ -165,3 +165,119 @@ h1, h2, h3, .font-display {
 @media (prefers-reduced-motion: reduce) {
   .dyn-bar { animation: none; }
 }
+
+/* ── Cartelera (portada): entradas perforadas, insignias, carruseles ── */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Entrada con muescas a los lados de la perforación (el pie mide 4.75rem). */
+.stub {
+  --notch: 11px;
+  --foot: 4.75rem;
+  -webkit-mask:
+    radial-gradient(circle var(--notch) at 0 calc(100% - var(--foot)), #0000 98%, #000) left / 51% 100% no-repeat,
+    radial-gradient(circle var(--notch) at 100% calc(100% - var(--foot)), #0000 98%, #000) right / 51% 100% no-repeat;
+  mask:
+    radial-gradient(circle var(--notch) at 0 calc(100% - var(--foot)), #0000 98%, #000) left / 51% 100% no-repeat,
+    radial-gradient(circle var(--notch) at 100% calc(100% - var(--foot)), #0000 98%, #000) right / 51% 100% no-repeat;
+}
+.stub-foot {
+  height: var(--foot);
+  border-top: 2px dashed var(--border-light);
+}
+
+/* Insignias de venta */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 9999px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.tag-discount { background: var(--accent-2); color: #fff; }
+.tag-presale { background: var(--accent); color: var(--accent-ink); }
+.tag-low { background: rgba(255, 61, 104, 0.16); color: #ff7a93; border: 1px solid rgba(255, 61, 104, 0.5); }
+.tag-hot { background: rgba(255, 122, 61, 0.16); color: #ff9a6b; border: 1px solid rgba(255, 122, 61, 0.5); }
+.tag-soldout { background: #2a2a36; color: #9a96a6; }
+.tag-soon { background: rgba(53, 196, 143, 0.16); color: var(--green); border: 1px solid rgba(53, 196, 143, 0.5); }
+
+/* Sello de descuento sobre la imagen */
+.sticker {
+  display: grid;
+  place-items: center;
+  width: 3.6rem;
+  height: 3.6rem;
+  border-radius: 9999px;
+  background: var(--accent-2);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  line-height: 1;
+  transform: rotate(-9deg);
+  box-shadow: 0 6px 18px rgba(255, 61, 104, 0.45), inset 0 0 0 3px rgba(255, 255, 255, 0.22);
+}
+
+/* Carrusel principal */
+.hero-slide {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.7s ease, visibility 0.7s;
+}
+.hero-slide[data-active="true"] {
+  opacity: 1;
+  visibility: visible;
+}
+.hero-slide[data-active="true"] .hero-img {
+  animation: ken-burns 9s ease-out both;
+}
+.hero-slide[data-active="true"] .hero-rise > * {
+  animation: fade-up 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.hero-slide[data-active="true"] .hero-rise > *:nth-child(2) { animation-delay: 80ms; }
+.hero-slide[data-active="true"] .hero-rise > *:nth-child(3) { animation-delay: 160ms; }
+.hero-slide[data-active="true"] .hero-rise > *:nth-child(4) { animation-delay: 240ms; }
+.hero-slide[data-active="true"] .hero-rise > *:nth-child(5) { animation-delay: 320ms; }
+@keyframes ken-burns {
+  from { transform: scale(1.02); }
+  to { transform: scale(1.1); }
+}
+.hero-progress {
+  transform-origin: left;
+  animation: hero-fill var(--hero-ms, 7000ms) linear both;
+}
+@keyframes hero-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+/* Cinta de próximos eventos */
+.ticker-track {
+  display: flex;
+  width: max-content;
+  animation: ticker 55s linear infinite;
+}
+.ticker:hover .ticker-track {
+  animation-play-state: paused;
+}
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-slide { transition: none; }
+  .hero-slide[data-active="true"] .hero-img,
+  .hero-slide[data-active="true"] .hero-rise > *,
+  .ticker-track { animation: none !important; }
+  .hero-progress { animation: none !important; transform: scaleX(1); }
+}

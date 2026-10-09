@@ -8,6 +8,7 @@ export * from "./dynamic-qr";
 export * from "./guests";
 export * from "./images";
 export * from "./inventory";
+export * from "./landing";
 export * from "./locale";
 export * from "./money";
 export * from "./net";
