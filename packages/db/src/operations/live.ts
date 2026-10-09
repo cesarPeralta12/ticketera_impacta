@@ -165,6 +165,8 @@ export async function getLiveAccess(sessionId: string) {
       issued: active.length,
       entered: active.filter((t) => t.status === "USED").length,
       rejected: rejected.length,
+      /** QR dinámico vencido: intentos con una captura (o un reloj muy desajustado). */
+      qrExpired: rejected.filter((r) => r.result === "QR_EXPIRED").length,
     },
     gates: byGate,
     sections,

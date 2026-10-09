@@ -8,8 +8,9 @@ import { prisma } from "../src/client";
 import { scanTicket } from "../src/operations/access";
 import { createStaffUser } from "../src/operations/accounts";
 import { getDoorDownload } from "../src/operations/mobile";
-import { sellAtBoxOffice } from "../src/operations/sales";
-import { createGeneralAdmissionEvent } from "./fixtures";
+import { setTicketTypeQrMode } from "../src/operations/qr-mode";
+import { issueGuestTickets, sellAtBoxOffice } from "../src/operations/sales";
+import { buyer, createGeneralAdmissionEvent, createPendingOrder } from "./fixtures";
 
 afterAll(() => prisma.$disconnect());
 
@@ -169,5 +170,51 @@ describe("descarga para la puerta", () => {
     const row = download!.tickets.find((t) => t.code === ticket.code) as { mine: boolean; key?: string };
     expect(row.mine).toBe(false);
     expect(row.key).toBeUndefined();
+  });
+});
+
+describe("reglas del modo dinámico", () => {
+  async function freshType() {
+    const { session, types } = await createGeneralAdmissionEvent({ sectionCapacity: 20, types: [{ name: "VIP", capacity: 10 }] });
+    const full = await prisma.eventSession.findUniqueOrThrow({ where: { id: session.id }, include: { event: true } });
+    return { session, type: types[0]!, orgId: full.event.organizationId, eventId: full.eventId };
+  }
+
+  it("se activa mientras no hay ventas, fuerza solo QR y se puede volver atrás", async () => {
+    const { type, orgId } = await freshType();
+    await prisma.ticketType.update({ where: { id: type.id }, data: { accessMethods: ["QR", "BARCODE", "NFC"] } });
+    expect(await setTicketTypeQrMode(type.id, orgId, "DYNAMIC")).toEqual({ ok: true, changed: true });
+    expect(await prisma.ticketType.findUniqueOrThrow({ where: { id: type.id } })).toMatchObject({ qrMode: "DYNAMIC", accessMethods: ["QR"] });
+    expect(await setTicketTypeQrMode(type.id, orgId, "DYNAMIC")).toEqual({ ok: true, changed: false });
+    expect(await setTicketTypeQrMode(type.id, orgId, "STATIC")).toEqual({ ok: true, changed: true });
+  });
+
+  it("no se cambia una vez que hay ventas, ni en otra organización, ni en una lista de invitados", async () => {
+    const a = await freshType();
+    await createPendingOrder({ sessionId: a.session.id, items: [{ ticketTypeId: a.type.id, quantity: 1 }], buyer: buyer(1) });
+    expect(await setTicketTypeQrMode(a.type.id, a.orgId, "DYNAMIC")).toEqual({ ok: false, reason: "HAS_SALES" });
+
+    const b = await freshType();
+    expect(await setTicketTypeQrMode(b.type.id, a.orgId, "DYNAMIC")).toEqual({ ok: false, reason: "NOT_FOUND" });
+
+    await prisma.event.update({ where: { id: b.eventId }, data: { mode: "GUEST_LIST" } });
+    expect(await setTicketTypeQrMode(b.type.id, b.orgId, "DYNAMIC")).toEqual({ ok: false, reason: "GUEST_LIST" });
+  });
+
+  it("un tipo dinámico no se vende en boletería ni se regala como invitación, pero sí online", async () => {
+    const { session, type, orgId } = await freshType();
+    expect(await setTicketTypeQrMode(type.id, orgId, "DYNAMIC")).toMatchObject({ ok: true });
+    const cashier = (await createStaffUser({ organizationId: orgId, name: "Caja", email: `c-${Math.random().toString(36).slice(2, 8)}@prueba.test`, password: "Prueba2026!", role: "CASHIER" }))!;
+
+    await expect(
+      sellAtBoxOffice(
+        { sessionId: session.id, items: [{ ticketTypeId: type.id, quantity: 1 }], buyer: { name: "Ana", email: "ana@prueba.test", document: "7654321" } },
+        { staffId: cashier.id, method: "EFECTIVO" },
+      ),
+    ).rejects.toThrow(/QR dinámico/);
+    await expect(issueGuestTickets({ ticketTypeId: type.id, guests: [{ name: "Invitada" }], staffId: cashier.id })).rejects.toThrow(/QR dinámico/);
+
+    const online = await createPendingOrder({ sessionId: session.id, items: [{ ticketTypeId: type.id, quantity: 1 }], buyer: buyer(2) });
+    expect(online.code).toBeTruthy();
   });
 });

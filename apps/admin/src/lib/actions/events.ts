@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { MAX_DISCOUNT_PERCENT, formatDateTime, normalizeImageUrl, slugify, windowsOverlap, zonedDateTimeToUtc } from "@ticketera/core";
-import { DomainError, EventCategory, EventMode, prisma, publicationProblem, submitEventForReview } from "@ticketera/db";
+import { DomainError, EventCategory, EventMode, prisma, publicationProblem, setTicketTypeQrMode, submitEventForReview } from "@ticketera/db";
 import { formObject, intField, moneyField, zodErrors, type FormState } from "@/lib/forms";
 import { ROLES, requireStaff } from "@/lib/session";
 import { logAudit } from "@/lib/audit";
@@ -220,6 +220,8 @@ const ticketTypeSchema = z.object({
   salesEndAt: z.string().optional(),
   /** Preventa: mientras dure, las otras entradas de la sección no se venden. */
   exclusive: z.literal("on").optional(),
+  /** QR dinámico: cambia cada 30 s, solo QR y solo venta online. */
+  qrDynamic: z.literal("on").optional(),
   /** Descuento de preventa sobre el mismo tipo de entrada. */
   discountPercent: z.string().optional(),
   discountStartsAt: z.string().optional(),
@@ -301,13 +303,17 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
 
   const session = await prisma.eventSession.findFirst({
     where: { id: data.sessionId, event: { organizationId: staff.organization.id } },
-    include: { venue: { select: { timezone: true } } },
+    include: { venue: { select: { timezone: true } }, event: { select: { mode: true } } },
   });
   const section = await prisma.section.findFirst({
     where: { id: data.sectionId, venueId: session?.venueId },
     include: { _count: { select: { seats: true } } },
   });
   if (!session || !section) return { error: "Función o sección no encontrada." };
+  const qrMode = data.qrDynamic ? ("DYNAMIC" as const) : ("STATIC" as const);
+  if (qrMode === "DYNAMIC" && session.event.mode !== "TICKETING") {
+    return { error: "El QR dinámico es para eventos con venta de entradas, no para listas de invitados." };
+  }
 
   const parsedWindow = parseSaleWindow(data, session.venue.timezone);
   if (!parsedWindow.ok) return parsedWindow.error;
@@ -362,7 +368,9 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
         maxPerOrder: data.maxPerOrder,
         presale,
         ...parsedDiscount.discount,
-        accessMethods: [...readAccessMethods(formData)],
+        // El QR dinámico solo se lee con QR: el código de barras y el NFC son fijos.
+        accessMethods: qrMode === "DYNAMIC" ? ["QR" as const] : [...readAccessMethods(formData)],
+        qrMode,
         salesStartAt: window.salesStartAt,
         salesEndAt: window.salesEndAt,
         sortOrder: await tx.ticketType.count({ where: { sessionId: session.id } }),
@@ -387,9 +395,31 @@ export async function updateAccessMethodsAction(_prev: FormState, formData: Form
     include: { session: true },
   });
   if (!type) return { error: "Tipo de entrada no encontrado." };
+  if (type.qrMode === "DYNAMIC") return { error: "Una entrada de QR dinámico se lee solo con QR." };
   const methods = [...readAccessMethods(formData)];
   await prisma.ticketType.update({ where: { id: type.id }, data: { accessMethods: methods } });
   await audit(staff.id, "ticket_type.access_methods", "TicketType", type.id, { methods });
+  revalidatePath(`/eventos/${type.session.eventId}/funciones/${type.sessionId}`);
+  return { ok: true };
+}
+
+/** Activa o desactiva el QR dinámico de un tipo de entrada (solo mientras no tenga ventas). */
+export async function setQrModeAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireStaff(ROLES.manage);
+  const mode = formData.get("mode") === "DYNAMIC" ? "DYNAMIC" : "STATIC";
+  const typeId = String(formData.get("ticketTypeId"));
+  const result = await setTicketTypeQrMode(typeId, staff.organization.id, mode);
+  if (!result.ok) {
+    return {
+      error: {
+        NOT_FOUND: "Tipo de entrada no encontrado.",
+        HAS_SALES: "Ya hay ventas de este tipo de entrada: el modo del QR no se puede cambiar.",
+        GUEST_LIST: "El QR dinámico es para eventos con venta de entradas, no para listas de invitados.",
+      }[result.reason],
+    };
+  }
+  const type = await prisma.ticketType.findUniqueOrThrow({ where: { id: typeId }, include: { session: true } });
+  if (result.changed) await audit(staff.id, "ticket_type.qr_mode", "TicketType", typeId, { mode });
   revalidatePath(`/eventos/${type.session.eventId}/funciones/${type.sessionId}`);
   return { ok: true };
 }

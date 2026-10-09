@@ -39,7 +39,8 @@ export default async function PosSessionPage({ params }: Props) {
   const [remaining, taken] = await Promise.all([getSessionAvailability(session.id), getTakenSeatIds(session.id)]);
 
   // En caja se vende lo mismo que online en este momento: la preventa mientras dure, la general cuando empiece.
-  const openTypes = session.ticketTypes.filter((t) => saleState(t) === "open");
+  // Los tipos de QR dinámico son solo online: en caja no se imprimen.
+  const openTypes = session.ticketTypes.filter((t) => saleState(t) === "open" && t.qrMode === "STATIC");
   const now = new Date();
   const general: PosGeneralType[] = openTypes
     .filter((t) => t.section?.seatingMode !== "RESERVED")

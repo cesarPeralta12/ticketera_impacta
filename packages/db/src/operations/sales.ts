@@ -39,6 +39,14 @@ export async function sellAtBoxOffice(
   input: CheckoutInput,
   options: { staffId: string; method: PosMethod; now?: Date; promoCode?: string },
 ) {
+  // El QR dinámico vive en el celular del comprador: una entrada impresa en caja sería una foto fija.
+  const dynamicType = await prisma.ticketType.findFirst({
+    where: { id: { in: input.items.map((i) => i.ticketTypeId) }, qrMode: "DYNAMIC" },
+    select: { name: true },
+  });
+  if (dynamicType) {
+    throw new DomainError("INVALID_ITEMS", `"${dynamicType.name}" es de QR dinámico: solo se vende online (no en boletería).`);
+  }
   const buyer = {
     ...input.buyer,
     name: input.buyer.name.trim() || BOX_OFFICE_BUYER.name,
@@ -100,6 +108,9 @@ export async function issueGuestTickets(input: {
       }
       if (type.section?.seatingMode === "RESERVED") {
         throw new DomainError("INVALID_ITEMS", "Las invitaciones son para entradas generales, no para butacas numeradas.");
+      }
+      if (type.qrMode === "DYNAMIC") {
+        throw new DomainError("INVALID_ITEMS", "Las invitaciones no pueden ser de QR dinámico: se envían impresas o por correo.");
       }
 
       const shortage = findShortage(await loadInventory(tx, type.sessionId, now), [

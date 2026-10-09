@@ -12,6 +12,7 @@ import {
   updateTicketTypeSalesAction,
   deleteSessionAction,
   deleteTicketTypeAction,
+  setQrModeAction,
   updateAccessMethodsAction,
   updateQueueSettingsAction,
 } from "@/lib/actions/events";
@@ -151,6 +152,7 @@ export default async function SessionPage({ params }: Props) {
                     <td className="py-2.5 pr-4 font-medium">
                       {t.name}
                       {t.presale && <span className="badge ml-2 bg-[var(--warn-soft)] text-[var(--warn)]">preventa</span>}
+                      {t.qrMode === "DYNAMIC" && <span className="badge ml-2 bg-[#e8eefc] text-[#3b5bb5]">QR dinámico</span>}
                     </td>
                     <td className="py-2.5 pr-4 text-[var(--ink-muted)]">
                       {t.section ? `${t.section.name} · ${SEATING_LABEL[t.section.seatingMode]}` : "—"}
@@ -171,13 +173,28 @@ export default async function SessionPage({ params }: Props) {
                       {remaining.get(t.id) ?? 0} / {t.capacity}
                     </td>
                     <td className="py-2.5 pr-4">
-                      <ActionForm action={updateAccessMethodsAction} successMessage="Guardado." className="flex flex-wrap items-center gap-2">
-                        <input type="hidden" name="ticketTypeId" value={t.id} />
-                        <AccessMethodsField defaultValue={t.accessMethods} />
-                        <button type="submit" className="btn px-2 py-1 text-xs">
-                          Guardar
-                        </button>
-                      </ActionForm>
+                      {t.qrMode === "DYNAMIC" ? (
+                        <p className="text-xs text-[var(--ink-muted)]">
+                          Solo QR, y cambia cada 30 segundos. El comprador lo abre en su celular; no se vende en boletería ni se imprime.
+                        </p>
+                      ) : (
+                        <ActionForm action={updateAccessMethodsAction} successMessage="Guardado." className="flex flex-wrap items-center gap-2">
+                          <input type="hidden" name="ticketTypeId" value={t.id} />
+                          <AccessMethodsField defaultValue={t.accessMethods} />
+                          <button type="submit" className="btn px-2 py-1 text-xs">
+                            Guardar
+                          </button>
+                        </ActionForm>
+                      )}
+                      {t._count.orderItems === 0 && session.event.mode === "TICKETING" && (
+                        <ActionForm action={setQrModeAction} successMessage="Guardado." className="mt-1">
+                          <input type="hidden" name="ticketTypeId" value={t.id} />
+                          <input type="hidden" name="mode" value={t.qrMode === "DYNAMIC" ? "STATIC" : "DYNAMIC"} />
+                          <button type="submit" className="text-xs text-[var(--accent)] hover:underline">
+                            {t.qrMode === "DYNAMIC" ? "Volver a QR fijo" : "Usar QR dinámico"}
+                          </button>
+                        </ActionForm>
+                      )}
                     </td>
                     <td className="py-2.5 pr-4 text-xs">
                       <span className={`badge ${SALE_STATE[saleState(t)].className}`}>{SALE_STATE[saleState(t)].text}</span>
@@ -333,6 +350,11 @@ export default async function SessionPage({ params }: Props) {
                 <AccessMethodsField />
               </div>
             </div>
+            {session.event.mode === "TICKETING" && (
+              <label className="flex items-center gap-2 self-center text-sm" title="El QR cambia cada 30 segundos y solo se lee con QR. Solo venta online (no boletería ni invitaciones).">
+                <input type="checkbox" name="qrDynamic" className="h-4 w-4 accent-[var(--accent)]" /> QR dinámico
+              </label>
+            )}
             <div className="flex basis-full flex-wrap items-end gap-3 rounded-md border border-dashed border-[var(--border)] p-3">
               <label className="flex items-center gap-2 self-center text-sm">
                 <input type="checkbox" name="presale" className="h-4 w-4" /> Es preventa

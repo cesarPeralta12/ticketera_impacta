@@ -62,6 +62,11 @@ export function LiveAccessBoard({ data }: { data: NonNullable<LiveAccess> }) {
             <span className="rounded-md border border-[var(--border)] px-3 py-1.5 text-[var(--danger)]">
               Rechazos: <strong className="tabular-nums">{data.totals.rejected}</strong>
             </span>
+            {data.totals.qrExpired > 0 && (
+              <span className="rounded-md border border-[var(--border)] px-3 py-1.5 text-[var(--warn)]" title="Intentos con una captura de pantalla o un QR viejo">
+                QR vencidos: <strong className="tabular-nums">{data.totals.qrExpired}</strong>
+              </span>
+            )}
           </div>
         </div>
         <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-[var(--surface-2)]" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
