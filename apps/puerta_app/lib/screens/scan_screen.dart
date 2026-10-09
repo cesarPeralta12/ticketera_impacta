@@ -9,6 +9,8 @@ import 'package:nfc_manager/nfc_manager.dart';
 import '../door_service.dart';
 import '../models.dart';
 import '../nfc_reader.dart';
+import '../scan_cooldown.dart';
+import '../validator.dart' show extractTicketCode;
 
 /// Pantalla de lectura: cámara (QR), código de barras o NFC, según lo elegido en el inicio.
 class ScanScreen extends StatefulWidget {
@@ -38,6 +40,9 @@ class _ScanScreenState extends State<ScanScreen> {
   bool _busy = false;
   String? _lastRaw;
   DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Entradas recién procesadas: la cámara no las vuelve a leer sola (ver ScanCooldown).
+  final ScanCooldown _cooldown = ScanCooldown();
   ({int total, int used}) _counts = (total: 0, used: 0);
   String? _nfcMessage;
   Timer? _syncTimer;
@@ -70,6 +75,11 @@ class _ScanScreenState extends State<ScanScreen> {
     // La cámara ve el mismo código muchos cuadros seguidos: se ignora si es el mismo de hace un momento.
     final now = DateTime.now();
     if (method != null && raw == _lastRaw && now.difference(_lastAt) < const Duration(seconds: 3)) return;
+    // Una entrada recién procesada no se vuelve a leer sola (la cámara sigue viendo el QR, y el de una entrada
+    // dinámica cambia cada 30 s). Escribir el código a mano (method == null) siempre se atiende.
+    final code = extractTicketCode(raw);
+    if (method != null && code != null && _cooldown.blocked(code, now)) return;
+    if (method == null && code != null) _cooldown.release(code);
     _lastRaw = raw;
     _lastAt = now;
     _busy = true;
@@ -87,11 +97,14 @@ class _ScanScreenState extends State<ScanScreen> {
         if (!mounted) return;
         if (accepted) {
           shown = await widget.service.confirm(widget.meta, raw, method);
+          if (code != null) _cooldown.block(code, CooldownFor.accepted, DateTime.now());
           HapticFeedback.lightImpact();
           // Sube el ingreso al servidor de una vez (si hay internet), para que el panel lo vea en vivo.
           unawaited(widget.service.sync(widget.meta.sessionId).catchError((_) => false));
         } else {
-          // Cancelada o se acabó el tiempo: la entrada sigue válida y se puede volver a leer ya.
+          // Cancelada o se acabó el tiempo: la entrada sigue válida. Se espera unos segundos antes de volver a leerla
+          // sola (si no, el diálogo reaparece al instante); escribir el código a mano la atiende ya.
+          if (code != null) _cooldown.block(code, CooldownFor.cancelled, DateTime.now());
           _lastRaw = null;
           ScaffoldMessenger.of(context)
             ..clearSnackBars()
@@ -99,6 +112,7 @@ class _ScanScreenState extends State<ScanScreen> {
           return;
         }
       } else {
+        if (code != null) _cooldown.block(code, CooldownFor.rejected, DateTime.now());
         HapticFeedback.heavyImpact();
       }
       setState(() => _outcome = shown);

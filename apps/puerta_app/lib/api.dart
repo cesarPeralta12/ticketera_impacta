@@ -32,7 +32,7 @@ class ApiException implements Exception {
 }
 
 /// Versión de la app: viaja en cada petición para que el panel muestre qué versión tiene cada teléfono.
-const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.1.0');
+const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.1.1');
 
 /// Par de tokens: el de acceso es corto; el de renovación lo cambia por uno nuevo (y él mismo se renueva).
 class TokenPair {
