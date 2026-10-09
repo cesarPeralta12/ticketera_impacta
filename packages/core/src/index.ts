@@ -8,6 +8,7 @@ export * from "./images";
 export * from "./inventory";
 export * from "./locale";
 export * from "./money";
+export * from "./net";
 export * from "./promo";
 export * from "./pricing";
 export * from "./qr";

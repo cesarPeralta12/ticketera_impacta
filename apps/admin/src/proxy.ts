@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
+import { isAllowedOrigin } from "@ticketera/core";
 import { authConfig } from "./lib/auth.config";
 
 const { auth } = NextAuth(authConfig);
@@ -15,8 +16,32 @@ const RESTRICTED: Record<string, { home: string; allowed: string[] }> = {
  * (boletería o espacio del cliente). Es una redirección de cortesía: la
  * autorización real la hace requireStaff() en cada página y server action.
  */
+const hostOf = (url: string | undefined) => {
+  try {
+    return url ? new URL(url).host : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Las APIs no hablan con páginas de otros sitios: /api/v1 es solo para la app móvil (no manda `Origin`, los
+ * navegadores sí) y el resto solo acepta su propio origen. Sin cabeceras CORS, un navegador tampoco deja
+ * leer las respuestas desde otro sitio; esto además corta la petición antes de que llegue a la ruta.
+ */
+function blockedApiOrigin(req: Parameters<Parameters<typeof auth>[0]>[0]) {
+  const origin = req.headers.get("origin");
+  if (req.nextUrl.pathname.startsWith("/api/v1/")) {
+    return origin !== null || req.headers.get("sec-fetch-site") === "cross-site";
+  }
+  return !isAllowedOrigin(origin, [req.headers.get("host"), req.headers.get("x-forwarded-host"), hostOf(process.env.ADMIN_URL)]);
+}
+
 export default auth((req) => {
   const { pathname } = req.nextUrl;
+  if (pathname.startsWith("/api/") && blockedApiOrigin(req)) {
+    return NextResponse.json({ error: "Origen no permitido." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  }
   if (
     pathname.startsWith("/login") ||
     // Recuperar la contraseña se hace sin sesión (por eso mismo se olvidó).
