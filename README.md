@@ -211,6 +211,9 @@ orden). Los enlaces sirven una sola vez, vencen (24 h confirmar, 1 h contraseña
 
 Los topes cambian: confirma en la página de precios de cada proveedor antes de decidir.
 
+## Zonas de entrada general en el mapa
+Las secciones de entrada general (sin butacas) se dibujan en el mismo mapa que las butacas, con la forma que elijas: rectángulo, óvalo, trapecio o arco. En *Recintos → (recinto)* el editor deja arrastrar la forma y ajustar sus medidas, avisa si pisa otra zona o butacas, y permite colocar en el mapa las zonas antiguas que solo estaban en la lista. En la web, el comprador ve cada zona en el mapa con lo que queda y el precio desde, toca una zona para saltar a su selector de cantidad abajo, y la zona se marca con su cantidad elegida. El aforo no cambia con la forma.
+
 ## Organizadores y límite de eventos
 Cada organizador es una organización propia: crea y edita **sus** eventos, recintos y entradas, ve sus ventas e ingresos, y nunca ve ni modifica lo de otro. IMPACTA aprueba sus eventos antes de publicarlos. En *Organizadores → (organizador)* IMPACTA fija el **máximo de eventos activos** (vacío = sin límite): cuentan los borradores, los eventos en revisión y los publicados con funciones por venir; no cuentan los cancelados ni los ya realizados. El límite solo frena crear eventos nuevos (bajarlo no borra nada) y se comprueba en el servidor aunque se intente saltar el formulario. IMPACTA no tiene límite.
 

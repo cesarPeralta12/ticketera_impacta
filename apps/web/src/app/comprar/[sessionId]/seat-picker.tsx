@@ -1,7 +1,7 @@
 "use client";
 
 import type { KeyboardEvent } from "react";
-import { CANVAS_HEIGHT, CANVAS_WIDTH, formatMoney } from "@ticketera/core";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, formatMoney, zoneLabelPoint, zonePath, zoneSize, type ZoneShape } from "@ticketera/core";
 
 export type PickerSeat = { id: string; label: string; x: number; y: number; taken: boolean };
 export type PickerSection = {
@@ -17,6 +17,19 @@ export type PickerSection = {
   seats: PickerSeat[];
 };
 
+/** Zona de entrada general dibujada en el mapa: no se eligen butacas, la cantidad se elige en la lista. */
+export type PickerZone = {
+  sectionId: string;
+  name: string;
+  color: string;
+  zone: ZoneShape;
+  /** Lugares que quedan en toda la zona (Preventa + General comparten el aforo). */
+  left: number;
+  capacity: number;
+  /** Precio más bajo a la venta ahora, ya formateado ("Bs 90"); null si todavía no se vende. */
+  fromPrice: string | null;
+};
+
 /**
  * Mapa de butacas del comprador: dibuja la forma real que diseñó el organizador (idea del
  * prototipo del compañero), en SVG. Elegir butacas no las bloquea: la reserva se hace al
@@ -26,10 +39,17 @@ export function SeatPicker({
   sections,
   selected,
   onToggle,
+  zones = [],
+  zoneCounts = {},
+  onZoneClick,
 }: {
   sections: PickerSection[];
   selected: Set<string>;
   onToggle: (ticketTypeId: string, seatId: string) => void;
+  zones?: PickerZone[];
+  /** Cuántas entradas lleva elegidas el comprador en cada zona (por sectionId). */
+  zoneCounts?: Record<string, number>;
+  onZoneClick?: (sectionId: string) => void;
 }) {
   // Etiqueta sobre el centro de la sección (en un arco, las puntas suben más que el centro):
   // nombre, precio y butacas libres sobre el total.
@@ -72,6 +92,55 @@ export function SeatPicker({
         <text x={CANVAS_WIDTH / 2} y={56} textAnchor="middle" fontSize="11" letterSpacing="4" fill="#6b687a">
           ESCENARIO
         </text>
+
+        {zones.map((z) => {
+          const sold = z.left === 0;
+          const count = zoneCounts[z.sectionId] ?? 0;
+          const p = zoneLabelPoint(z.zone);
+          const { width, height } = zoneSize(z.zone);
+          // El texto se reduce si la zona es angosta; con poco alto se deja solo el nombre.
+          const big = Math.min(width, height) >= 90;
+          const detail = sold ? "AGOTADO" : `Quedan ${z.left}${z.fromPrice ? ` · ${z.fromPrice}` : ""}`;
+          return (
+            <g
+              key={z.sectionId}
+              role="button"
+              tabIndex={0}
+              aria-label={`${z.name}: ${detail}${count ? `, ${count} elegidas` : ""}. Elige la cantidad en la lista de abajo.`}
+              className="cursor-pointer outline-none focus-visible:opacity-80"
+              onClick={() => onZoneClick?.(z.sectionId)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onZoneClick?.(z.sectionId);
+                }
+              }}
+            >
+              <title>{`${z.name} · ${detail}`}</title>
+              <path
+                d={zonePath(z.zone)}
+                fill={sold ? "#2a2a36" : z.color}
+                fillOpacity={sold ? 0.6 : count > 0 ? 0.55 : 0.22}
+                stroke={count > 0 ? "#f5b700" : z.color}
+                strokeWidth={count > 0 ? 3.5 : 2}
+                strokeDasharray={sold ? "6 5" : undefined}
+              />
+              <text x={p.x} y={p.y - (big ? 6 : 0)} textAnchor="middle" fontSize={big ? 17 : 13} fontWeight="700" fill={sold ? "#8a8798" : z.color}>
+                {z.name.toUpperCase()}
+              </text>
+              {big && (
+                <text x={p.x} y={p.y + 14} textAnchor="middle" fontSize="13" fontWeight="600" fill="#c9c6d6">
+                  {detail}
+                </text>
+              )}
+              {count > 0 && (
+                <text x={p.x} y={p.y + (big ? 34 : 18)} textAnchor="middle" fontSize="15" fontWeight="800" fill="#f5b700">
+                  × {count}
+                </text>
+              )}
+            </g>
+          );
+        })}
 
         {labels.map((l) => (
           <g key={l.name}>
@@ -123,6 +192,11 @@ export function SeatPicker({
         <span className="flex items-center gap-1.5">
           <span className="h-3 w-3 rounded-full bg-[#2a2a36]" /> Ocupada
         </span>
+        {zones.length > 0 && (
+          <span className="flex items-center gap-1.5">
+            <span className="h-3 w-4 rounded-sm border border-[var(--border-light)] bg-white/10" /> Zona general: elige la cantidad abajo
+          </span>
+        )}
       </div>
     </div>
   );

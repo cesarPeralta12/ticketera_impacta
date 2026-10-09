@@ -1,10 +1,14 @@
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@ticketera/core";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, zoneLabelPoint, zonePath, type ZoneShape } from "@ticketera/core";
 
 export type PreviewSection = {
   id: string;
   name: string;
   color: string;
   seats: { x: number; y: number }[];
+  /** Zona de entrada general dibujada como forma (en vez de butacas). */
+  zone?: ZoneShape | null;
+  /** Texto bajo el nombre de la zona (por ejemplo "Quedan 120"). */
+  detail?: string;
   /** Atenuada: la sección no se vende en esta función. */
   muted?: boolean;
 };
@@ -30,6 +34,19 @@ export function SeatMapPreview({ sections }: { sections: PreviewSection[] }) {
       </text>
       {sections.map((s) => (
         <g key={s.id} opacity={s.muted ? 0.25 : 1}>
+          {s.zone && (
+            <>
+              <path d={zonePath(s.zone)} fill={s.color} fillOpacity={0.3} stroke={s.color} strokeWidth={2} />
+              <text x={zoneLabelPoint(s.zone).x} y={zoneLabelPoint(s.zone).y} textAnchor="middle" fontSize="15" fontWeight="700" fill="#1a1a18">
+                {s.name}
+              </text>
+              {s.detail && (
+                <text x={zoneLabelPoint(s.zone).x} y={zoneLabelPoint(s.zone).y + 18} textAnchor="middle" fontSize="12" fill="#3f3f3a">
+                  {s.detail}
+                </text>
+              )}
+            </>
+          )}
           {s.seats.map((seat, i) => (
             <circle key={i} cx={seat.x} cy={seat.y} r={6} fill={s.color} />
           ))}

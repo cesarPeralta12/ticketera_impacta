@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useState, useTransition, type FormEvent } from "react";
 import { MAX_TICKETS_PER_ORDER, RESERVATION_MINUTES, formatMoney } from "@ticketera/core";
 import { createOrderAction, previewPromoAction, type CheckoutState, type PromoPreview } from "./actions";
-import { SeatPicker, type PickerSection } from "./seat-picker";
+import { SeatPicker, type PickerSection, type PickerZone } from "./seat-picker";
 
 export type GeneralType = {
   id: string;
+  /** Zona (sección) a la que pertenece: las entradas de una misma zona comparten aforo y se resaltan juntas. */
+  sectionId: string | null;
   name: string;
   detail: string | null;
   /** Precio que se cobra ahora (con el descuento de preventa vigente, si hay). */
@@ -34,11 +36,14 @@ export function CheckoutForm({
   sessionId,
   general,
   seated,
+  zones = [],
   buyer,
 }: {
   sessionId: string;
   general: GeneralType[];
   seated: SeatedType[];
+  /** Zonas generales dibujadas en el mapa. */
+  zones?: PickerZone[];
   buyer: { name: string; email: string; document: string };
 }) {
   const router = useRouter();
@@ -51,6 +56,20 @@ export function CheckoutForm({
   const [promo, setPromo] = useState<Extract<PromoPreview, { ok: true }> | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [promoBusy, setPromoBusy] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
+
+  // Entradas elegidas por zona (para marcarlas en el mapa) y salto del mapa a su selector de la lista.
+  const zoneCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const t of general) if (t.sectionId) counts[t.sectionId] = (counts[t.sectionId] ?? 0) + (quantities[t.id] ?? 0);
+    return counts;
+  }, [general, quantities]);
+
+  function goToZone(sectionId: string) {
+    document.getElementById(`zona-${sectionId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFlash(sectionId);
+    setTimeout(() => setFlash((f) => (f === sectionId ? null : f)), 1800);
+  }
 
   // Si alguien tomó una butaca elegida, al refrescarse el mapa deja de contar como elegida.
   const taken = useMemo(
@@ -138,10 +157,10 @@ export function CheckoutForm({
         ids.length ? <input key={type} type="hidden" name={`seats:${type}`} value={ids.join(",")} /> : null,
       )}
 
-      {seated.length > 0 && (
+      {(seated.length > 0 || zones.length > 0) && (
         <section className="card space-y-4 p-4 sm:p-6">
-          <h2 className="font-display text-xl">1. Elige tus butacas</h2>
-          <SeatPicker sections={seated} selected={selected} onToggle={toggleSeat} />
+          <h2 className="font-display text-xl">{seated.length > 0 ? "1. Elige tus butacas" : "Mapa del recinto"}</h2>
+          <SeatPicker sections={seated} selected={selected} onToggle={toggleSeat} zones={zones} zoneCounts={zoneCounts} onZoneClick={goToZone} />
           <ul className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-[var(--ink-muted)]">
             {seated.map((t) => (
               <li key={t.ticketTypeId} className="flex items-center gap-2">
@@ -166,8 +185,13 @@ export function CheckoutForm({
             {seated.length ? "Entradas generales" : "1. Elige tus entradas"}
           </h2>
           <ul className="divide-y divide-[var(--border)]">
-            {general.map((type) => (
-              <li key={type.id} className="flex items-center justify-between gap-4 px-5 py-4">
+            {general.map((type, index) => (
+              <li
+                key={type.id}
+                // Solo el primer tipo de la zona lleva el ancla: el mapa salta a ella.
+                id={type.sectionId && general.findIndex((t) => t.sectionId === type.sectionId) === index ? `zona-${type.sectionId}` : undefined}
+                className={`flex items-center justify-between gap-4 px-5 py-4 transition-colors ${type.sectionId && flash === type.sectionId ? "bg-[var(--accent)]/15" : ""}`}
+              >
                 <div>
                   <p className="font-semibold">
                     {type.name}

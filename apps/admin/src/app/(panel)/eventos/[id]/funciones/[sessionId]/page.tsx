@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { currentPrice, formatDateTime, formatMoney, saleState, utcToZonedInput, type SaleState } from "@ticketera/core";
+import { currentPrice, formatDateTime, formatMoney, isZoneLayout, saleState, utcToZonedInput, type SaleState, type ZoneShape } from "@ticketera/core";
 import { getSessionAvailability, getZoneAvailability, prisma } from "@ticketera/db";
 import { AccessMethodsField } from "@/components/access-methods-field";
 import { ActionForm } from "@/components/action-form";
@@ -52,6 +52,10 @@ export default async function SessionPage({ params }: Props) {
   const guestList = session.event.mode === "GUEST_LIST";
   const pricedSections = new Set(session.ticketTypes.map((t) => t.sectionId));
   const seatedSections = session.venue.sections.filter((s) => s.seatingMode === "RESERVED");
+  // Zonas generales dibujadas en el mapa del recinto (con lo que queda en esta función).
+  const drawnZones = session.venue.sections.flatMap((s) =>
+    s.seatingMode === "GENERAL_ADMISSION" && isZoneLayout(s.layout) ? [{ section: s, zone: s.layout as ZoneShape }] : [],
+  );
   // Secciones del recinto que no se venden en esta función: no aparecen en el sitio.
   const unpriced = session.venue.sections.filter((s) => !pricedSections.has(s.id));
   // En el selector, primero las que faltan por cargar.
@@ -409,7 +413,7 @@ export default async function SessionPage({ params }: Props) {
         </p>
       </section>
 
-      {seatedSections.length > 0 && (
+      {(seatedSections.length > 0 || drawnZones.length > 0) && (
         <section className="card space-y-3 p-6">
           <div className="flex items-center justify-between">
             <h2 className="eyebrow">Mapa del recinto</h2>
@@ -418,7 +422,21 @@ export default async function SessionPage({ params }: Props) {
             </Link>
           </div>
           <SeatMapPreview
-            sections={seatedSections.map((s) => ({ ...s, seats: positioned(s.seats), muted: !pricedSections.has(s.id) }))}
+            sections={[
+              ...drawnZones.map(({ section, zone }) => {
+                const availability = zones.find((z) => z.id === section.id);
+                return {
+                  id: section.id,
+                  name: section.name,
+                  color: section.color,
+                  seats: [],
+                  zone,
+                  detail: availability ? `Quedan ${availability.remaining} / ${availability.capacity}` : `Aforo ${section.capacity}`,
+                  muted: !pricedSections.has(section.id),
+                };
+              }),
+              ...seatedSections.map((s) => ({ ...s, seats: positioned(s.seats), muted: !pricedSections.has(s.id) })),
+            ]}
           />
           <p className="text-xs text-[var(--ink-dim)]">Las secciones atenuadas no tienen precio en esta función.</p>
         </section>

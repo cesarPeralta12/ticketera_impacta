@@ -281,7 +281,14 @@ async function seedOrganizers(db: Db) {
         city: o.venue.city,
         timezone: DEFAULT_TIMEZONE,
         accessPoints: { create: [{ name: "Puerta principal" }] },
-        sections: { create: { name: o.venue.section, seatingMode: "GENERAL_ADMISSION", capacity: o.venue.capacity } },
+        sections: {
+          create: {
+            name: o.venue.section,
+            seatingMode: "GENERAL_ADMISSION",
+            capacity: o.venue.capacity,
+            layout: { type: "zone", shape: "rect", x: 150, y: 160, width: 700, height: 380 },
+          },
+        },
       },
       include: { sections: true },
     });

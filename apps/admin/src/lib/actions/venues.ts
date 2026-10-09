@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { MAX_ROWS, MAX_SEATS_PER_ROW, computeSeatPositions, type SectionShape } from "@ticketera/core";
-import { prisma } from "@ticketera/db";
+import { MAX_ROWS, MAX_SEATS_PER_ROW, computeSeatPositions, parseZoneLayout, type SectionShape, type ZoneShape } from "@ticketera/core";
+import { Prisma, prisma } from "@ticketera/db";
 import { formObject, intField, zodErrors, type FormState } from "@/lib/forms";
 import { ROLES, requireStaff } from "@/lib/session";
 import { TIMEZONES } from "@/lib/timezones";
@@ -43,12 +43,32 @@ const gaSectionSchema = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Color inválido."),
 });
 
+/**
+ * Lee la forma de la zona que manda el editor (JSON en el campo `zone`). Vacío = sin forma: la zona queda solo
+ * en la lista y se puede colocar en el mapa después.
+ */
+function readZone(formData: FormData): { ok: true; zone: ZoneShape | null } | { ok: false; error: string } {
+  const raw = String(formData.get("zone") ?? "").trim();
+  if (!raw) return { ok: true, zone: null };
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    return { ok: false, error: "La forma de la zona no es válida." };
+  }
+  const parsed = parseZoneLayout(json);
+  return parsed.ok ? { ok: true, zone: parsed.zone } : { ok: false, error: parsed.error };
+}
+
+/** Crea una zona de entrada general (sin butacas), con su forma en el mapa si el editor la mandó. */
 export async function addGeneralSectionAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireStaff(ROLES.manage);
   const parsed = gaSectionSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
   const venue = await ownedVenue(staff.organization.id, parsed.data.venueId);
   if (!venue) return { error: "Recinto no encontrado." };
+  const zone = readZone(formData);
+  if (!zone.ok) return { error: zone.error };
   try {
     await prisma.section.create({
       data: {
@@ -57,6 +77,7 @@ export async function addGeneralSectionAction(_prev: FormState, formData: FormDa
         color: parsed.data.color,
         capacity: parsed.data.capacity,
         seatingMode: "GENERAL_ADMISSION",
+        ...(zone.zone ? { layout: zone.zone } : {}),
         sortOrder: await prisma.section.count({ where: { venueId: venue.id } }),
       },
     });
@@ -65,6 +86,39 @@ export async function addGeneralSectionAction(_prev: FormState, formData: FormDa
     throw error;
   }
   revalidatePath(`/recintos/${venue.id}`);
+  return { ok: true };
+}
+
+const gaUpdateSchema = z.object({
+  sectionId: z.string(),
+  name: z.string({ error: "Ingresa el nombre." }).min(2).max(60),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Color inválido."),
+});
+
+/**
+ * Cambia el nombre, el color y la forma en el mapa de una zona general. Vale también con ventas: es solo cómo
+ * se ve. El aforo no se toca aquí (las entradas ya vendidas dependen de él). Sin forma = se quita del mapa.
+ */
+export async function updateGeneralSectionAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireStaff(ROLES.manage);
+  const parsed = gaUpdateSchema.safeParse(formObject(formData));
+  if (!parsed.success) return zodErrors(parsed.error);
+  const section = await prisma.section.findFirst({
+    where: { id: parsed.data.sectionId, seatingMode: "GENERAL_ADMISSION", venue: { organizationId: staff.organization.id } },
+  });
+  if (!section) return { error: "Sección no encontrada." };
+  const zone = readZone(formData);
+  if (!zone.ok) return { error: zone.error };
+  try {
+    await prisma.section.update({
+      where: { id: section.id },
+      data: { name: parsed.data.name, color: parsed.data.color, layout: zone.zone ?? Prisma.DbNull },
+    });
+  } catch (error) {
+    if (isUnique(error)) return { fieldErrors: { name: "Ya existe una sección con ese nombre." } };
+    throw error;
+  }
+  revalidatePath(`/recintos/${section.venueId}`);
   return { ok: true };
 }
 

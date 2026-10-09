@@ -15,5 +15,6 @@ export * from "./pricing";
 export * from "./qr";
 export * from "./sale-window";
 export * from "./seat-geometry";
+export * from "./zone-geometry";
 export * from "./status";
 export * from "./transfers";

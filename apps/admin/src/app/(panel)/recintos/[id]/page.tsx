@@ -2,12 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { SECTION_COLORS, type SectionShape } from "@ticketera/core";
+import { isZoneLayout, type SectionShape, type ZoneShape } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import {
   addAccessPointAction,
-  addGeneralSectionAction,
   deleteAccessPointAction,
   deleteSectionAction,
   updateAccessPointSectionsAction,
@@ -16,6 +15,7 @@ import { positioned } from "@/components/seat-map-preview";
 import { SEATING_LABEL } from "@/lib/labels";
 import { ROLES, requireStaff } from "@/lib/session";
 import { SeatDesigner, type DesignerSection } from "./seat-designer";
+import { ZoneDesigner, type DesignerZone } from "./zone-designer";
 
 export const metadata: Metadata = { title: "Recinto" };
 
@@ -56,6 +56,12 @@ export default async function VenuePage({ params }: Props) {
       sold: s.sold,
       priced: s.priced,
     }));
+
+  // Zonas generales: su forma en el mapa (si la tienen) y las butacas de fondo para no pisarlas.
+  const zones: DesignerZone[] = sections
+    .filter((s) => s.seatingMode === "GENERAL_ADMISSION")
+    .map((s) => ({ id: s.id, name: s.name, color: s.color, capacity: s.capacity, layout: isZoneLayout(s.layout) ? (s.layout as ZoneShape) : null }));
+  const backgroundSeats = sections.flatMap((s) => (s.seatingMode === "RESERVED" ? positioned(s.seats).map((p) => ({ ...p, color: s.color })) : []));
 
   return (
     <div className="space-y-8">
@@ -99,40 +105,20 @@ export default async function VenuePage({ params }: Props) {
             ))}
           </ul>
         )}
+      </section>
 
-        <h3 className="mb-2 text-sm font-medium">Sección de entrada general (sin butacas)</h3>
-        <ActionForm action={addGeneralSectionAction} resetOnSuccess className="flex flex-wrap items-end gap-3">
-          <input type="hidden" name="venueId" value={venue.id} />
-          <label className="label">
-            Nombre
-            <input name="name" required placeholder="Cancha, Campo, VIP…" className="field" />
-          </label>
-          <label className="label">
-            Aforo
-            <input name="capacity" type="number" min={1} required className="field w-32" />
-          </label>
-          <label className="label">
-            Color
-            <select name="color" defaultValue={SECTION_COLORS[0]} className="field">
-              {SECTION_COLORS.map((c) => (
-                <option key={c} value={c} style={{ color: c }}>
-                  ● {c}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="submit" className="btn btn-dark">
-            Agregar sección
-          </button>
-        </ActionForm>
+      <section className="space-y-3">
+        <h2 className="eyebrow">Zonas de entrada general (sin butacas)</h2>
+        <p className="text-sm text-[var(--ink-muted)]">
+          Cada zona se dibuja en el mapa con la forma que elijas (rectángulo, óvalo, trapecio o arco) y su aforo. El comprador la ve en el mismo
+          mapa de las butacas y elige cuántas entradas quiere de la lista de abajo.
+        </p>
+        <ZoneDesigner venueId={venue.id} zones={zones} seats={backgroundSeats} />
       </section>
 
       <section className="space-y-3">
         <h2 className="eyebrow">Mapa de butacas numeradas</h2>
-        <SeatDesigner
-          venueId={venue.id}
-          existingSections={seated}
-        />
+        <SeatDesigner venueId={venue.id} existingSections={seated} zones={zones.flatMap((z) => (z.layout ? [{ id: z.id, name: z.name, color: z.color, layout: z.layout }] : []))} />
       </section>
 
       <section className="card p-6">
