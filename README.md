@@ -172,6 +172,14 @@ en iOS requiere el permiso *Near Field Communication Tag Reading* de la cuenta d
   contraseña": 10 por IP por hora; reservas: 8 cada 10 min por cuenta; pedidos de transferencia: 10 por hora. Viven
   en Postgres (`RateLimitHit`) y se ajustan en `packages/db/src/operations/rate-limit.ts`.
 
+- **Códigos promocionales** (panel → *Promociones*): descuento por porcentaje o monto fijo por entrada, para un
+  evento o toda la organización, con vigencia, máximo de usos total y por persona, y activar/desactivar. En la compra
+  hay un cuadro "Código promocional" (y en boletería): el descuento se ve antes de reservar y queda en la orden. Por
+  defecto no se suma al precio de preventa (opción "combinable"). Un código puede llevar el nombre de un **promotor
+  (RRPP)** y su comisión: el panel muestra por código y por promotor las entradas vendidas, lo descontado y la comisión
+  (solo de ventas pagadas). Un uso se libera si la reserva vence sin pagar; el código y el descuento no se editan una
+  vez creados (se desactiva y se crea otro).
+
 ## Correo (confirmar email, contraseña y entradas)
 
 El sistema envía cuatro correos: **confirmar el email** (obligatorio para comprar), **cambiar la contraseña**

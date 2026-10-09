@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useState, useTransition, type FormEvent } from "react";
 import { MAX_TICKETS_PER_ORDER, RESERVATION_MINUTES, formatMoney } from "@ticketera/core";
-import { createOrderAction, type CheckoutState } from "./actions";
+import { createOrderAction, previewPromoAction, type CheckoutState, type PromoPreview } from "./actions";
 import { SeatPicker, type PickerSection } from "./seat-picker";
 
 export type GeneralType = {
@@ -47,6 +47,10 @@ export function CheckoutForm({
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   const [notice, setNotice] = useState<string | null>(null);
+  const [promoInput, setPromoInput] = useState("");
+  const [promo, setPromo] = useState<Extract<PromoPreview, { ok: true }> | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [promoBusy, setPromoBusy] = useState(false);
 
   // Si alguien tomó una butaca elegida, al refrescarse el mapa deja de contar como elegida.
   const taken = useMemo(
@@ -69,6 +73,39 @@ export function CheckoutForm({
     general.reduce((sum, t) => sum + t.unitAmount * (quantities[t.id] ?? 0), 0) +
     seated.reduce((sum, t) => sum + t.unitAmount * (seats[t.ticketTypeId]?.length ?? 0), 0);
   const currency = general[0]?.currency ?? seated[0]?.currency ?? "BOB";
+
+  // Lo elegido, para calcular el descuento de un código (una línea por tipo de entrada).
+  const chosen = useMemo(
+    () => [
+      ...general.flatMap((t) => ((quantities[t.id] ?? 0) > 0 ? [{ ticketTypeId: t.id, quantity: quantities[t.id]! }] : [])),
+      ...seated.flatMap((t) => ((seats[t.ticketTypeId]?.length ?? 0) > 0 ? [{ ticketTypeId: t.ticketTypeId, quantity: seats[t.ticketTypeId]!.length }] : [])),
+    ],
+    [general, seated, quantities, seats],
+  );
+  const chosenKey = JSON.stringify(chosen);
+
+  async function applyPromo(code: string) {
+    if (!code.trim()) return;
+    setPromoBusy(true);
+    setPromoError(null);
+    const result = await previewPromoAction(sessionId, chosen, code);
+    setPromoBusy(false);
+    if (result.ok) {
+      setPromo(result);
+      setPromoInput(result.code);
+    } else {
+      setPromo(null);
+      setPromoError(result.error);
+    }
+  }
+
+  // Si cambia lo elegido, el descuento se vuelve a calcular con el mismo código.
+  useEffect(() => {
+    if (!promo) return;
+    const id = setTimeout(() => (chosen.length === 0 ? setPromo(null) : void applyPromo(promo.code)), 400);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo debe reaccionar a cambios de la selección
+  }, [chosenKey]);
   const selected = new Set(Object.values(seats).flat());
 
   function toggleSeat(ticketTypeId: string, seatId: string) {
@@ -96,6 +133,7 @@ export function CheckoutForm({
   return (
     <form onSubmit={onSubmit} className="space-y-6">
       <input type="hidden" name="sessionId" value={sessionId} />
+      <input type="hidden" name="promo" value={promo?.code ?? ""} />
       {Object.entries(seats).map(([type, ids]) =>
         ids.length ? <input key={type} type="hidden" name={`seats:${type}`} value={ids.join(",")} /> : null,
       )}
@@ -201,6 +239,54 @@ export function CheckoutForm({
         </p>
       </section>
 
+      <section className="card space-y-3 p-5">
+        <h2 className="font-display text-xl">3. Código promocional</h2>
+        {promo ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[var(--green)]/10 px-4 py-3 text-sm">
+            <p>
+              <strong className="font-mono">{promo.code}</strong> aplicado ({promo.label}):{" "}
+              <strong>−{formatMoney(promo.discountAmount, currency)}</strong>
+            </p>
+            <button
+              type="button"
+              className="text-xs underline"
+              onClick={() => {
+                setPromo(null);
+                setPromoInput("");
+              }}
+            >
+              Quitar
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-start gap-3">
+            <input
+              value={promoInput}
+              onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void applyPromo(promoInput);
+                }
+              }}
+              placeholder="¿Tienes un código?"
+              autoComplete="off"
+              className="field w-56 font-mono"
+              aria-label="Código promocional"
+            />
+            <button type="button" disabled={promoBusy || !promoInput.trim() || chosen.length === 0} onClick={() => void applyPromo(promoInput)} className="btn-accent">
+              {promoBusy ? "Revisando…" : "Aplicar"}
+            </button>
+            {chosen.length === 0 && promoInput.trim() && <p className="basis-full text-xs text-[var(--ink-dim)]">Elige tus entradas y aplica el código.</p>}
+          </div>
+        )}
+        {promoError && (
+          <p role="alert" className="text-sm text-[var(--accent-2)]">
+            {promoError}
+          </p>
+        )}
+      </section>
+
       {state.error && (
         <p role="alert" className="rounded-xl border border-[var(--accent-2)]/40 bg-[var(--accent-2)]/10 px-4 py-3 text-sm">
           {state.error}
@@ -212,7 +298,12 @@ export function CheckoutForm({
           <p className="text-sm text-[var(--ink-muted)]">
             {totalTickets} {totalTickets === 1 ? "entrada" : "entradas"} · máximo {MAX_TICKETS_PER_ORDER}
           </p>
-          <p className="font-display text-2xl tabular-nums">{formatMoney(total, currency)}</p>
+          {promo && (
+            <p className="text-xs text-[var(--green)]">
+              Descuento {promo.code}: −{formatMoney(promo.discountAmount, currency)}
+            </p>
+          )}
+          <p className="font-display text-2xl tabular-nums">{formatMoney(promo ? Math.max(0, total - promo.discountAmount) : total, currency)}</p>
         </div>
         <button type="submit" disabled={pending || totalTickets === 0} className="btn-accent">
           {pending ? "Reservando…" : "Reservar y pagar"}

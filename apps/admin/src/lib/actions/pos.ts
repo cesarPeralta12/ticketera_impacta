@@ -55,8 +55,9 @@ export async function sellAction(_prev: PosState, formData: FormData): Promise<P
 
   let code: string;
   try {
-    ({ code } = await sellAtBoxOffice(input, { staffId: staff.id, method }));
+    ({ code } = await sellAtBoxOffice(input, { staffId: staff.id, method, promoCode: String(formData.get("promo") ?? "").trim() || undefined }));
   } catch (error) {
+    if (error instanceof DomainError && error.code === "PROMO_INVALID") return { error: `Código promocional: ${error.message}` };
     if (error instanceof DomainError) {
       return { error: error.message, refresh: error.code === "SEAT_TAKEN" || error.code === "SOLD_OUT" };
     }

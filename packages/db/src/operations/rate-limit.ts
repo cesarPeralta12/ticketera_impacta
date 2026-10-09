@@ -47,6 +47,8 @@ export const LIMITS = {
   registerByIp: { limit: 5, windowSeconds: 60 * 60 },
   /** "Olvidé mi contraseña" por IP. */
   forgotByIp: { limit: 10, windowSeconds: 60 * 60 },
+  /** Pruebas de códigos promocionales por cuenta (evita adivinar códigos). */
+  promoGuessByAccount: { limit: 20, windowSeconds: 10 * 60 },
   /** Reservas de entradas por cuenta (evita acaparar butacas creando órdenes sin pagar). */
   ordersByAccount: { limit: 8, windowSeconds: 10 * 60 },
 } as const satisfies Record<string, Limit>;

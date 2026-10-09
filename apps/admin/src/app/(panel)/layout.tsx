@@ -35,6 +35,7 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
           { href: "/eventos", label: "Eventos", icon: "calendar" },
           { href: "/clientes", label: "Clientes", icon: "briefcase" },
           { href: "/recintos", label: "Recintos", icon: "map" },
+          { href: "/promociones", label: "Promociones", icon: "tag" },
           ...operate,
         ],
       },
@@ -51,6 +52,7 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
           { href: "/recintos", label: "Recintos", icon: "map" },
           { href: "/ordenes", label: "Ventas", icon: "receipt" },
           { href: "/ingresos", label: "Ingresos en puerta", icon: "door" },
+          { href: "/promociones", label: "Promociones", icon: "tag" },
           ...operate,
           // Las cuentas de un organizador las crea IMPACTA (al entrar en él).
           ...(staff.platform ? [{ href: "/usuarios", label: "Usuarios y porteros", icon: "users" as const }] : []),

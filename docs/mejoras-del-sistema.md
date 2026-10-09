@@ -43,7 +43,7 @@ organizadores con la app móvil de puerta. Prioridad: **P0** antes de vender ent
    aceptación, el código anterior se anula al transferir, reglas por evento (cantidad y hasta cuándo).
 6. **P1 · Zonas de pie con "restantes"** y cupo por función; administrador de recintos más claro
    (duplicar, archivar, editar secciones, deshacer/zoom en el editor).
-7. **P2 · Cupones, entradas por lote para empresas, listas de espera por agotado, reembolso parcial.**
+7. **Hecho (cupones) · Códigos promocionales con promotores (RRPP)**. Pendiente: entradas por lote para empresas, listas de espera por agotado, reembolso parcial.
 
 ## 3. Puerta y app móvil
 

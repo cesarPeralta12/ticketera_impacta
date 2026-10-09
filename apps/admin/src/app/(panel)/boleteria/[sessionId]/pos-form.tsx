@@ -152,7 +152,7 @@ export function PosForm({
         </section>
       )}
 
-      <section className="card grid gap-4 p-5 sm:grid-cols-3">
+      <section className="card grid gap-4 p-5 sm:grid-cols-4">
         <label className="label">
           Nombre (opcional)
           <input name="name" autoComplete="off" className="field" />
@@ -160,6 +160,10 @@ export function PosForm({
         <label className="label">
           Email (opcional)
           <input name="email" type="email" autoComplete="off" className="field" />
+        </label>
+        <label className="label">
+          Código promocional (opcional)
+          <input name="promo" autoComplete="off" placeholder="RRPP-XXXXX" className="field font-mono uppercase" />
         </label>
         <label className="label">
           Carnet de identidad (obligatorio)

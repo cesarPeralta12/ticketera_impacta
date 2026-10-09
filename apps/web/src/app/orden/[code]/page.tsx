@@ -140,6 +140,12 @@ export default async function OrderPage({ params }: Props) {
                 <span className="tabular-nums">{formatMoney(item.unitAmount * item.quantity, order.currency)}</span>
               </li>
             ))}
+            {order.discountAmount > 0 && (
+              <li className="flex justify-between px-5 py-3 text-[var(--green)]">
+                <span>Descuento{order.promoRedemption ? ` (${order.promoRedemption.promoCode.code})` : ""}</span>
+                <span className="tabular-nums">−{formatMoney(order.discountAmount, order.currency)}</span>
+              </li>
+            )}
             <li className="flex justify-between px-5 py-3 font-semibold">
               <span>Total</span>
               <span className="tabular-nums">{formatMoney(order.totalAmount, order.currency)}</span>

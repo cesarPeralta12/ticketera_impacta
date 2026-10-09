@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { checkoutSchema } from "@ticketera/core";
-import { DomainError, LIMITS, createPendingOrder, hit, prisma } from "@ticketera/db";
+import { DomainError, LIMITS, createPendingOrder, hit, previewPromo, prisma } from "@ticketera/db";
 import { auth } from "@/lib/auth";
 import { activeProvider, isDirectPass, payDirect } from "@/lib/payments";
 import { queueCookieName } from "@/lib/queue-cookie";
@@ -58,16 +58,19 @@ export async function createOrderAction(_prev: CheckoutState, formData: FormData
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Revisa las entradas elegidas." };
 
   const queueToken = (await cookies()).get(queueCookieName(sessionId))?.value;
+  const promoCode = String(formData.get("promo") ?? "").trim() || undefined;
 
   let code: string;
   try {
-    ({ code } = await createPendingOrder(parsed.data, { queueToken, customerId: customer.id }));
+    ({ code } = await createPendingOrder(parsed.data, { queueToken, customerId: customer.id, promoCode }));
   } catch (error) {
     if (error instanceof DomainError) {
       if (error.code === "QUEUE_REQUIRED") redirect(`/comprar/${sessionId}/espera`);
       if (error.code === "LOGIN_REQUIRED") redirect(`/login?next=${back}`);
       if (error.code === "DOCUMENT_REQUIRED") redirect(`/cuenta/datos?next=${back}`);
       if (error.code === "EMAIL_NOT_VERIFIED") redirect(`/cuenta/verificar?next=${back}`);
+      // Un código que ya no vale no se ignora en silencio: se avisa antes de cobrar el precio completo.
+      if (error.code === "PROMO_INVALID") return { error: `Código promocional: ${error.message}` };
       return { error: error.message, refresh: error.code === "SEAT_TAKEN" || error.code === "SOLD_OUT" };
     }
     throw error;
@@ -82,4 +85,29 @@ export async function createOrderAction(_prev: CheckoutState, formData: FormData
     }
   }
   redirect(`/orden/${code}`);
+}
+
+export type PromoPreview =
+  | { ok: true; code: string; label: string; discountAmount: number; totalAmount: number }
+  | { ok: false; error: string };
+
+/** Vista previa del descuento de un código con lo que la persona eligió (no reserva nada). */
+export async function previewPromoAction(
+  sessionId: string,
+  items: { ticketTypeId: string; quantity: number }[],
+  code: string,
+): Promise<PromoPreview> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, error: "Inicia sesión para usar un código." };
+  if (!(await hit(`promo:preview:${session.user.id}`, LIMITS.promoGuessByAccount))) {
+    return { ok: false, error: "Probaste muchos códigos seguidos. Espera unos minutos." };
+  }
+  try {
+    const preview = await previewPromo({ sessionId, items, code, customerId: session.user.id });
+    const label = preview.discountType === "PERCENT" ? `${preview.discountValue}% menos` : "descuento por entrada";
+    return { ok: true, code: preview.code, label, discountAmount: preview.discountAmount, totalAmount: preview.totalAmount };
+  } catch (error) {
+    if (error instanceof DomainError) return { ok: false, error: error.message };
+    throw error;
+  }
 }

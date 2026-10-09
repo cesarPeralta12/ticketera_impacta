@@ -286,6 +286,7 @@ export async function getOrderByCode(code: string) {
         },
       },
       payments: { orderBy: { createdAt: "desc" } },
+      promoRedemption: { include: { promoCode: { select: { code: true } } } },
       tickets: { include: { ticketType: true, seat: { include: { section: true } } }, orderBy: { issuedAt: "asc" } },
     },
   });
