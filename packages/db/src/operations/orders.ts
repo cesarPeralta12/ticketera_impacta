@@ -2,6 +2,8 @@ import { RESERVATION_MINUTES, checkoutSchema, currentPrice, findShortage, orderT
 import { prisma } from "../client";
 import type { OrderChannel } from "../generated/prisma/client";
 import { completeTurn, hasActiveTurn } from "./queue";
+import { resolvePromo } from "./promos";
+import { TX_OPTIONS } from "./shared";
 import { DomainError, findTakenSeats, loadInventory, lockInventory } from "./shared";
 
 /** Cuántas entradas quedan de cada tipo en una función (sin bloquear: solo para mostrar). */
@@ -77,6 +79,8 @@ export async function createPendingOrder(
     customerId?: string;
     channel?: OrderChannel;
     issuedById?: string;
+    /** Código promocional que escribió el comprador. Si no es válido, la compra se rechaza (no se cobra sin descuento en silencio). */
+    promoCode?: string;
   } = {},
 ) {
   const now = options.now ?? new Date();
@@ -209,6 +213,31 @@ export async function createPendingOrder(
         : [{ ...line, quantity: item.quantity }];
     });
 
+    // Código promocional: se valida con la fila del código bloqueada, así dos compras a la vez no gastan el último uso.
+    let promo: { id: string; discount: number } | null = null;
+    if (options.promoCode?.trim()) {
+      const event = types[0]!.session.event;
+      const resolved = await resolvePromo(tx, {
+        code: options.promoCode,
+        organizationId: event.organizationId,
+        eventId: event.id,
+        customerId: options.customerId,
+        now,
+        lock: true,
+        lines: data.items.map((item) => {
+          const type = byId.get(item.ticketTypeId)!;
+          const price = currentPrice(type, now);
+          return {
+            ticketTypeId: type.id,
+            unitAmount: price.unitAmount,
+            quantity: item.quantity,
+            presaleDiscountActive: price.discountPercent !== null,
+          };
+        }),
+      });
+      promo = { id: resolved.promo.id, discount: resolved.discount };
+    }
+
     if (options.queueToken) await completeTurn(tx, data.sessionId, options.queueToken, now);
 
     return tx.order.create({
@@ -222,12 +251,15 @@ export async function createPendingOrder(
         buyerDocument: data.buyer.document,
         status: "PENDING_PAYMENT",
         currency: [...currencies][0]!,
-        ...orderTotals(priced),
+        ...orderTotals(priced, promo?.discount ?? 0),
         expiresAt: new Date(now.getTime() + RESERVATION_MINUTES * 60_000),
         items: { create: priced },
+        promoRedemption: promo
+          ? { create: { promoCodeId: promo.id, customerId: options.customerId ?? null, discountAmount: promo.discount } }
+          : undefined,
       },
     });
-  });
+  }, TX_OPTIONS);
 }
 
 /**

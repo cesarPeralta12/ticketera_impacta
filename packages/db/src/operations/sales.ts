@@ -37,7 +37,7 @@ export const BOX_OFFICE_BUYER = { name: "Venta en boletería", email: "sin-email
  */
 export async function sellAtBoxOffice(
   input: CheckoutInput,
-  options: { staffId: string; method: PosMethod; now?: Date },
+  options: { staffId: string; method: PosMethod; now?: Date; promoCode?: string },
 ) {
   const buyer = {
     ...input.buyer,
@@ -48,6 +48,7 @@ export async function sellAtBoxOffice(
     channel: "POS",
     issuedById: options.staffId,
     now: options.now,
+    promoCode: options.promoCode,
   });
   const provider = posProvider(options.method);
   const payment = await startPayment(order.code, provider, options.now);

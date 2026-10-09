@@ -19,7 +19,7 @@
  * la interfaz de este módulo no cambiaría.
  */
 import { prisma } from "../client";
-import type { Db } from "./shared";
+import { TX_OPTIONS, type Db } from "./shared";
 
 export const QUEUE_TURN_MINUTES = 10;
 export const DEFAULT_MAX_CONCURRENT = 50;
@@ -95,7 +95,7 @@ async function admitNext(sessionId: string, maxConcurrent: number, now: Date) {
       where: { id: { in: next.map((n) => n.id) }, admittedAt: null },
       data: { admittedAt: now, expiresAt: new Date(now.getTime() + QUEUE_TURN_MINUTES * 60_000) },
     });
-  });
+  }, TX_OPTIONS);
 }
 
 /**

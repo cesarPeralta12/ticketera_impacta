@@ -54,6 +54,13 @@ describe("checkout", () => {
         { unitAmount: 30000, quantity: 2 },
         { unitAmount: 80000, quantity: 1 },
       ]),
-    ).toEqual({ subtotalAmount: 140000, feeAmount: 0, totalAmount: 140000 });
+    ).toEqual({ subtotalAmount: 140000, discountAmount: 0, feeAmount: 0, totalAmount: 140000 });
+  });
+
+  it("resta el descuento de un código promocional sin dejar el total en negativo", () => {
+    const items = [{ unitAmount: 30000, quantity: 2 }];
+    expect(orderTotals(items, 12000)).toEqual({ subtotalAmount: 60000, discountAmount: 12000, feeAmount: 0, totalAmount: 48000 });
+    expect(orderTotals(items, 999999)).toMatchObject({ discountAmount: 60000, totalAmount: 0 });
+    expect(orderTotals(items, -5)).toMatchObject({ discountAmount: 0, totalAmount: 60000 });
   });
 });

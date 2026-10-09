@@ -21,6 +21,7 @@ export class DomainError extends Error {
       | "LOGIN_REQUIRED"
       | "DOCUMENT_REQUIRED"
       | "EMAIL_NOT_VERIFIED"
+      | "PROMO_INVALID"
       | "TRANSFER_NOT_ALLOWED"
       | "RECIPIENT_NOT_FOUND"
       | "NOT_FOUND"
@@ -140,3 +141,10 @@ export async function loadInventory(
     sectionCapacity: t.section?.capacity ?? null,
   }));
 }
+
+/**
+ * Límites de las transacciones que compiten por el mismo inventario o la misma fila de la cola.
+ * Con mucha gente a la vez, las transacciones esperan su turno (hay un bloqueo por tipo de entrada):
+ * con los 2 s de espera por defecto de Prisma, las últimas de una avalancha fallaban sin haber hecho nada.
+ */
+export const TX_OPTIONS = { maxWait: 15_000, timeout: 20_000 } as const;

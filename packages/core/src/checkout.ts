@@ -65,8 +65,10 @@ export function serviceFee(_subtotal: number): number {
   return 0;
 }
 
-export function orderTotals(items: PricedItem[]) {
+/** Totales de la orden. `discountAmount` es el descuento de un código promocional (nunca deja el total en negativo). */
+export function orderTotals(items: PricedItem[], discountAmount = 0) {
   const subtotalAmount = items.reduce((sum, i) => sum + lineTotal(i.unitAmount, i.quantity), 0);
-  const feeAmount = serviceFee(subtotalAmount);
-  return { subtotalAmount, feeAmount, totalAmount: subtotalAmount + feeAmount };
+  const discount = Math.min(Math.max(0, discountAmount), subtotalAmount);
+  const feeAmount = serviceFee(subtotalAmount - discount);
+  return { subtotalAmount, discountAmount: discount, feeAmount, totalAmount: subtotalAmount - discount + feeAmount };
 }

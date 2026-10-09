@@ -39,10 +39,11 @@ model Organization {
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 
-  members Membership[]
-  venues  Venue[]
-  events  Event[]
-  clients Client[]
+  members    Membership[]
+  promoCodes PromoCode[]
+  venues     Venue[]
+  events     Event[]
+  clients    Client[]
 }
 
 /// Cliente u organizador de IMPACTA: dueño de uno o varios eventos. Sus usuarios (rol CLIENT)
@@ -172,8 +173,9 @@ model Customer {
   orders            Order[]
   tickets           Ticket[]
   emailTokens       EmailToken[]
-  transfersSent     TicketTransfer[] @relation("TransfersSent")
-  transfersReceived TicketTransfer[] @relation("TransfersReceived")
+  transfersSent     TicketTransfer[]  @relation("TransfersSent")
+  transfersReceived TicketTransfer[]  @relation("TransfersReceived")
+  promoRedemptions  PromoRedemption[]
 }
 
 enum TransferStatus {
@@ -345,6 +347,7 @@ model Event {
   reviewNote          String?
   /// ¿Los compradores pueden transferir sus entradas a otra persona registrada?
   transfersEnabled    Boolean       @default(true)
+  promoCodes          PromoCode[]
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
@@ -460,17 +463,20 @@ model Order {
   currency       String       @db.Char(3)
   subtotalAmount Int
   feeAmount      Int          @default(0)
+  /// Descuento de un código promocional (ya restado del total).
+  discountAmount Int          @default(0)
   totalAmount    Int
   expiresAt      DateTime
   paidAt         DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  customer Customer?   @relation(fields: [customerId], references: [id])
-  issuedBy StaffUser?  @relation(fields: [issuedById], references: [id])
-  items    OrderItem[]
-  payments Payment[]
-  tickets  Ticket[]
+  customer        Customer?        @relation(fields: [customerId], references: [id])
+  issuedBy        StaffUser?       @relation(fields: [issuedById], references: [id])
+  items           OrderItem[]
+  payments        Payment[]
+  tickets         Ticket[]
+  promoRedemption PromoRedemption?
 
   @@index([status, expiresAt])
   @@index([buyerEmail])
@@ -713,4 +719,65 @@ model RateLimitHit {
   createdAt DateTime @default(now())
 
   @@index([key, createdAt])
+}
+
+enum PromoDiscountType {
+  PERCENT
+  /// Monto fijo que se descuenta de cada entrada.
+  FIXED
+}
+
+/// Código promocional: descuento por porcentaje o monto fijo por entrada, con límites de uso y vigencia.
+/// Puede llevar el nombre de un promotor (RRPP) y su comisión, para medir cuánto vendió cada uno.
+model PromoCode {
+  id                    String            @id @default(cuid())
+  organizationId        String
+  /// Evento al que aplica; vacío = todos los eventos de la organización.
+  eventId               String?
+  /// Normalizado (mayúsculas, sin espacios). Único por organización.
+  code                  String
+  description           String?
+  discountType          PromoDiscountType
+  /// PERCENT: 1 a 100. FIXED: centavos por entrada.
+  discountValue         Int
+  /// ¿Se suma al descuento de preventa? Por defecto no.
+  combinableWithPresale Boolean           @default(false)
+  /// Usos totales (órdenes). Vacío = sin límite.
+  maxUses               Int?
+  /// Usos por cuenta de comprador. Vacío = sin límite.
+  maxUsesPerCustomer    Int?
+  startsAt              DateTime?
+  endsAt                DateTime?
+  active                Boolean           @default(true)
+  /// Promotor o RRPP al que se atribuyen las ventas con este código.
+  promoterName          String?
+  /// Comisión del promotor sobre lo vendido con el código (informativa, para el reporte).
+  commissionPercent     Int?
+  createdById           String?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id])
+  event        Event?            @relation(fields: [eventId], references: [id])
+  redemptions  PromoRedemption[]
+
+  @@unique([organizationId, code])
+  @@index([eventId])
+}
+
+/// Un uso del código en una orden. Cuenta para los límites mientras la orden esté pagada o reservada.
+model PromoRedemption {
+  id             String   @id @default(cuid())
+  promoCodeId    String
+  orderId        String   @unique
+  customerId     String?
+  discountAmount Int
+  createdAt      DateTime @default(now())
+
+  promoCode PromoCode @relation(fields: [promoCodeId], references: [id])
+  order     Order     @relation(fields: [orderId], references: [id])
+  customer  Customer? @relation(fields: [customerId], references: [id])
+
+  @@index([promoCodeId])
+  @@index([customerId, promoCodeId])
 }
