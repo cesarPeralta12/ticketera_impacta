@@ -2,8 +2,9 @@
 
 import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
-import { prisma, verifyStaffCredentials } from "@ticketera/db";
+import { LIMITS, hit, isLimited, prisma, recordHit, verifyStaffCredentials } from "@ticketera/db";
 import { signIn } from "@/lib/auth";
+import { TOO_MANY_ATTEMPTS, clientIp } from "@/lib/client-ip";
 import { HOME_BY_ROLE } from "@/lib/session";
 
 export type LoginState = { error?: string } | undefined;
@@ -16,6 +17,10 @@ function safeNext(value: FormDataEntryValue | null) {
 
 export async function loginAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  // Límites: por IP (todos los intentos) y por cuenta (solo las contraseñas incorrectas).
+  if (!(await hit(`login:ip:${await clientIp()}`, LIMITS.loginByIp)) || (await isLimited(`login:fail:${email}`, LIMITS.loginFailuresByAccount))) {
+    return { error: TOO_MANY_ATTEMPTS };
+  }
   // El portero usa solo la app móvil: no abre sesión en el panel web.
   const account = await verifyStaffCredentials(email, String(formData.get("password") ?? ""));
   if (account?.role === "OPERATOR") {
@@ -24,7 +29,10 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
   try {
     await signIn("credentials", { email, password: formData.get("password"), redirect: false });
   } catch (error) {
-    if (error instanceof AuthError) return { error: "Email o contraseña incorrectos." };
+    if (error instanceof AuthError) {
+      await recordHit(`login:fail:${email}`);
+      return { error: "Email o contraseña incorrectos." };
+    }
     throw error;
   }
   // Sin destino pedido, cada rol entra directo a su pantalla (boletería, cliente…).

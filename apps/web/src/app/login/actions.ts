@@ -2,8 +2,9 @@
 
 import { AuthError } from "next-auth";
 import { DOCUMENT_ERROR } from "@ticketera/core";
-import { MIN_PASSWORD_LENGTH, registerCustomer } from "@ticketera/db";
+import { LIMITS, MIN_PASSWORD_LENGTH, hit, isLimited, recordHit, registerCustomer } from "@ticketera/db";
 import { signIn } from "@/lib/auth";
+import { TOO_MANY_ATTEMPTS, clientIp } from "@/lib/client-ip";
 import { sendVerificationEmail } from "@/lib/mail";
 
 export type AuthState = { error?: string } | undefined;
@@ -15,6 +16,11 @@ function safeNext(value: FormDataEntryValue | null) {
 }
 
 export async function loginAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
+  // Límites: por IP (todos los intentos) y por cuenta (solo las contraseñas incorrectas).
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  if (!(await hit(`login:ip:${await clientIp()}`, LIMITS.loginByIp)) || (await isLimited(`login:fail:${email}`, LIMITS.loginFailuresByAccount))) {
+    return { error: TOO_MANY_ATTEMPTS };
+  }
   try {
     await signIn("credentials", {
       email: formData.get("email"),
@@ -22,12 +28,16 @@ export async function loginAction(_prev: AuthState, formData: FormData): Promise
       redirectTo: safeNext(formData.get("next")),
     });
   } catch (error) {
-    if (error instanceof AuthError) return { error: "Email o contraseña incorrectos." };
+    if (error instanceof AuthError) {
+      await recordHit(`login:fail:${email}`);
+      return { error: "Email o contraseña incorrectos." };
+    }
     throw error; // la redirección de éxito viaja como excepción
   }
 }
 
 export async function registerAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
+  if (!(await hit(`register:ip:${await clientIp()}`, LIMITS.registerByIp))) return { error: TOO_MANY_ATTEMPTS };
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");

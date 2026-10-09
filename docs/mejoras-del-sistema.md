@@ -20,7 +20,7 @@ organizadores con la app móvil de puerta. Prioridad: **P0** antes de vender ent
 1. **Hecho · Login y carnet obligatorios para comprar.** (Antes se compraba como invitado y el carnet era opcional.)
    La compra toma nombre, email y carnet de la cuenta; el carnet es único por persona (evita reventa con
    cuentas múltiples). Verificación de email y recuperar contraseña.
-2. **P0 · Límite de intentos** (rate limiting) en login, registro, cola, compra, API móvil y lectura
+2. **Hecho · Límite de intentos** (rate limiting) en login, registro, cola, compra, API móvil y lectura
    manual de códigos; bloqueo temporal por cuenta/IP.
 3. **P1 · Un solo modelo de organizador.** Retirar `Client` y el rol `CLIENT` (espacio temporal) a favor de
    organizaciones aisladas, con roles internos: dueño, administrador, **solo lectura** (reportes) y personal.

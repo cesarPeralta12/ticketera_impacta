@@ -705,3 +705,12 @@ model AuditLog {
   @@index([entity, entityId])
   @@index([createdAt])
 }
+
+/// Intentos recientes para limitar abusos (login, registro, compras…). Se purgan solos pasado un día.
+model RateLimitHit {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+}

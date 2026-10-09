@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { checkoutSchema } from "@ticketera/core";
-import { DomainError, createPendingOrder, prisma } from "@ticketera/db";
+import { DomainError, LIMITS, createPendingOrder, hit, prisma } from "@ticketera/db";
 import { auth } from "@/lib/auth";
 import { activeProvider, isDirectPass, payDirect } from "@/lib/payments";
 import { queueCookieName } from "@/lib/queue-cookie";
@@ -32,6 +32,11 @@ export async function createOrderAction(_prev: CheckoutState, formData: FormData
   if (!customer) redirect(`/login?next=${back}`);
   if (!customer.emailVerified) redirect(`/cuenta/verificar?next=${back}`);
   if (!customer.documentId) redirect(`/cuenta/datos?next=${back}`);
+
+  // Límite de reservas por cuenta: nadie acapara butacas creando órdenes sin pagar.
+  if (!(await hit(`order:account:${customer.id}`, LIMITS.ordersByAccount))) {
+    return { error: "Hiciste muchas reservas seguidas. Espera unos minutos o paga las que ya tienes." };
+  }
 
   const items = [...formData.entries()].flatMap(([key, value]) => {
     if (typeof value !== "string") return [];

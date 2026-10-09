@@ -167,6 +167,11 @@ en iOS requiere el permiso *Near Field Communication Tag Reading* de la cuenta d
   acepten, la entrada sigue siendo del titular; la oferta vence a las 72 h; máximo 2 transferencias por entrada y hasta
   2 horas antes de la función; el organizador puede desactivarlo por evento. Los dos reciben correo.
 
+- **Límite de intentos**: ingresar (sitio, panel y app de puerta): 20 intentos por IP cada 10 min y, por cuenta, 6
+  contraseñas incorrectas cada 15 min (después se bloquea un rato); crear cuentas: 5 por IP por hora; "olvidé mi
+  contraseña": 10 por IP por hora; reservas: 8 cada 10 min por cuenta; pedidos de transferencia: 10 por hora. Viven
+  en Postgres (`RateLimitHit`) y se ajustan en `packages/db/src/operations/rate-limit.ts`.
+
 ## Correo (confirmar email, contraseña y entradas)
 
 El sistema envía cuatro correos: **confirmar el email** (obligatorio para comprar), **cambiar la contraseña**

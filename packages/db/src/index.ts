@@ -10,6 +10,7 @@ export * from "./operations/orders";
 export * from "./operations/organizations";
 export * from "./operations/payments";
 export * from "./operations/queue";
+export * from "./operations/rate-limit";
 export * from "./operations/report";
 export * from "./operations/sales";
 export * from "./operations/transfers";
