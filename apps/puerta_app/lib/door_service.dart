@@ -44,10 +44,30 @@ class DoorService extends ChangeNotifier {
   /// Se llama cuando el servidor dice que la sesión ya no vale: la pantalla vuelve al login.
   VoidCallback? onSessionExpired;
 
+  /// Diferencia entre la hora del servidor y la del reloj del teléfono, medida en cada sincronización. El QR
+  /// dinámico se compara con la hora del servidor, así que un reloj mal puesto no deja afuera a nadie.
+  int clockOffsetMs = 0;
+
+  /// Hora del servidor según el teléfono.
+  DateTime get serverNow => DateTime.now().add(Duration(milliseconds: clockOffsetMs));
+
+  /// Hora (del servidor) en que se leyó cada código, para validar la prueba del QR con ese instante al confirmar
+  /// (el portero tarda unos segundos en aceptar y el QR del comprador sigue cambiando).
+  final Map<String, DateTime> _readAt = {};
+
+  Future<void> _calibrate(DateTime start, DateTime end, String serverTimeIso) async {
+    final server = DateTime.tryParse(serverTimeIso);
+    if (server == null) return;
+    final midpoint = start.add(end.difference(start) ~/ 2); // el servidor armó la respuesta hacia la mitad del viaje
+    clockOffsetMs = server.difference(midpoint).inMilliseconds;
+    await db.putKv('clock_offset', '$clockOffsetMs');
+  }
+
   Future<void> restore() async {
     serverUrl = await sessionStore.serverUrl ?? defaultServerUrl;
     final token = await sessionStore.token;
     staffName = await sessionStore.name;
+    clockOffsetMs = int.tryParse(await db.getKv('clock_offset') ?? '') ?? 0;
     _api = ApiClient(baseUrl: serverUrl, token: token);
     notifyListeners();
   }
@@ -92,6 +112,8 @@ class DoorService extends ChangeNotifier {
     await _api?.logout();
     await sessionStore.clearSession();
     await db.clearAll();
+    db.useKey(await sessionStore.resetDbKey()); // lo que quede cifrado con la clave anterior ya no se puede leer
+    _readAt.clear();
     _api = ApiClient(baseUrl: serverUrl);
     mustChangePassword = false;
     assignments = const [];
@@ -160,7 +182,9 @@ class DoorService extends ChangeNotifier {
 
   /// Descarga completa de la función para la puerta elegida (reemplaza lo descargado antes).
   Future<SessionMeta> download(Assignment a, Gate? gate) async {
+    final started = DateTime.now();
     final data = await _guard((api) => api.download(a.sessionId, gateId: gate?.id));
+    await _calibrate(started, DateTime.now(), data.meta.syncedAt);
     await db.saveFull(data);
     await refreshCounters(a.sessionId);
     return (await db.meta(a.sessionId))!;
@@ -181,7 +205,9 @@ class DoorService extends ChangeNotifier {
       }
       // Solape de unos segundos: mejor repetir un cambio que perderlo.
       final since = DateTime.parse(meta.syncedAt).subtract(const Duration(seconds: 10)).toUtc().toIso8601String();
+      final started = DateTime.now();
       final delta = await _guard((api) => api.download(sessionId, gateId: meta.gateId, since: since));
+      await _calibrate(started, DateTime.now(), delta.meta.syncedAt);
       await db.applyDelta(delta);
       await refreshCounters(sessionId);
       return true;
@@ -208,12 +234,15 @@ class DoorService extends ChangeNotifier {
   /// Si el código no está en la lista y hay internet, primero actualiza la lista (puede ser una entrada
   /// vendida después de la descarga) y vuelve a revisar.
   Future<ScanOutcome> inspect(SessionMeta meta, String raw, AccessMethod? method) async {
-    var outcome = await validateScan(tickets: db, meta: meta, raw: raw, method: method);
+    final readAt = serverNow;
+    _readAt[raw] = readAt;
+    if (_readAt.length > 50) _readAt.remove(_readAt.keys.first);
+    var outcome = await validateScan(tickets: db, meta: meta, raw: raw, method: method, now: readAt);
     if (outcome.verdict == ScanVerdict.notFound && extractTicketCode(raw) != null) {
       try {
         if (await sync(meta.sessionId)) {
           final fresh = await db.meta(meta.sessionId) ?? meta;
-          outcome = await validateScan(tickets: db, meta: fresh, raw: raw, method: method);
+          outcome = await validateScan(tickets: db, meta: fresh, raw: raw, method: method, now: readAt);
         }
       } on ApiException {
         // Sin internet o sesión vencida: se queda el "no existe" local.
@@ -226,10 +255,13 @@ class DoorService extends ChangeNotifier {
   /// El portero aceptó el ingreso: se vuelve a validar (por si otra lectura la usó mientras tanto)
   /// y recién ahí se marca como usada y se guarda para subirla.
   Future<ScanOutcome> confirm(SessionMeta meta, String raw, AccessMethod? method) async {
-    final outcome = await validateScan(tickets: db, meta: meta, raw: raw, method: method);
+    // La prueba del QR se revisa con el instante en que se leyó, no con el de ahora (aceptar tarda unos segundos).
+    final readAt = _readAt.remove(raw);
+    final checkAt = readAt != null && serverNow.difference(readAt) < const Duration(minutes: 2) ? readAt : serverNow;
+    final outcome = await validateScan(tickets: db, meta: meta, raw: raw, method: method, now: checkAt);
     final code = extractTicketCode(raw);
     if (outcome.verdict.ok && code != null) {
-      final now = DateTime.now();
+      final now = serverNow;
       await db.markUsed(meta.sessionId, code, now);
       await _record(meta, raw, method, ScanVerdict.accepted, at: now, code: code);
     } else {
@@ -247,7 +279,7 @@ class DoorService extends ChangeNotifier {
         gateId: meta.gateId,
         raw: raw,
         method: scanMethodApi(method),
-        scannedAt: at ?? DateTime.now(),
+        scannedAt: at ?? serverNow,
         verdict: verdict,
       ),
       code: code ?? extractTicketCode(raw),

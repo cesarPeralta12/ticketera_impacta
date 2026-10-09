@@ -1,13 +1,20 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:impacta_puerta/dynamic_qr.dart';
 import 'package:impacta_puerta/models.dart';
 import 'package:impacta_puerta/validator.dart';
 
 class _FakeTickets implements TicketLookup {
-  _FakeTickets(List<TicketRow> rows) : _rows = {for (final r in rows) r.code: r};
+  _FakeTickets(List<TicketRow> rows, {this.keys = const {}}) : _rows = {for (final r in rows) r.code: r};
   final Map<String, TicketRow> _rows;
+  final Map<String, Uint8List> keys;
 
   @override
   Future<TicketRow?> find(String sessionId, String code) async => _rows[code];
+
+  @override
+  Future<Uint8List?> keyFor(String sessionId, String code) async => keys[code];
 }
 
 const _meta = SessionMeta(
@@ -30,8 +37,19 @@ TicketRow _ticket(
   bool mine = true,
   List<String> methods = const ['QR', 'BARCODE'],
   DateTime? usedAt,
+  bool dynamic = false,
 }) =>
-    TicketRow(code: code, status: status, sectionId: section, mine: mine, holder: 'Ana', type: 'General', methods: mine ? methods : const [], usedAt: usedAt);
+    TicketRow(
+      code: code,
+      status: status,
+      sectionId: section,
+      mine: mine,
+      holder: 'Ana',
+      type: 'General',
+      methods: mine ? methods : const [],
+      usedAt: usedAt,
+      qrDynamic: dynamic,
+    );
 
 void main() {
   const ok = 'K7Q3MXPA2B';
@@ -109,6 +127,68 @@ void main() {
       expect((await run(cancelled, AccessMethod.qr)).verdict, ScanVerdict.cancelled);
       expect((await run('EEEEEEEEEE', AccessMethod.qr)).verdict, ScanVerdict.notFound);
       expect((await run('basura', AccessMethod.qr)).verdict, ScanVerdict.invalid);
+    });
+  });
+
+  group('QR dinámico', () {
+    const dyn = 'ZZ9988AABB';
+    const stepMs = stepSeconds * 1000;
+    final at = DateTime.fromMillisecondsSinceEpoch(57000000 * stepMs + 5000);
+    final key = keyFromBase64('kpQgT_DmtZ8AscLVrmdQUw'); // llave de ZZ9988AABB (vector compartido con el servidor)
+    final dynTickets = _FakeTickets(
+      [_ticket(dyn, dynamic: true, methods: const ['QR']), _ticket('FFFFFFFFFF'), _ticket('GGGGGGGGGG', dynamic: true, methods: const ['QR'])],
+      keys: {dyn: key},
+    );
+    Future<ScanOutcome> read(String raw, {AccessMethod? method = AccessMethod.qr, DateTime? now}) =>
+        validateScan(tickets: dynTickets, meta: _meta, raw: raw, method: method, now: now ?? at);
+    String qr(int offset) => signDynamicPayload(key, dyn, at.millisecondsSinceEpoch + offset * stepMs);
+
+    test('un QR vigente (y los pasos vecinos) entra', () async {
+      expect((await read(qr(0))).verdict, ScanVerdict.accepted);
+      expect((await read(qr(-1))).verdict, ScanVerdict.accepted);
+      expect((await read(qr(1))).verdict, ScanVerdict.accepted);
+    });
+
+    test('una captura vieja es QR vencido y lo explica', () async {
+      final r = await read(qr(-6));
+      expect(r.verdict, ScanVerdict.qrExpired);
+      expect(r.detail, contains('cambia cada 30'));
+    });
+
+    test('el código estático (TK1, de barras o a mano) no sirve', () async {
+      expect((await read('TK1.$dyn.firma')).verdict, ScanVerdict.staticNotAllowed);
+      expect((await read(dyn, method: AccessMethod.barcode)).verdict, ScanVerdict.staticNotAllowed);
+      expect((await read(dyn, method: null)).verdict, ScanVerdict.staticNotAllowed);
+    });
+
+    test('una prueba falsificada es inválida', () async {
+      final forged = 'TK2.$dyn.${stepAt(at.millisecondsSinceEpoch).toRadixString(36)}.AAAAAAAAAAA';
+      expect((await read(forged)).verdict, ScanVerdict.invalid);
+    });
+
+    test('escrito a mano vale con el OTP vigente y no con uno equivocado', () async {
+      final otp = dynamicOtp(key, dyn, stepAt(at.millisecondsSinceEpoch));
+      expect((await read('ZZ998-8AABB $otp', method: null)).verdict, ScanVerdict.accepted);
+      expect((await read('ZZ998-8AABB 000000', method: null)).verdict, ScanVerdict.invalid);
+    });
+
+    test('un TK2 en una entrada estática es inválido; un número de más en una estática no estorba', () async {
+      final forStatic = signDynamicPayload(key, 'FFFFFFFFFF', at.millisecondsSinceEpoch);
+      expect((await read(forStatic)).verdict, ScanVerdict.invalid);
+      expect((await read('FFFFF-FFFFF 123456', method: null)).verdict, ScanVerdict.accepted);
+    });
+
+    test('sin la llave descargada pide actualizar los datos', () async {
+      final r = await read(signDynamicPayload(key, 'GGGGGGGGGG', at.millisecondsSinceEpoch));
+      expect(r.verdict, ScanVerdict.invalid);
+      expect(r.detail, contains('Actualiza'));
+    });
+
+    test('las lecturas rechazadas por QR dinámico se suben con su motivo', () {
+      PendingScan scan(ScanVerdict v) =>
+          PendingScan(id: 'id-12345678', sessionId: 's1', gateId: 'g1', raw: qr(0), method: 'QR', scannedAt: DateTime.utc(2026, 10, 8, 20), verdict: v);
+      expect(scan(ScanVerdict.qrExpired).toApi()['offlineResult'], 'QR_EXPIRED');
+      expect(scan(ScanVerdict.staticNotAllowed).toApi()['offlineResult'], 'STATIC_NOT_ALLOWED');
     });
   });
 

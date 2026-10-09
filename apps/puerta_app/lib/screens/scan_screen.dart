@@ -157,21 +157,35 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Future<void> _manualEntry() async {
     final controller = TextEditingController();
+    final otpController = TextEditingController();
+    String joined() => '${controller.text.trim()} ${otpController.text.trim()}'.trim();
     final code = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Escribir el código'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.characters,
-          decoration: const InputDecoration(hintText: 'K7Q3M-XPA2B'),
-          onSubmitted: (v) => Navigator.pop(context, v),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.characters,
+              decoration: const InputDecoration(labelText: 'Código de la entrada', hintText: 'K7Q3M-XPA2B'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: otpController,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              decoration: const InputDecoration(labelText: 'Número de 6 dígitos', helperText: 'Solo si la entrada es de QR dinámico'),
+              onSubmitted: (_) => Navigator.pop(context, joined()),
+            ),
+          ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
           FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
+            onPressed: () => Navigator.pop(context, joined()),
             style: FilledButton.styleFrom(minimumSize: const Size(100, 44)),
             child: const Text('Validar'),
           ),
@@ -299,7 +313,13 @@ class _ResultBanner extends StatelessWidget {
     final color = v.ok
         ? const Color(0xFF0F8A6B)
         : switch (v) {
-            ScanVerdict.alreadyUsed || ScanVerdict.cancelled || ScanVerdict.wrongGate || ScanVerdict.methodNotAllowed => const Color(0xFFB45309),
+            ScanVerdict.alreadyUsed ||
+            ScanVerdict.cancelled ||
+            ScanVerdict.wrongGate ||
+            ScanVerdict.methodNotAllowed ||
+            ScanVerdict.qrExpired ||
+            ScanVerdict.staticNotAllowed =>
+              const Color(0xFFB45309),
             _ => const Color(0xFFB91C1C),
           };
     final t = outcome.ticket;

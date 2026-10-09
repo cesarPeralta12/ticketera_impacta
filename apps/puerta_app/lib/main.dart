@@ -11,7 +11,8 @@ const brandInk = Color(0xFF14181B);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final service = DoorService(sessionStore: SessionStore(), db: await DoorDb.open());
+  final store = SessionStore();
+  final service = DoorService(sessionStore: store, db: await DoorDb.open(await store.dbKey));
   await service.restore();
   runApp(PuertaApp(service: service));
 }

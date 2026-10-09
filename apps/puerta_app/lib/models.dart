@@ -116,6 +116,8 @@ class TicketRow {
     this.seat,
     this.methods = const [],
     this.usedAt,
+    this.qrDynamic = false,
+    this.key,
   });
 
   final String code;
@@ -135,6 +137,12 @@ class TicketRow {
   /// Hora local en que se leyó en este teléfono (si ya entró aquí).
   final DateTime? usedAt;
 
+  /// QR dinámico: solo vale con una prueba vigente (QR que cambia cada 30 s, o código + OTP).
+  final bool qrDynamic;
+
+  /// Llave de la entrada (base64url), solo al bajarla del servidor. En el teléfono se guarda cifrada y no viaja aquí.
+  final String? key;
+
   factory TicketRow.fromJson(Map<String, dynamic> json) => TicketRow(
         code: json['code'] as String,
         status: TicketStatus.fromCode(json['status'] as String),
@@ -145,6 +153,8 @@ class TicketRow {
         type: json['type'] as String?,
         seat: json['seat'] as String?,
         methods: [for (final m in (json['methods'] as List? ?? const [])) m as String],
+        qrDynamic: json['dynamic'] as bool? ?? false,
+        key: json['key'] as String?,
       );
 
   TicketRow copyWith({TicketStatus? status, DateTime? usedAt}) => TicketRow(
@@ -158,6 +168,8 @@ class TicketRow {
         seat: seat,
         methods: methods,
         usedAt: usedAt ?? this.usedAt,
+        qrDynamic: qrDynamic,
+        key: key,
       );
 }
 
@@ -255,7 +267,9 @@ enum ScanVerdict {
   cancelled('CANCELLED'),
   wrongGate('WRONG_GATE'),
   invalid('INVALID'),
-  methodNotAllowed('METHOD_NOT_ALLOWED');
+  methodNotAllowed('METHOD_NOT_ALLOWED'),
+  qrExpired('QR_EXPIRED'),
+  staticNotAllowed('STATIC_NOT_ALLOWED');
 
   const ScanVerdict(this.api);
   final String api;
@@ -270,6 +284,8 @@ enum ScanVerdict {
         ScanVerdict.wrongGate => 'PUERTA EQUIVOCADA',
         ScanVerdict.invalid => 'CÓDIGO INVÁLIDO',
         ScanVerdict.methodNotAllowed => 'MÉTODO NO PERMITIDO',
+        ScanVerdict.qrExpired => 'QR VENCIDO',
+        ScanVerdict.staticNotAllowed => 'EXIGE QR DINÁMICO',
       };
 }
 

@@ -3,11 +3,14 @@ library;
 
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
+import 'dynamic_qr.dart' show keyFromBase64, keyToBase64;
 import 'models.dart';
 import 'validator.dart';
 
@@ -52,6 +55,21 @@ class SessionStore {
     await _s.delete(key: 'name');
   }
 
+  /// Clave con la que se cifran las llaves de las entradas dinámicas en la base local. Vive en el almacenamiento
+  /// seguro del teléfono (Android Keystore) y se renueva al cerrar sesión: sin ella, lo guardado no sirve.
+  Future<Uint8List> get dbKey async {
+    final existing = await _s.read(key: 'dbKey');
+    if (existing != null) return keyFromBase64(existing);
+    return resetDbKey();
+  }
+
+  Future<Uint8List> resetDbKey() async {
+    final rnd = Random.secure();
+    final key = Uint8List.fromList(List.generate(32, (_) => rnd.nextInt(256)));
+    await _s.write(key: 'dbKey', value: keyToBase64(key));
+    return key;
+  }
+
   /// Identificador estable de este teléfono (el panel lo muestra y lo puede revocar).
   Future<String> get deviceId async {
     final existing = await _s.read(key: 'deviceId');
@@ -65,23 +83,33 @@ class SessionStore {
 
 /// Base local: entradas de las funciones descargadas y lecturas pendientes de subir.
 class DoorDb implements TicketLookup {
-  DoorDb._(this._db);
+  DoorDb._(this._db, this._key);
 
   final Database _db;
 
-  static Future<DoorDb> open() async {
+  /// Clave de cifrado de las llaves del QR dinámico (ver [SessionStore.dbKey]).
+  Uint8List _key;
+
+  /// Cambia la clave (al cerrar sesión, después de borrar todo).
+  void useKey(Uint8List key) => _key = key;
+
+  static Future<DoorDb> open(Uint8List key) async {
     final db = await openDatabase(
       p.join(await getDatabasesPath(), 'puerta.db'),
-      version: 2,
+      version: 3,
       onUpgrade: (db, oldVersion, _) async {
         if (oldVersion < 2) await db.execute('ALTER TABLE tickets ADD COLUMN document TEXT');
+        if (oldVersion < 3) {
+          await db.execute('ALTER TABLE tickets ADD COLUMN qr_dynamic INTEGER NOT NULL DEFAULT 0');
+          await db.execute('ALTER TABLE tickets ADD COLUMN qr_key TEXT');
+        }
       },
       onCreate: (db, _) async {
         await db.execute('''
           CREATE TABLE tickets (
             session_id TEXT NOT NULL, code TEXT NOT NULL, status TEXT NOT NULL, section_id TEXT,
             mine INTEGER NOT NULL, holder TEXT, document TEXT, type TEXT, seat TEXT, methods TEXT NOT NULL DEFAULT '',
-            used_at INTEGER, PRIMARY KEY (session_id, code)
+            used_at INTEGER, qr_dynamic INTEGER NOT NULL DEFAULT 0, qr_key TEXT, PRIMARY KEY (session_id, code)
           )''');
         await db.execute('''
           CREATE TABLE scans (
@@ -93,10 +121,17 @@ class DoorDb implements TicketLookup {
         await db.execute('CREATE TABLE meta (session_id TEXT PRIMARY KEY, json TEXT NOT NULL)');
       },
     );
-    return DoorDb._(db);
+    return DoorDb._(db, key);
   }
 
-  static Map<String, Object?> _row(String sessionId, TicketRow t) => {
+  /// Cifra o descifra la llave de una entrada: se le suma un flujo de bytes derivado (HMAC-SHA256) de la clave
+  /// del teléfono y de la entrada. Es el mismo cálculo en los dos sentidos.
+  Uint8List _xorKey(String sessionId, String code, List<int> data) {
+    final stream = Hmac(sha256, _key).convert(utf8.encode('qrkey|$sessionId|$code')).bytes;
+    return Uint8List.fromList([for (var i = 0; i < data.length; i++) data[i] ^ stream[i % stream.length]]);
+  }
+
+  Map<String, Object?> _row(String sessionId, TicketRow t) => {
         'session_id': sessionId,
         'code': t.code,
         'status': t.status.code,
@@ -108,6 +143,8 @@ class DoorDb implements TicketLookup {
         'seat': t.seat,
         'methods': t.methods.join(','),
         'used_at': t.usedAt?.millisecondsSinceEpoch,
+        'qr_dynamic': t.qrDynamic ? 1 : 0,
+        'qr_key': t.key == null ? null : base64Url.encode(_xorKey(sessionId, t.code, keyFromBase64(t.key!))),
       };
 
   static TicketRow _fromRow(Map<String, Object?> r) => TicketRow(
@@ -121,6 +158,7 @@ class DoorDb implements TicketLookup {
         seat: r['seat'] as String?,
         methods: (r['methods'] as String).isEmpty ? const [] : (r['methods'] as String).split(','),
         usedAt: r['used_at'] == null ? null : DateTime.fromMillisecondsSinceEpoch(r['used_at'] as int),
+        qrDynamic: (r['qr_dynamic'] as int? ?? 0) == 1,
       );
 
   // ── Datos sueltos (por ejemplo, la última lista de funciones, para abrir la app sin internet) ──
@@ -193,6 +231,13 @@ class DoorDb implements TicketLookup {
   Future<TicketRow?> find(String sessionId, String code) async {
     final rows = await _db.query('tickets', where: 'session_id = ? AND code = ?', whereArgs: [sessionId, code]);
     return rows.isEmpty ? null : _fromRow(rows.first);
+  }
+
+  @override
+  Future<Uint8List?> keyFor(String sessionId, String code) async {
+    final rows = await _db.query('tickets', columns: ['qr_key'], where: 'session_id = ? AND code = ?', whereArgs: [sessionId, code]);
+    final stored = rows.isEmpty ? null : rows.first['qr_key'] as String?;
+    return stored == null ? null : _xorKey(sessionId, code, keyFromBase64(stored));
   }
 
   Future<void> markUsed(String sessionId, String code, DateTime at) => _db.update(
