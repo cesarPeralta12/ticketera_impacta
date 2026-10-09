@@ -217,6 +217,7 @@ export async function seedArchitectureDemo(db: Db, orgId: string) {
   if (presales.count) log.push(`${presales.count} preventa(s) marcada(s)`);
 
   log.push(...(await seedOrganizers(db)));
+  log.push(...(await seedSalesDemo(db, orgId)));
   return log;
 }
 
@@ -331,6 +332,98 @@ async function seedOrganizers(db: Db) {
       },
     });
     log.push(`organizador ${o.name} (${o.event.status === "PUBLISHED" ? "evento publicado" : "evento esperando aprobación"})`);
+  }
+  return log;
+}
+
+/**
+ * Compradores verificados, un descuento de preventa sobre la misma entrada, códigos promocionales
+ * (uno con promotor) y compras pagadas para ver ventas, entradas y la lectura en puerta.
+ */
+async function seedSalesDemo(db: Db, orgId: string) {
+  const { prisma } = db;
+  const log: string[] = [];
+
+  const buyers = [
+    { email: "comprador2@impacta.test", name: "Camila Rojas", documentId: "7654321" },
+    { email: "comprador3@impacta.test", name: "Marcelo Flores", documentId: "8123456" },
+  ];
+  for (const b of buyers) {
+    if (await prisma.customer.findUnique({ where: { email: b.email } })) continue;
+    await prisma.customer.create({
+      data: { ...b, emailVerified: true, passwordHash: await db.hashPassword(seedPassword("Comprador2026!")) },
+    });
+    log.push(`comprador ${b.email}`);
+  }
+
+  // Descuento de preventa sobre la misma entrada (Noche Electrónica: general -15% durante 10 días).
+  const alok = await prisma.event.findFirst({ where: { organizationId: orgId, slug: slugify("Noche Electrónica: Alok Bolivia") } });
+  if (alok) {
+    const r = await prisma.ticketType.updateMany({
+      where: { name: "Entrada general", discountPercent: null, session: { eventId: alok.id } },
+      data: { discountPercent: 15, discountStartsAt: new Date(), discountEndsAt: laPaz(10, 23) },
+    });
+    if (r.count) log.push("descuento de preventa 15% en Noche Electrónica");
+  }
+
+  const owner = await prisma.membership.findFirst({ where: { organizationId: orgId, role: "OWNER" } });
+  const fest = await prisma.event.findFirst({ where: { organizationId: orgId, slug: slugify("Loko Fest — Edición Aniversario") } });
+  if (owner && !(await prisma.promoCode.findFirst({ where: { organizationId: orgId } }))) {
+    await db.createPromoCode(orgId, { code: "IMPACTA10", description: "10% en todos los eventos", discountType: "PERCENT", discountValue: 10 }, owner.userId);
+    await db.createPromoCode(
+      orgId,
+      {
+        code: "LOKO20",
+        description: "Promotor del Loko Fest",
+        eventId: fest?.id ?? null,
+        discountType: "PERCENT",
+        discountValue: 20,
+        maxUses: 100,
+        maxUsesPerCustomer: 4,
+        promoterName: "Rodrigo (RRPP)",
+        commissionPercent: 10,
+      },
+      owner.userId,
+    );
+    log.push("códigos IMPACTA10 y LOKO20");
+  }
+
+  // Compras pagadas (pase directo) para tener entradas que leer en la puerta.
+  if (fest && (await prisma.order.count({ where: { items: { some: { ticketType: { session: { eventId: fest.id } } } } } })) === 0) {
+    const session = await prisma.eventSession.findFirst({ where: { eventId: fest.id }, include: { ticketTypes: true } });
+    const general = session?.ticketTypes.find((t) => t.name === "Entrada general");
+    const palco = session?.ticketTypes.find((t) => t.name === "Palco");
+    const orders = [
+      { email: "comprador@impacta.test", type: general, qty: 2, promo: "LOKO20" },
+      { email: "comprador2@impacta.test", type: palco, qty: 1, promo: undefined },
+      { email: "comprador3@impacta.test", type: general, qty: 3, promo: undefined },
+    ];
+    // La cola virtual no aplica a estas compras de demostración: se apaga un momento.
+    await prisma.eventSession.update({ where: { id: session!.id }, data: { queueEnabled: false } });
+    for (const o of orders) {
+      const customer = await prisma.customer.findUnique({ where: { email: o.email } });
+      if (!session || !o.type || !customer) continue;
+      const order = await db.createPendingOrder(
+        {
+          sessionId: session.id,
+          items: [{ ticketTypeId: o.type.id, quantity: o.qty }],
+          buyer: { name: customer.name, email: customer.email, document: customer.documentId ?? "" },
+        },
+        { customerId: customer.id, promoCode: o.promo },
+      );
+      const payment = await db.startPayment(order.code, "directo");
+      await db.applyPaymentUpdate({
+        paymentId: payment.id,
+        provider: "directo",
+        providerPaymentId: `directo_${payment.id}`,
+        status: "APPROVED",
+        providerStatus: "pase_directo",
+        amount: payment.amount,
+        currency: payment.currency,
+      });
+    }
+    await prisma.eventSession.update({ where: { id: session!.id }, data: { queueEnabled: session!.queueEnabled } });
+    log.push(`${orders.length} compras pagadas en Loko Fest`);
   }
   return log;
 }

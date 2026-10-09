@@ -248,28 +248,9 @@ async function main() {
   const db = await import("../src/index");
   const { prisma, hashPassword } = db;
 
-  await prisma.$transaction([
-    prisma.accessScan.deleteMany(),
-    prisma.ticket.deleteMany(),
-    prisma.payment.deleteMany(),
-    prisma.orderItem.deleteMany(),
-    prisma.order.deleteMany(),
-    prisma.queueEntry.deleteMany(),
-    prisma.webhookEvent.deleteMany(),
-    prisma.auditLog.deleteMany(),
-    prisma.ticketType.deleteMany(),
-    prisma.eventSession.deleteMany(),
-    prisma.event.deleteMany(),
-    prisma.seat.deleteMany(),
-    prisma.section.deleteMany(),
-    prisma.accessPoint.deleteMany(),
-    prisma.venue.deleteMany(),
-    prisma.membership.deleteMany(),
-    prisma.client.deleteMany(),
-    prisma.staffUser.deleteMany(),
-    prisma.customer.deleteMany(),
-    prisma.organization.deleteMany(),
-  ]);
+  // Vacía TODAS las tablas (menos el historial de migraciones): así no hay que mantener esta lista al agregar tablas.
+  const tables = await prisma.$queryRaw<{ tablename: string }[]>`SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
+  await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${tables.map((t) => `"${t.tablename}"`).join(", ")} RESTART IDENTITY CASCADE`);
 
   const org = await prisma.organization.create({
     data: { name: "Impacta", slug: "impacta", currency: DEFAULT_CURRENCY, isPlatform: true },
