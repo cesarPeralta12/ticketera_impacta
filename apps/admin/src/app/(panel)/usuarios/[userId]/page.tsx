@@ -52,6 +52,8 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
     prisma.deviceToken.findMany({ where: { userId }, orderBy: { lastSeenAt: "desc" }, take: 20 }),
   ]);
 
+  const gates = [...new Map(sessions.flatMap((s) => s.venue.accessPoints).map((g) => [g.id, g])).values()];
+
   return (
     <div className="space-y-6">
       <div>
@@ -99,7 +101,19 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
           )}
 
           {sessions.length === 0 ? (
-            <p className="text-sm text-[var(--ink-muted)]">No hay funciones próximas para asignar.</p>
+            <p className="text-sm text-[var(--ink-muted)]">
+              No hay funciones próximas en <strong>{staff.organization.name}</strong> para asignar. La cuenta de un portero solo ve las funciones de su propia
+              organización: si el evento es de otro organizador, esta cuenta debe crearse dentro de él (Organizadores → Ver → Gestionar sus cuentas).
+              También hace falta que el evento tenga al menos una función con fecha futura.
+            </p>
+          ) : gates.length === 0 ? (
+            <p className="rounded-md bg-[var(--warn-soft)] px-3 py-2 text-sm text-[var(--warn)]">
+              El recinto de estas funciones no tiene puertas. Créalas en{" "}
+              <Link href="/recintos" className="font-semibold underline">
+                Recintos
+              </Link>{" "}
+              (sección &ldquo;Puertas de acceso&rdquo;) y vuelve aquí.
+            </p>
           ) : (
             <ActionForm action={assignDoorAction} successMessage="Asignado." className="flex flex-wrap items-end gap-3">
               <input type="hidden" name="userId" value={userId} />
@@ -119,7 +133,7 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
                   <option value="" disabled>
                     Elige la puerta
                   </option>
-                  {[...new Map(sessions.flatMap((s) => s.venue.accessPoints).map((g) => [g.id, g])).values()].map((g) => (
+                  {gates.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.name}
                     </option>

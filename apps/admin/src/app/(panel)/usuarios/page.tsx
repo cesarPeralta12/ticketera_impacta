@@ -38,6 +38,13 @@ export default async function UsersPage() {
         </p>
       </div>
 
+      {!organizer && (
+        <p role="note" className="rounded-xl border border-[var(--warn)]/40 bg-[var(--warn-soft)] px-4 py-3 text-sm text-[var(--warn)]">
+          Estás creando cuentas de <strong>Impacta</strong>: solo ven los eventos de Impacta. Para el portero, el cajero o el administrador de un
+          organizador, entra primero en él: <Link href="/organizadores" className="font-semibold underline">Organizadores → Ver → Gestionar sus cuentas</Link>.
+        </p>
+      )}
+
       <div className="card overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead className="eyebrow border-b border-[var(--border)]">

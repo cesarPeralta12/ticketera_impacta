@@ -29,7 +29,10 @@ export async function createVenueAction(_prev: FormState, formData: FormData): P
   const staff = await requireStaff(ROLES.manage);
   const parsed = venueSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
-  const venue = await prisma.venue.create({ data: { organizationId: staff.organization.id, ...parsed.data } });
+  // Todo recinto nace con una puerta: sin ella no se puede asignar un portero. Se renombra o se agregan más en el recinto.
+  const venue = await prisma.venue.create({
+    data: { organizationId: staff.organization.id, ...parsed.data, accessPoints: { create: [{ name: "Puerta principal" }] } },
+  });
   redirect(`/recintos/${venue.id}`);
 }
 
