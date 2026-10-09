@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { LIMITS, hit, refreshDeviceSession } from "@ticketera/db";
+import { LIMITS, hit, recordAuditSafely, refreshDeviceSession } from "@ticketera/db";
 import { json, mobileContext, readJson } from "@/lib/mobile-auth";
 
 const bodySchema = z.object({ refreshToken: z.string().min(20).max(200) });
@@ -18,6 +18,19 @@ export async function POST(req: Request) {
 
   const result = await refreshDeviceSession(parsed.data.refreshToken, context);
   if (!result.ok) {
+    if (result.reason === "REUSED") {
+      // Un token de renovación ya cambiado se presentó otra vez: posible robo. La sesión del teléfono se cerró.
+      await recordAuditSafely({
+        actorType: "staff",
+        actorId: result.userId,
+        action: "auth.refresh_reuse",
+        entity: "DeviceToken",
+        entityId: result.deviceTokenId ?? "",
+        severity: "warn",
+        data: { deviceName: result.deviceName ?? null },
+        context,
+      });
+    }
     if (result.reason === "BUSY") return json({ error: "Intenta de nuevo." }, 409);
     return json({ error: "Sesión vencida. Inicia sesión de nuevo." }, 401);
   }

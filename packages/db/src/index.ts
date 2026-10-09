@@ -14,5 +14,6 @@ export * from "./operations/promos";
 export * from "./operations/queue";
 export * from "./operations/rate-limit";
 export * from "./operations/report";
+export * from "./operations/security";
 export * from "./operations/sales";
 export * from "./operations/transfers";

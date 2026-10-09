@@ -721,10 +721,24 @@ model AuditLog {
   entity    String
   entityId  String
   data      Json?
+  /// Organización a la que pertenece el evento (para que cada organizador vea solo lo suyo). Nulo: de la plataforma o de un comprador.
+  organizationId String?
+  /// "info" | "warn" (logins fallidos, bloqueos, dispositivos nuevos, reutilización de tokens…).
+  severity  String   @default("info")
+  /// Desde dónde y con qué se hizo el cambio.
+  ip         String?
+  userAgent  String?
+  /// Teléfono de la app de puerta (identificador estable y nombre del modelo).
+  deviceId   String?
+  deviceName String?
   createdAt DateTime @default(now())
 
   @@index([entity, entityId])
   @@index([createdAt])
+  @@index([action, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([ip, createdAt])
 }
 
 /// Intentos recientes para limitar abusos (login, registro, compras…). Se purgan solos pasado un día.

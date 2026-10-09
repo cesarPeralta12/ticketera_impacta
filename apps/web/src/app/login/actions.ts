@@ -1,10 +1,11 @@
 "use server";
 
 import { AuthError } from "next-auth";
+import { redirect } from "next/navigation";
 import { DOCUMENT_ERROR } from "@ticketera/core";
-import { LIMITS, MIN_PASSWORD_LENGTH, hit, isLimited, recordHit, registerCustomer } from "@ticketera/db";
+import { LIMITS, MIN_PASSWORD_LENGTH, hit, isLimited, prisma, recordHit, recordLogin, recordLoginFailure, registerCustomer } from "@ticketera/db";
 import { signIn } from "@/lib/auth";
-import { TOO_MANY_ATTEMPTS, clientIp } from "@/lib/client-ip";
+import { TOO_MANY_ATTEMPTS, clientIp, requestContext } from "@/lib/client-ip";
 import { sendVerificationEmail } from "@/lib/mail";
 
 export type AuthState = { error?: string } | undefined;
@@ -18,22 +19,24 @@ function safeNext(value: FormDataEntryValue | null) {
 export async function loginAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
   // Límites: por IP (todos los intentos) y por cuenta (solo las contraseñas incorrectas).
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  if (!(await hit(`login:ip:${await clientIp()}`, LIMITS.loginByIp)) || (await isLimited(`login:fail:${email}`, LIMITS.loginFailuresByAccount))) {
+  const context = await requestContext();
+  if (!(await hit(`login:ip:${context.ip}`, LIMITS.loginByIp)) || (await isLimited(`login:fail:${email}`, LIMITS.loginFailuresByAccount))) {
+    await recordLoginFailure({ kind: "customer", email, reason: "BLOCKED", context });
     return { error: TOO_MANY_ATTEMPTS };
   }
   try {
-    await signIn("credentials", {
-      email: formData.get("email"),
-      password: formData.get("password"),
-      redirectTo: safeNext(formData.get("next")),
-    });
+    await signIn("credentials", { email: formData.get("email"), password: formData.get("password"), redirect: false });
   } catch (error) {
     if (error instanceof AuthError) {
       await recordHit(`login:fail:${email}`);
+      await recordLoginFailure({ kind: "customer", email, reason: "CREDENTIALS", context });
       return { error: "Email o contraseña incorrectos." };
     }
-    throw error; // la redirección de éxito viaja como excepción
+    throw error;
   }
+  const customer = await prisma.customer.findUnique({ where: { email }, select: { id: true } });
+  if (customer) await recordLogin({ kind: "customer", userId: customer.id, context });
+  redirect(safeNext(formData.get("next")));
 }
 
 export async function registerAction(_prev: AuthState, formData: FormData): Promise<AuthState> {

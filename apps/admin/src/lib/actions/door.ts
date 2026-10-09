@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma, revokeDevice } from "@ticketera/db";
+import { logAudit } from "@/lib/audit";
 import type { FormState } from "@/lib/forms";
 import { ROLES, requireStaff } from "@/lib/session";
 
@@ -53,7 +54,23 @@ export async function unassignDoorAction(_prev: FormState, formData: FormData): 
 /** Cierra la sesión de un teléfono: pierde el acceso en su siguiente llamada (por ejemplo, si lo perdieron). */
 export async function revokeDeviceAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireStaff(ROLES.users);
-  await revokeDevice(String(formData.get("deviceTokenId")), staff.organization.id);
+  const deviceTokenId = String(formData.get("deviceTokenId"));
+  const device = await prisma.deviceToken.findFirst({
+    where: { id: deviceTokenId, revokedAt: null, user: { memberships: { some: { organizationId: staff.organization.id } } } },
+    select: { userId: true, deviceName: true },
+  });
+  await revokeDevice(deviceTokenId, staff.organization.id);
+  if (device) {
+    await logAudit({
+      actorType: "staff",
+      actorId: staff.id,
+      organizationId: staff.organization.id,
+      action: "device.revoked",
+      entity: "StaffUser",
+      entityId: device.userId,
+      data: { deviceName: device.deviceName },
+    });
+  }
   revalidatePath("/usuarios", "layout");
   return { ok: true };
 }

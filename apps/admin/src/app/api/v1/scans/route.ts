@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { canControlSession, prisma, scanTicket } from "@ticketera/db";
-import { MAX_BODY, json, mobileStaff, passwordChangeRequired, readJson } from "@/lib/mobile-auth";
+import { canControlSession, prisma, recordAuditSafely, scanTicket } from "@ticketera/db";
+import { MAX_BODY, json, mobileContext, mobileStaff, passwordChangeRequired, readJson } from "@/lib/mobile-auth";
 
 const REJECTIONS = [
   "ALREADY_USED",
@@ -89,5 +89,16 @@ export async function POST(req: Request) {
         : null,
     });
   }
+  // Un solo evento por lote (no uno por lectura): cuántas entraron, cuántas se rechazaron y desde qué teléfono.
+  const accepted = results.filter((r) => r.result === "ACCEPTED").length;
+  await recordAuditSafely({
+    actorType: "staff",
+    actorId: staff.id,
+    action: "scan.batch",
+    entity: "EventSession",
+    entityId: body.sessionId,
+    data: { total: results.length, accepted, rejected: results.length - accepted, offline: body.scans.filter((s) => s.offline).length },
+    context: { ...mobileContext(req), deviceId: staff.deviceId, deviceName: staff.deviceName },
+  });
   return json({ results });
 }

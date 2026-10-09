@@ -7,11 +7,10 @@ import { MAX_DISCOUNT_PERCENT, formatDateTime, normalizeImageUrl, slugify, windo
 import { DomainError, EventCategory, EventMode, prisma, publicationProblem, submitEventForReview } from "@ticketera/db";
 import { formObject, intField, moneyField, zodErrors, type FormState } from "@/lib/forms";
 import { ROLES, requireStaff } from "@/lib/session";
+import { logAudit } from "@/lib/audit";
 
 async function audit(actorId: string, action: string, entity: string, entityId: string, data?: object) {
-  await prisma.auditLog.create({
-    data: { actorType: "staff", actorId, action, entity, entityId, data: data ? JSON.parse(JSON.stringify(data)) : undefined },
-  });
+  await logAudit({ actorType: "staff", actorId, action, entity, entityId, data: data ? JSON.parse(JSON.stringify(data)) : undefined });
 }
 
 const eventSchema = z.object({

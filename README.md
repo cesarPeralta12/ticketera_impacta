@@ -211,6 +211,13 @@ orden). Los enlaces sirven una sola vez, vencen (24 h confirmar, 1 h contraseña
 
 Los topes cambian: confirma en la página de precios de cada proveedor antes de decidir.
 
+## Seguridad
+Detalle en [`docs/seguridad.md`](docs/seguridad.md).
+
+- **API cerrada**: `/api/v1` solo acepta la app (rechaza peticiones con `Origin` de navegador); las demás APIs, solo su propio sitio. Cabeceras CSP, HSTS, anti-iframe y nosniff; tope de tamaño de cuerpo; IP real del cliente (`TRUSTED_PROXY_HOPS`).
+- **Sesiones revocables**: cambiar la contraseña o *Cerrar todas las sesiones* invalida las sesiones web y los teléfonos. La app usa un token de acceso de 60 min con renovación que rota y detecta reutilización.
+- **Registro de seguridad** (panel → *Seguridad*): quién, qué, cuándo y desde dónde (IP, navegador o teléfono), con alertas de dispositivo nuevo, fallos y bloqueos; los eventos de acceso se guardan 12 meses.
+
 ## Despliegue (Coolify u otro servidor con Nixpacks)
 
 Guía completa, paso a paso: **[docs/despliegue-coolify.md](docs/despliegue-coolify.md)** (base de datos, las dos apps, variables

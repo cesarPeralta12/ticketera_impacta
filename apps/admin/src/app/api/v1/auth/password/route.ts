@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { MIN_PASSWORD_LENGTH, changeStaffPassword } from "@ticketera/db";
-import { json, mobileStaff, readJson } from "@/lib/mobile-auth";
+import { MIN_PASSWORD_LENGTH, changeStaffPassword, recordAuditSafely } from "@ticketera/db";
+import { json, mobileContext, mobileStaff, readJson } from "@/lib/mobile-auth";
 
 const bodySchema = z.object({ current: z.string().min(1).max(200), next: z.string().min(MIN_PASSWORD_LENGTH).max(200) });
 
@@ -16,5 +16,13 @@ export async function POST(req: Request) {
   if (!(await changeStaffPassword(staff.id, parsed.data.current, parsed.data.next, { keepDeviceTokenId: staff.deviceTokenId }))) {
     return json({ error: "La contraseña actual no es correcta." }, 400);
   }
+  await recordAuditSafely({
+    actorType: "staff",
+    actorId: staff.id,
+    action: "auth.password_changed",
+    entity: "StaffUser",
+    entityId: staff.id,
+    context: { ...mobileContext(req), deviceId: staff.deviceId, deviceName: staff.deviceName },
+  });
   return json({ ok: true });
 }

@@ -8,6 +8,7 @@ import { prisma } from "@ticketera/db";
 import { formObject, intField, zodErrors, type FormState } from "@/lib/forms";
 import { ROLES, requireStaff } from "@/lib/session";
 import { TIMEZONES } from "@/lib/timezones";
+import { logAudit } from "@/lib/audit";
 
 async function ownedVenue(organizationId: string, venueId: string) {
   return prisma.venue.findFirst({ where: { id: venueId, organizationId } });
@@ -158,9 +159,7 @@ export async function deleteSectionAction(_prev: FormState, formData: FormData):
     prisma.ticketType.deleteMany({ where: { sectionId: section.id } }),
     prisma.section.delete({ where: { id: section.id } }),
   ]);
-  await prisma.auditLog.create({
-    data: { actorType: "staff", actorId: staff.id, action: "section.delete", entity: "Section", entityId: section.id },
-  });
+  await logAudit({ actorType: "staff", actorId: staff.id, action: "section.delete", entity: "Section", entityId: section.id });
   revalidatePath(`/recintos/${section.venueId}`);
   return { ok: true };
 }
@@ -207,16 +206,14 @@ export async function updateSeatSectionAction(_prev: FormState, formData: FormDa
     if (isUnique(error)) return { error: "Ya existe una sección con ese nombre." };
     throw error;
   }
-  await prisma.auditLog.create({
-    data: {
+  await logAudit({
       actorType: "staff",
       actorId: staff.id,
       action: "section.update",
       entity: "Section",
       entityId: section.id,
       data: { shapeChanged },
-    },
-  });
+    });
   revalidatePath(`/recintos/${section.venueId}`);
   return { ok: true };
 }
@@ -251,16 +248,14 @@ export async function updateAccessPointSectionsAction(_prev: FormState, formData
   const sections = await prisma.section.findMany({ where: { id: { in: requested }, venueId: gate.venueId }, select: { id: true } });
 
   await prisma.accessPoint.update({ where: { id: gate.id }, data: { sections: { set: sections } } });
-  await prisma.auditLog.create({
-    data: {
+  await logAudit({
       actorType: "staff",
       actorId: staff.id,
       action: "access_point.sections",
       entity: "AccessPoint",
       entityId: gate.id,
       data: { sections: sections.map((s) => s.id) },
-    },
-  });
+    });
   revalidatePath(`/recintos/${gate.venueId}`);
   return { ok: true };
 }

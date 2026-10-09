@@ -5,6 +5,7 @@ import { DomainError, getOrderByCode, prisma, startPayment } from "@ticketera/db
 import { auth } from "@/lib/auth";
 import { sendTicketsEmail } from "@/lib/mail";
 import { activeProvider, checkoutUrl, isDirectPass, payDirect } from "@/lib/payments";
+import { logAudit } from "@/lib/audit";
 
 export async function payOrderAction(formData: FormData) {
   const code = String(formData.get("code"));
@@ -37,9 +38,7 @@ export async function resendTicketsAction(_prev: ResendState, formData: FormData
   });
   if (recent > 0) return { error: "Ya te las enviamos hace un momento. Espera un minuto y revisa tu carpeta de spam." };
 
-  await prisma.auditLog.create({
-    data: { actorType: "customer", actorId: session.user.id, action: "order.resend_tickets", entity: "Order", entityId: order.id },
-  });
+  await logAudit({ actorType: "customer", actorId: session.user.id, action: "order.resend_tickets", entity: "Order", entityId: order.id });
   return (await sendTicketsEmail(order.code))
     ? { message: `Te las enviamos a ${order.buyerEmail}.` }
     : { error: "No pudimos enviar el correo ahora. Intenta de nuevo en unos minutos." };

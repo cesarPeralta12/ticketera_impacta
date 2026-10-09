@@ -5,6 +5,7 @@ import { z } from "zod";
 import { MIN_PASSWORD_LENGTH, StaffRole, createStaffUser, prisma, revokeAllSessions } from "@ticketera/db";
 import { formObject, zodErrors, type FormState } from "@/lib/forms";
 import { ROLES, requirePlatform, requireStaff } from "@/lib/session";
+import { logAudit } from "@/lib/audit";
 
 const staffSchema = z.object({
   name: z.string({ error: "Ingresa el nombre." }).min(3).max(120),
@@ -52,16 +53,14 @@ export async function createStaffAction(_prev: FormState, formData: FormData): P
     mustChangePassword: true,
   });
   if (!created) return { fieldErrors: { email: "Ya existe una cuenta con ese email." } };
-  await prisma.auditLog.create({
-    data: {
+  await logAudit({
       actorType: "staff",
       actorId: staff.id,
       action: "staff.create",
       entity: "StaffUser",
       entityId: created.id,
       data: { role: parsed.data.role, organizationId: organization.id },
-    },
-  });
+    });
   revalidatePath("/usuarios");
   return { ok: true };
 }
@@ -82,15 +81,13 @@ export async function toggleStaffActiveAction(_prev: FormState, formData: FormDa
   }
 
   await prisma.staffUser.update({ where: { id: target.id }, data: { active: !target.active } });
-  await prisma.auditLog.create({
-    data: {
+  await logAudit({
       actorType: "staff",
       actorId: staff.id,
       action: target.active ? "staff.deactivate" : "staff.activate",
       entity: "StaffUser",
       entityId: target.id,
-    },
-  });
+    });
   revalidatePath("/usuarios");
   return { ok: true };
 }
@@ -108,9 +105,7 @@ export async function revokeUserSessionsAction(_prev: FormState, formData: FormD
   if (!target) return { error: "Usuario no encontrado." };
   if (target.memberships[0]?.role === "OWNER" && staff.role !== "OWNER") return { error: "Solo un dueño puede cerrar las sesiones de otro dueño." };
   const { devices } = await revokeAllSessions("staff", target.id);
-  await prisma.auditLog.create({
-    data: { actorType: "staff", actorId: staff.id, action: "auth.sessions_revoked", entity: "StaffUser", entityId: target.id, data: { by: "admin", devices } },
-  });
+  await logAudit({ actorType: "staff", actorId: staff.id, action: "auth.sessions_revoked", entity: "StaffUser", entityId: target.id, data: { by: "admin", devices } });
   revalidatePath("/usuarios", "layout");
   return { ok: true };
 }
