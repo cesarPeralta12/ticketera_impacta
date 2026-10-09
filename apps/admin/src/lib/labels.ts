@@ -29,6 +29,8 @@ export const SCAN_LABEL = {
   WRONG_GATE: "Puerta equivocada",
   INVALID: "Código inválido",
   METHOD_NOT_ALLOWED: "Método no permitido",
+  QR_EXPIRED: "QR vencido (captura)",
+  STATIC_NOT_ALLOWED: "Exige QR dinámico",
 } as const;
 
 export const ACCESS_METHOD_LABEL = { QR: "QR", BARCODE: "Código de barras", NFC: "NFC" } as const;

@@ -10,6 +10,8 @@ const REJECTIONS = [
   "WRONG_GATE",
   "INVALID",
   "METHOD_NOT_ALLOWED",
+  "QR_EXPIRED",
+  "STATIC_NOT_ALLOWED",
 ] as const;
 
 const bodySchema = z.object({
@@ -67,6 +69,7 @@ export async function POST(req: Request) {
 
   const now = new Date();
   const results = [];
+  const notes: Record<string, number> = {};
   // En orden: si dos lecturas del lote son de la misma entrada, la primera es la que entró.
   for (const scan of body.scans.toSorted((a, b) => a.scannedAt.localeCompare(b.scannedAt))) {
     const outcome = await scanTicket({
@@ -81,6 +84,7 @@ export async function POST(req: Request) {
       scannedAt: scan.offline ? clampScanTime(scan.scannedAt, now) : undefined,
       offlineResult: scan.offline ? scan.offlineResult : undefined,
     });
+    if (outcome.proofNote) notes[outcome.proofNote] = (notes[outcome.proofNote] ?? 0) + 1;
     results.push({
       id: scan.id,
       ...outcome,
@@ -97,7 +101,16 @@ export async function POST(req: Request) {
     action: "scan.batch",
     entity: "EventSession",
     entityId: body.sessionId,
-    data: { total: results.length, accepted, rejected: results.length - accepted, offline: body.scans.filter((s) => s.offline).length },
+    // QR dinámico: capturas viejas rechazadas y pruebas sospechosas de lecturas sin conexión.
+    severity: notes.BAD_PROOF ? "warn" : "info",
+    data: {
+      total: results.length,
+      accepted,
+      rejected: results.length - accepted,
+      offline: body.scans.filter((s) => s.offline).length,
+      expired: results.filter((r) => r.result === "QR_EXPIRED").length,
+      ...notes,
+    },
     context: { ...mobileContext(req), deviceId: staff.deviceId, deviceName: staff.deviceName },
   });
   return json({ results });

@@ -8,6 +8,7 @@
  * Usa Web Crypto, así que funciona igual en Node, en el navegador y en edge.
  */
 import { isValidCode } from "./codes";
+import { parseDynamicPayload, parseManualWithOtp } from "./dynamic-qr";
 
 const PREFIX = "TK1";
 const SIGNATURE_BYTES = 16;
@@ -76,6 +77,9 @@ export async function parseTicketPayload(raw: string, secret: string): Promise<P
  */
 export function extractTicketCode(raw: string): string | null {
   const input = raw.trim();
+  if (input.startsWith("TK2.")) return parseDynamicPayload(input)?.code ?? null;
+  const withOtp = parseManualWithOtp(input);
+  if (withOtp) return withOtp.code;
   if (input.startsWith(`${PREFIX}.`)) {
     const [, code, signature, ...rest] = input.split(".");
     return code && signature && rest.length === 0 && isValidCode(code) ? code : null;

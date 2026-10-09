@@ -1,4 +1,11 @@
-import { parseTicketPayload } from "@ticketera/core";
+import {
+  deriveTicketKey,
+  parseDynamicPayload,
+  parseManualWithOtp,
+  parseTicketPayload,
+  verifyDynamicOtp,
+  verifyDynamicPayload,
+} from "@ticketera/core";
 import { prisma } from "../client";
 import type { AccessMethod, ScanResult } from "../generated/prisma/client";
 import { isUniqueViolation, requireEnv } from "./shared";
@@ -20,7 +27,15 @@ export type ScanOutcome = {
   previousEntry: { at: Date; accessPoint: string | null } | null;
   /** Para WRONG_GATE: por qué puertas sí puede entrar. */
   allowedGates: string[];
+  /**
+   * Solo QR dinámico leído sin conexión, al sincronizar: BAD_PROOF = la prueba no corresponde a la entrada
+   * (teléfono modificado o QR falsificado); STALE_OFFLINE = auténtica pero de un momento lejano a la lectura.
+   */
+  proofNote?: "BAD_PROOF" | "STALE_OFFLINE";
 };
+
+/** Pasos que se toleran al revisar una lectura hecha sin conexión: el reloj del teléfono pudo desajustarse. */
+const OFFLINE_STEP_WINDOW = 2;
 
 /**
  * Valida una entrada en puerta y deja registrada la lectura (aceptada o no).
@@ -56,21 +71,58 @@ export async function scanTicket(input: {
     if (done) return replayOutcome(done);
   }
   const scannedAt = input.scannedAt ?? new Date();
-  const parsed = await parseTicketPayload(input.raw, requireEnv("TICKET_QR_SECRET"));
+  const secret = requireEnv("TICKET_QR_SECRET");
+  const raw = input.raw.trim();
+  // Tres formas de leer una entrada: QR dinámico (TK2), código + OTP escrito a mano, o código estático (TK1 / solo código).
+  const dynamic = raw.startsWith("TK2.") ? parseDynamicPayload(raw) : null;
+  const otp = dynamic ? null : parseManualWithOtp(raw);
+  const statik = dynamic || otp ? null : await parseTicketPayload(raw, secret);
+  const code = dynamic?.code ?? otp?.code ?? (statik?.ok ? statik.code : null);
 
   let result: ScanResult = "INVALID";
   let allowedGates: string[] = [];
-  const ticket = parsed.ok
+  let proofNote: ScanOutcome["proofNote"];
+  const ticket = code
     ? await prisma.ticket.findUnique({
-        where: { code: parsed.code },
+        where: { code },
         include: { ticketType: true, seat: { include: { section: true } }, session: { include: { event: true } } },
       })
     : null;
 
+  // Tipo de QR: una entrada dinámica solo se acepta con una prueba vigente (QR o código + OTP); su código estático no sirve.
+  let qrFailure: ScanResult | null = null;
+  if (ticket && !input.offlineResult) {
+    const isDynamicType = ticket.ticketType.qrMode === "DYNAMIC";
+    const at = (input.offline ? scannedAt : new Date()).getTime();
+    const window = input.offline ? OFFLINE_STEP_WINDOW : undefined;
+    if (dynamic) {
+      if (!isDynamicType) qrFailure = "INVALID"; // un TK2 solo existe para entradas dinámicas
+      else {
+        const verdict = await verifyDynamicPayload(await deriveTicketKey(secret, ticket.code), dynamic, at, window);
+        if (verdict === "INVALID") {
+          qrFailure = "INVALID";
+          if (input.offline) proofNote = "BAD_PROOF";
+        } else if (verdict === "EXPIRED") {
+          // En vivo es una captura vieja. Sin conexión ya entró: se acepta y se deja anotado.
+          if (input.offline) proofNote = "STALE_OFFLINE";
+          else qrFailure = "QR_EXPIRED";
+        }
+      }
+    } else if (otp) {
+      if (isDynamicType && !(await verifyDynamicOtp(await deriveTicketKey(secret, ticket.code), ticket.code, otp.otp, at, window))) {
+        qrFailure = "INVALID";
+        if (input.offline) proofNote = "BAD_PROOF";
+      }
+    } else if (isDynamicType) {
+      qrFailure = "STATIC_NOT_ALLOWED";
+    }
+  }
+
   if (input.offlineResult) result = input.offlineResult;
-  else if (parsed.ok) {
+  else if (code) {
     if (!ticket) result = "NOT_FOUND";
     else if (ticket.sessionId !== input.sessionId) result = "WRONG_SESSION";
+    else if (qrFailure) result = qrFailure;
     else if (input.method && input.method !== "MANUAL" && !ticket.ticketType.accessMethods.includes(input.method)) {
       result = "METHOD_NOT_ALLOWED";
     } else {
@@ -153,6 +205,7 @@ export async function scanTicket(input: {
       : null,
     previousEntry: previous ? { at: previous.scannedAt, accessPoint: previous.accessPoint?.name ?? null } : null,
     allowedGates,
+    ...(proofNote ? { proofNote } : {}),
   };
 }
 

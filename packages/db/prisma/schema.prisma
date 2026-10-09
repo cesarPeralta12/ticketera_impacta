@@ -431,6 +431,8 @@ model TicketType {
   sortOrder        Int            @default(0)
   /// Cómo se lee esta entrada en puerta: solo QR, solo código de barras, NFC o varias.
   accessMethods    AccessMethod[] @default([QR])
+  /// DYNAMIC: solo QR que cambia cada 30 s, solo venta online. No se puede cambiar una vez que hay ventas.
+  qrMode           QrMode         @default(STATIC)
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
@@ -640,6 +642,16 @@ enum ScanResult {
   INVALID
   /// La entrada no se puede leer con ese método (ej. QR en una entrada solo NFC).
   METHOD_NOT_ALLOWED
+  /// QR dinámico auténtico pero de otro momento: una captura vieja (o un reloj muy desajustado).
+  QR_EXPIRED
+  /// La entrada es de QR dinámico y se leyó su código estático (impreso, de barras o escrito sin OTP).
+  STATIC_NOT_ALLOWED
+}
+
+/// Cómo se muestra la entrada: con un QR fijo, o con uno que cambia cada 30 segundos (ver docs/qr-dinamico.md).
+enum QrMode {
+  STATIC
+  DYNAMIC
 }
 
 /// Formas de leer una entrada en puerta. Se configura por tipo de entrada.

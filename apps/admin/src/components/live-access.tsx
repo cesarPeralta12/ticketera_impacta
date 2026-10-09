@@ -13,6 +13,8 @@ const RESULT_LABEL: Record<string, string> = {
   WRONG_GATE: "Puerta equivocada",
   INVALID: "Código inválido",
   METHOD_NOT_ALLOWED: "Método no permitido",
+  QR_EXPIRED: "QR vencido (captura)",
+  STATIC_NOT_ALLOWED: "Exige QR dinámico",
 };
 
 const METHOD_LABEL: Record<string, string> = { QR: "QR", BARCODE: "Código de barras", NFC: "NFC", MANUAL: "Código escrito" };

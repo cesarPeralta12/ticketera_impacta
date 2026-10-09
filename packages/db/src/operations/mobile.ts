@@ -1,7 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
+import { deriveTicketKey, toBase64Url } from "@ticketera/core";
 import { prisma } from "../client";
 import type { AccessMethod, StaffRole } from "../generated/prisma/client";
 import { verifyStaffCredentials } from "./accounts";
+import { requireEnv } from "./shared";
 
 /** Roles que pueden usar la app de puerta. */
 export const DOOR_APP_ROLES: StaffRole[] = ["OWNER", "ADMIN", "OPERATOR"];
@@ -295,7 +297,9 @@ const STATUS_CODE = { VALID: "V", USED: "U", CANCELLED: "C" } as const;
  * - Las de otras puertas van compactas (solo código, sección y estado): sirven para decir
  *   "puerta equivocada, esta entrada entra por X" en vez de "no existe".
  * - Con `since`, devuelve solo lo que cambió desde esa hora (ventas nuevas, usadas, anuladas).
- * - No incluye el secreto del QR: el teléfono valida que el código exista en la lista.
+ * - No incluye el secreto del QR: el teléfono valida que el código exista en la lista. Las entradas de QR
+ *   dinámico (solo las de las secciones de esta puerta) llevan además su LLAVE, para recalcular la prueba sin
+ *   internet; `syncedAt` es la hora del servidor con la que el teléfono calibra su reloj.
  */
 export async function getDoorDownload(input: { sessionId: string; accessPointId?: string; since?: Date }) {
   const session = await prisma.eventSession.findUnique({
@@ -340,11 +344,12 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
       status: true,
       holderName: true,
       holderDocument: true,
-      ticketType: { select: { name: true, sectionId: true, accessMethods: true } },
+      ticketType: { select: { name: true, sectionId: true, accessMethods: true, qrMode: true } },
       seat: { select: { label: true } },
       order: { select: { buyerName: true, buyerDocument: true } },
     },
   });
+  const secret = tickets.some((t) => t.ticketType.qrMode === "DYNAMIC") ? requireEnv("TICKET_QR_SECRET") : "";
 
   // Códigos que dejaron de valer por una transferencia: el teléfono los saca de su lista.
   const revoked = since
@@ -370,22 +375,27 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
     gateId: gate?.id ?? null,
     gates: session.venue.accessPoints.map((g) => ({ id: g.id, name: g.name, sectionIds: g.sections.map((s) => s.id) })),
     sections: Object.fromEntries(session.venue.sections.map((s) => [s.id, s.name])),
-    tickets: tickets.map((t) => {
-      const sectionId = t.ticketType.sectionId;
-      const mine = !restricted || (sectionId !== null && gateSections.has(sectionId));
-      const base = { code: t.code, status: STATUS_CODE[t.status], sectionId, mine };
-      return mine
-        ? {
-            ...base,
-            holder: t.holderName ?? t.order.buyerName,
-            // Titular actual: si la entrada se transfirió, el carnet es el de quien la recibió.
-            document: t.holderDocument ?? t.order.buyerDocument,
-            type: t.ticketType.name,
-            seat: t.seat?.label ?? null,
-            methods: t.ticketType.accessMethods,
-          }
-        : base;
-    }),
+    tickets: await Promise.all(
+      tickets.map(async (t) => {
+        const sectionId = t.ticketType.sectionId;
+        const mine = !restricted || (sectionId !== null && gateSections.has(sectionId));
+        const base = { code: t.code, status: STATUS_CODE[t.status], sectionId, mine };
+        if (!mine) return base;
+        const dynamic = t.ticketType.qrMode === "DYNAMIC";
+        return {
+          ...base,
+          holder: t.holderName ?? t.order.buyerName,
+          // Titular actual: si la entrada se transfirió, el carnet es el de quien la recibió.
+          document: t.holderDocument ?? t.order.buyerDocument,
+          type: t.ticketType.name,
+          seat: t.seat?.label ?? null,
+          methods: t.ticketType.accessMethods,
+          // QR dinámico: el teléfono recalcula la prueba con esta llave (solo de las entradas de su puerta).
+          dynamic,
+          ...(dynamic ? { key: toBase64Url(await deriveTicketKey(secret, t.code)) } : {}),
+        };
+      }),
+    ),
   };
 }
 
