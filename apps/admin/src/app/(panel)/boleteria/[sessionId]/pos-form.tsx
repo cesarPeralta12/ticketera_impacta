@@ -6,7 +6,17 @@ import { MAX_TICKETS_PER_ORDER, formatMoney } from "@ticketera/core";
 import { SeatPicker, type PickerSection } from "@/components/seat-picker";
 import { sellAction, type PosState } from "@/lib/actions/pos";
 
-export type PosGeneralType = { id: string; name: string; detail: string | null; unitAmount: number; currency: string; max: number };
+export type PosGeneralType = {
+  id: string;
+  name: string;
+  detail: string | null;
+  /** Precio que se cobra ahora (con el descuento de preventa vigente, si hay). */
+  unitAmount: number;
+  listAmount: number | null;
+  discountLabel: string | null;
+  currency: string;
+  max: number;
+};
 export type PosSeatedType = PickerSection & { maxPerOrder: number };
 
 const METHODS = [
@@ -92,7 +102,13 @@ export function PosForm({
                 <div>
                   <p className="font-medium">{type.name}</p>
                   {type.detail && <p className="text-xs text-[var(--ink-dim)]">{type.detail}</p>}
-                  <p className="font-mono text-sm text-[var(--accent)]">{formatMoney(type.unitAmount, type.currency)}</p>
+                  <p className="font-mono text-sm text-[var(--accent)]">
+                    {type.listAmount !== null && (
+                      <span className="mr-2 text-xs text-[var(--ink-dim)] line-through">{formatMoney(type.listAmount, type.currency)}</span>
+                    )}
+                    {formatMoney(type.unitAmount, type.currency)}
+                  </p>
+                  {type.discountLabel && <p className="text-xs font-semibold text-[var(--warn)]">Preventa: {type.discountLabel}</p>}
                 </div>
                 {type.max === 0 ? (
                   <span className="badge bg-[var(--surface-2)] text-[var(--ink-dim)]">Agotado</span>
@@ -136,7 +152,7 @@ export function PosForm({
         </section>
       )}
 
-      <section className="card grid gap-4 p-5 sm:grid-cols-3">
+      <section className="card grid gap-4 p-5 sm:grid-cols-4">
         <label className="label">
           Nombre (opcional)
           <input name="name" autoComplete="off" className="field" />
@@ -146,8 +162,12 @@ export function PosForm({
           <input name="email" type="email" autoComplete="off" className="field" />
         </label>
         <label className="label">
-          CI / NIT (opcional)
-          <input name="document" autoComplete="off" className="field" />
+          Código promocional (opcional)
+          <input name="promo" autoComplete="off" placeholder="RRPP-XXXXX" className="field font-mono uppercase" />
+        </label>
+        <label className="label">
+          Carnet de identidad (obligatorio)
+          <input name="document" required autoComplete="off" placeholder="1234567 LP" className="field" />
         </label>
       </section>
 

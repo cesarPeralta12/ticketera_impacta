@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { formatMoney } from "@ticketera/core";
-import { MIN_PASSWORD_LENGTH, prisma } from "@ticketera/db";
+import { MIN_PASSWORD_LENGTH, getEventQuota, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { createOrganizerAction, enterOrganizationAction } from "@/lib/actions/platform";
 import { requirePlatform } from "@/lib/session";
@@ -19,13 +19,14 @@ async function organizersWithStats() {
   return Promise.all(
     organizations.map(async (org) => {
       const byOrg = { event: { organizationId: org.id } };
-      const [events, tickets, revenue] = await Promise.all([
+      const [events, tickets, revenue, quota] = await Promise.all([
         prisma.event.groupBy({ by: ["status"], where: { organizationId: org.id }, _count: true }),
         prisma.ticket.count({ where: { status: { in: ["VALID", "USED"] }, session: byOrg } }),
         prisma.order.aggregate({
           _sum: { totalAmount: true },
           where: { status: "PAID", items: { some: { ticketType: { session: byOrg } } } },
         }),
+        getEventQuota(org.id),
       ]);
       const count = (status: string) => events.find((e) => e.status === status)?._count ?? 0;
       return {
@@ -33,6 +34,7 @@ async function organizersWithStats() {
         published: count("PUBLISHED"),
         pending: count("PENDING_REVIEW"),
         drafts: count("DRAFT"),
+        quota,
         tickets,
         revenue: revenue._sum.totalAmount ?? 0,
       };
@@ -92,6 +94,10 @@ export default async function OrganizersPage() {
                 </td>
                 <td className="px-5 py-3 text-xs">
                   <p>{o.published} publicado(s)</p>
+                  <p className={o.quota.reached ? "font-medium text-[var(--warn)]" : "text-[var(--ink-dim)]"}>
+                    {o.quota.used}
+                    {o.quota.limit === null ? " activos · sin límite" : ` / ${o.quota.limit} activos`}
+                  </p>
                   {o.pending > 0 && (
                     <Link href="/aprobaciones" className="font-medium text-[var(--warn)] hover:underline">
                       {o.pending} esperando aprobación

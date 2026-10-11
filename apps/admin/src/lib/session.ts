@@ -7,8 +7,8 @@ import { auth } from "./auth";
 export const ROLES = {
   /** Configurar eventos, recintos y precios; ver ventas y reportes de la organización. */
   manage: ["OWNER", "ADMIN"],
-  /** Validar entradas en puerta. */
-  access: ["OWNER", "ADMIN", "OPERATOR"],
+  /** Crear y desactivar cuentas del panel. */
+  users: ["OWNER", "ADMIN"],
   /** Vender en boletería. */
   pos: ["OWNER", "ADMIN", "CASHIER"],
   /** Espacio temporal del cliente (eventos que IMPACTA opera para él). */
@@ -21,7 +21,8 @@ export const ROLES = {
 export const HOME_BY_ROLE: Record<StaffRole, string> = {
   OWNER: "/",
   ADMIN: "/",
-  OPERATOR: "/puerta",
+  /** El portero trabaja solo con la app móvil: el panel web no es para su rol. */
+  OPERATOR: "/login",
   CASHIER: "/boleteria",
   CLIENT: "/cliente",
 };
@@ -42,12 +43,14 @@ export async function currentStaff() {
   const membership = await prisma.membership.findFirst({
     where: { userId: session.user.id, organizationId: session.user.organizationId, user: { active: true } },
     include: {
-      user: { select: { name: true, email: true, mustChangePassword: true } },
+      user: { select: { name: true, email: true, mustChangePassword: true, sessionVersion: true } },
       organization: true,
       client: true,
     },
   });
   if (!membership) return null;
+  // Sesión cerrada desde la cuenta (cambió la contraseña o "cerrar todas las sesiones").
+  if (membership.user.sessionVersion !== session.user.sessionVersion) return null;
   const home = membership.organization;
   const platform = home.isPlatform && (membership.role === "OWNER" || membership.role === "ADMIN");
   // Un organizador suspendido pierde el acceso en la siguiente acción, aunque tenga sesión.

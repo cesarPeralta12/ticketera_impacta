@@ -9,7 +9,7 @@
 | Sprint 2 · Marketplace, carrito, reserva temporal, orden | ✅ Entrada general y butacas, compra como invitado o con cuenta |
 | Sprint 3 · Pago, webhooks, idempotencia, emisión, QR | ✅ Con pasarela **simulada**. Falta: pasarela real, email real |
 | Sprint 4 · Asientos, concurrencia, cola virtual | ✅ Editor de recintos, mapa del comprador, cola en Postgres. Falta: rate limiting, pruebas de carga |
-| Sprint 5 · Validación en puerta, doble ingreso, auditoría | ✅ App de puerta instalable: cámara, NFC (Android), lector USB, manual; offline con sincronización; puertas por sección; equipo registrado en cada lectura |
+| Sprint 5 · Validación en puerta, doble ingreso, auditoría | ✅ App móvil Flutter (`apps/puerta_app`): QR, código de barras y NFC según el tipo de entrada; descarga de datos por función/puerta, validación sin internet y sincronización; portero con funciones asignadas; teléfonos revocables |
 | Sprint 6 · Reportes, exportaciones, conciliación | 🟡 Reporte por evento (canales, ingresados, ausentes, rechazos, boletería) y CSV de asistentes. Falta: conciliación con la pasarela real |
 
 ## Documento de arquitectura IMPACTA (2026-10-02)
@@ -24,10 +24,11 @@ Aplicado completo:
   En eventos con venta, las cortesías salen del cupo de un tipo de entrada.
 - **Boletería (POS)** con rol cajero: efectivo/QR/tarjeta (declarado, sin banco), ticket térmico 80 mm o
   A4, vende durante el evento, arqueo "Mi caja de hoy".
-- **App de puerta** (`/puerta`, PWA instalable): cámara (nativa en Android, jsQR en iPhone), NFC en
-  Android, lector USB/manual, offline con IndexedDB y sincronización idempotente, puertas por sección.
+- **App de puerta**: reemplazó al panel web `/puerta` (PWA) por una app móvil Flutter. QR, código de
+  barras y NFC según lo configurado en cada tipo de entrada; offline con SQLite y sincronización idempotente,
+  puertas por sección; API con tokens por teléfono (`/api/v1`).
 - **Registro del dispositivo** en cada lectura; **reportes** de ausentes y rechazos.
-- "Mis entradas" → **"Mis eventos"** (el enlace viejo redirige).
+- **Mis entradas** (entradas con QR y transferencias) y **Mis eventos** (compras e historial).
 
 ## Organizadores y preventa (2026-10-08)
 
@@ -53,14 +54,14 @@ Hecho:
   protección contra fórmulas, se abre directo en Excel).
 - **Invitados desde .xlsx**: se lee la primera hoja (nombre, email, documento); el .xls antiguo se rechaza
   con instrucciones.
-- **Mis eventos** completo: próximas entradas con QR (compradas o recibidas), historial con hora de
-  ingreso o "no asististe", entradas transferidas y compras.
-- **Transferencia de entradas** a una cuenta registrada: por entrada, solo válidas y hasta que empieza la
-  función; las invitaciones no se transfieren. La receptora recibe un QR nuevo; el viejo sale "Entrada
-  transferida" en la puerta, también sin conexión (va en la lista descargada). Queda en auditoría.
+- **Historial** en Mis eventos: cada función pasada dice a qué hora ingresaste, o "no asististe".
+  (Las entradas con su QR y la transferencia están en *Mis entradas*.)
 
-Dejado para después (decisión del cliente): códigos promocionales, rol de promotor, QR dinámico,
-apps nativas y NFC (los hace otra persona), pasarela de pago real y facturación electrónica.
+Se unió con la rama `feature/puerta-flutter` (2026-10-11): app móvil de puerta, promociones, QR
+dinámico, transferencias con aceptación, correo y seguridad vienen de ahí. Quedó su transferencia (más
+completa que la que se había hecho aquí) y se quitó la puerta del navegador, reemplazada por la app.
+
+Dejado para después (decisión del cliente): rol de promotor, pasarela de pago real y facturación electrónica.
 
 ## Integración con el prototipo del compañero (2026-10-01)
 
@@ -111,7 +112,6 @@ apps nativas y NFC (los hace otra persona), pasarela de pago real y facturación
 - [ ] **Pruebas de carga** de la cola y la compra con volúmenes reales.
 - [ ] **Conciliación** de pagos con la pasarela real.
 - [ ] **https** en el entorno de pruebas: la cámara del celular no funciona por http en la red local.
-- [ ] **Aviso por email** de una transferencia a quien recibe la entrada (depende del email transaccional).
 - [ ] **Invitación por email** al crear un organizador o una cuenta (hoy se le pasa la contraseña temporal a mano).
 - [ ] **Comisión de Impacta** por organizador y liquidaciones (cuánto se le paga a cada uno).
 - [ ] **Editor de butacas**: editar/mover secciones existentes, zoom, deshacer (mejoras ya conversadas con el cliente; propuesta: Konva.js).

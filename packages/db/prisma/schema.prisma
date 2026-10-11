@@ -36,13 +36,17 @@ model Organization {
   status       OrganizationStatus @default(ACTIVE)
   taxId        String?
   contactEmail String?
+  /// Máximo de eventos activos (borrador, en revisión o publicados que no pasaron) que puede tener a la vez.
+  /// Nulo = sin límite. Lo fija IMPACTA; la plataforma misma no tiene límite.
+  maxActiveEvents Int?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 
-  members Membership[]
-  venues  Venue[]
-  events  Event[]
-  clients Client[]
+  members    Membership[]
+  promoCodes PromoCode[]
+  venues     Venue[]
+  events     Event[]
+  clients    Client[]
 }
 
 /// Cliente u organizador de IMPACTA: dueño de uno o varios eventos. Sus usuarios (rol CLIENT)
@@ -76,13 +80,65 @@ model StaffUser {
   emailVerified      Boolean  @default(false)
   /// Creada con contraseña temporal: tiene que cambiarla al entrar.
   mustChangePassword Boolean  @default(false)
+  /// Sube al cambiar la contraseña o al "cerrar todas las sesiones": las sesiones web anteriores dejan de valer.
+  sessionVersion     Int      @default(0)
   image              String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  memberships  Membership[]
-  scans        AccessScan[]
-  issuedOrders Order[]
+  memberships     Membership[]
+  scans           AccessScan[]
+  issuedOrders    Order[]
+  doorAssignments DoorAssignment[]
+  deviceTokens    DeviceToken[]
+  emailTokens     EmailToken[]
+}
+
+/// Funciones (y opcionalmente una puerta) que un portero puede descargar y controlar
+/// en la app móvil. Sin asignación, el portero no ve ningún evento.
+model DoorAssignment {
+  id            String   @id @default(cuid())
+  userId        String
+  sessionId     String
+  /// Vacío = todas las puertas de la función.
+  accessPointId String?
+  createdAt     DateTime @default(now())
+
+  user        StaffUser    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session     EventSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  accessPoint AccessPoint? @relation(fields: [accessPointId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, sessionId])
+  @@index([sessionId])
+}
+
+/// Sesión de la app móvil: token opaco (se guarda solo su hash), un dispositivo por token.
+/// Se puede revocar desde el panel; al revocarlo el teléfono pierde el acceso.
+model DeviceToken {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique
+  deviceId   String
+  deviceName String
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  /// Vencimiento del token de acceso (corto: se renueva con el token de renovación).
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  /// Token de renovación (hash). Se cambia por uno nuevo en cada uso; el anterior queda en prevRefreshHash
+  /// para detectar que alguien lo reutiliza (robo) y cerrar la sesión.
+  refreshHash      String?   @unique
+  prevRefreshHash  String?   @unique
+  refreshExpiresAt DateTime?
+  rotatedAt        DateTime?
+  /// Dónde y con qué se inició la sesión (para la lista de dispositivos).
+  ip         String?
+  appVersion String?
+  platform   String?
+
+  user StaffUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 enum StaffRole {
@@ -119,20 +175,81 @@ model Customer {
   id            String   @id @default(cuid())
   email         String   @unique
   name          String
-  /// bcrypt. Comprar no exige cuenta: la cuenta sirve para ver "Mis entradas".
+  /// bcrypt. Comprar exige cuenta: nombre, email y carnet salen de aquí.
   passwordHash  String
   emailVerified Boolean  @default(false)
   image         String?
-  /// RUT / DNI, solo si las entradas son nominativas.
-  documentId    String?
+  /// Carnet de identidad, normalizado (mayúsculas, sin espacios ni guiones). Obligatorio para comprar
+  /// y único: una persona, una cuenta. Nulo solo en cuentas antiguas, que deben completarlo.
+  documentId    String?  @unique
   phone         String?
+  /// Igual que en StaffUser: subirla cierra todas las sesiones del comprador.
+  sessionVersion Int     @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   orders            Order[]
   tickets           Ticket[]
-  transfersSent     TicketTransfer[] @relation("TransfersSent")
-  transfersReceived TicketTransfer[] @relation("TransfersReceived")
+  emailTokens       EmailToken[]
+  transfersSent     TicketTransfer[]  @relation("TransfersSent")
+  transfersReceived TicketTransfer[]  @relation("TransfersReceived")
+  promoRedemptions  PromoRedemption[]
+}
+
+enum TransferStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+  EXPIRED
+}
+
+/// Una entrada que su titular le ofrece a otra persona registrada. Al aceptarla, la entrada recibe un
+/// código nuevo (el anterior deja de valer) y pasa a la cuenta de quien la aceptó.
+model TicketTransfer {
+  id             String         @id @default(cuid())
+  ticketId       String
+  fromCustomerId String
+  toCustomerId   String
+  status         TransferStatus @default(PENDING)
+  /// Solo si se aceptó: el código que dejó de valer y el nuevo.
+  oldCode        String?
+  newCode        String?
+  createdAt      DateTime       @default(now())
+  expiresAt      DateTime
+  resolvedAt     DateTime?
+
+  ticket Ticket   @relation(fields: [ticketId], references: [id])
+  from   Customer @relation("TransfersSent", fields: [fromCustomerId], references: [id])
+  to     Customer @relation("TransfersReceived", fields: [toCustomerId], references: [id])
+
+  @@index([ticketId, status])
+  @@index([toCustomerId, status])
+  @@index([fromCustomerId, status, createdAt])
+}
+
+enum EmailTokenPurpose {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+}
+
+/// Enlace de un solo uso que se manda por correo (confirmar el email, cambiar la contraseña).
+/// Solo se guarda el hash del token: quien lea la base no puede usar los enlaces pendientes.
+model EmailToken {
+  id          String            @id @default(cuid())
+  purpose     EmailTokenPurpose
+  tokenHash   String            @unique
+  customerId  String?
+  staffUserId String?
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime          @default(now())
+
+  customer  Customer?  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  staffUser StaffUser? @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, purpose, createdAt])
+  @@index([staffUserId, purpose, createdAt])
 }
 
 // ─────────────────────────────── Recintos ───────────────────────────────
@@ -246,6 +363,9 @@ model Event {
   /// Revisión de IMPACTA: cuándo lo enviaron y, si lo devolvió, qué hay que corregir.
   submittedAt         DateTime?
   reviewNote          String?
+  /// ¿Los compradores pueden transferir sus entradas a otra persona registrada?
+  transfersEnabled    Boolean       @default(true)
+  promoCodes          PromoCode[]
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
@@ -275,12 +395,13 @@ model EventSession {
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
-  event       Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  venue       Venue        @relation(fields: [venueId], references: [id])
-  ticketTypes TicketType[]
-  tickets     Ticket[]
-  scans       AccessScan[]
-  queue       QueueEntry[]
+  event           Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  venue           Venue            @relation(fields: [venueId], references: [id])
+  ticketTypes     TicketType[]
+  tickets         Ticket[]
+  scans           AccessScan[]
+  doorAssignments DoorAssignment[]
+  queue           QueueEntry[]
 
   @@index([eventId, startsAt])
 }
@@ -291,23 +412,32 @@ model EventSession {
 /// no expiradas. La reserva debe ser atómica (UPDATE condicional o lock de fila):
 /// se diseña en Sprint 0 y se implementa en Sprint 2, antes de vender nada.
 model TicketType {
-  id           String    @id @default(cuid())
-  sessionId    String
+  id               String         @id @default(cuid())
+  sessionId        String
   /// Sección física asociada. Obligatoria si la sección es RESERVED.
-  sectionId    String?
-  name         String
-  description  String?
-  unitAmount   Int
-  currency     String    @db.Char(3)
-  capacity     Int
-  maxPerOrder  Int       @default(10)
-  salesStartAt DateTime?
-  salesEndAt   DateTime?
+  sectionId        String?
+  name             String
+  description      String?
+  unitAmount       Int
+  currency         String         @db.Char(3)
+  capacity         Int
+  maxPerOrder      Int            @default(10)
+  salesStartAt     DateTime?
+  salesEndAt       DateTime?
   /// Preventa: se muestra como tal y solo vende hasta salesEndAt.
-  presale      Boolean   @default(false)
-  sortOrder    Int       @default(0)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  presale          Boolean        @default(false)
+  /// Descuento de preventa sobre el mismo tipo de entrada: durante la ventana se cobra
+  /// unitAmount menos este porcentaje; fuera de ella, el precio normal.
+  discountPercent  Int?
+  discountStartsAt DateTime?
+  discountEndsAt   DateTime?
+  sortOrder        Int            @default(0)
+  /// Cómo se lee esta entrada en puerta: solo QR, solo código de barras, NFC o varias.
+  accessMethods    AccessMethod[] @default([QR])
+  /// DYNAMIC: solo QR que cambia cada 30 s, solo venta online. No se puede cambiar una vez que hay ventas.
+  qrMode           QrMode         @default(STATIC)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
   session    EventSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   section    Section?     @relation(fields: [sectionId], references: [id])
@@ -353,17 +483,20 @@ model Order {
   currency       String       @db.Char(3)
   subtotalAmount Int
   feeAmount      Int          @default(0)
+  /// Descuento de un código promocional (ya restado del total).
+  discountAmount Int          @default(0)
   totalAmount    Int
   expiresAt      DateTime
   paidAt         DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  customer Customer?   @relation(fields: [customerId], references: [id])
-  issuedBy StaffUser?  @relation(fields: [issuedById], references: [id])
-  items    OrderItem[]
-  payments Payment[]
-  tickets  Ticket[]
+  customer        Customer?        @relation(fields: [customerId], references: [id])
+  issuedBy        StaffUser?       @relation(fields: [issuedById], references: [id])
+  items           OrderItem[]
+  payments        Payment[]
+  tickets         Ticket[]
+  promoRedemption PromoRedemption?
 
   @@index([status, expiresAt])
   @@index([buyerEmail])
@@ -447,20 +580,25 @@ enum TicketStatus {
 }
 
 model Ticket {
-  id           String       @id @default(cuid())
+  id             String       @id @default(cuid())
   /// Identificador público que viaja en el QR.
-  code         String       @unique
-  orderId      String
-  orderItemId  String
-  ticketTypeId String
-  sessionId    String
-  seatId       String?
-  customerId   String?
-  holderName   String?
-  status       TicketStatus @default(VALID)
-  issuedAt     DateTime     @default(now())
-  usedAt       DateTime?
-  cancelledAt  DateTime?
+  code           String       @unique
+  orderId        String
+  orderItemId    String
+  ticketTypeId   String
+  sessionId      String
+  seatId         String?
+  customerId     String?
+  holderName     String?
+  /// Carnet del titular actual (si cambió por una transferencia). Vacío: es el del comprador de la orden.
+  holderDocument String?
+  /// Cuántas veces se transfirió; tiene un máximo por entrada.
+  transferCount  Int          @default(0)
+  transferredAt  DateTime?
+  status         TicketStatus @default(VALID)
+  issuedAt       DateTime     @default(now())
+  usedAt         DateTime?
+  cancelledAt    DateTime?
 
   order      Order            @relation(fields: [orderId], references: [id])
   orderItem  OrderItem        @relation(fields: [orderItemId], references: [id])
@@ -483,31 +621,15 @@ model Ticket {
 /// Si tiene secciones asignadas, solo acepta entradas de esas secciones. Además de ordenar
 /// el ingreso, evita el doble ingreso sin conexión: una misma entrada no puede ser aceptada
 /// por dos puertas distintas que estén offline a la vez.
-/// Entrada que su dueño le pasó a otra cuenta registrada. La entrada recibe un código
-/// (QR) nuevo; el viejo queda aquí para que la puerta diga "transferida" si alguien lo usa.
-model TicketTransfer {
-  id             String   @id @default(cuid())
-  ticketId       String
-  fromCustomerId String
-  toCustomerId   String
-  oldCode        String   @unique
-  createdAt      DateTime @default(now())
-
-  ticket Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  from   Customer @relation("TransfersSent", fields: [fromCustomerId], references: [id])
-  to     Customer @relation("TransfersReceived", fields: [toCustomerId], references: [id])
-
-  @@index([ticketId])
-}
-
 model AccessPoint {
   id      String @id @default(cuid())
   venueId String
   name    String
 
-  venue    Venue        @relation(fields: [venueId], references: [id], onDelete: Cascade)
-  scans    AccessScan[]
-  sections Section[]
+  venue       Venue            @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  scans       AccessScan[]
+  sections    Section[]
+  assignments DoorAssignment[]
 
   @@unique([venueId, name])
 }
@@ -521,8 +643,25 @@ enum ScanResult {
   /// La entrada es de una sección que no entra por esta puerta.
   WRONG_GATE
   INVALID
-  /// QR viejo de una entrada que su dueño transfirió a otra persona (tiene un QR nuevo).
-  TRANSFERRED
+  /// La entrada no se puede leer con ese método (ej. QR en una entrada solo NFC).
+  METHOD_NOT_ALLOWED
+  /// QR dinámico auténtico pero de otro momento: una captura vieja (o un reloj muy desajustado).
+  QR_EXPIRED
+  /// La entrada es de QR dinámico y se leyó su código estático (impreso, de barras o escrito sin OTP).
+  STATIC_NOT_ALLOWED
+}
+
+/// Cómo se muestra la entrada: con un QR fijo, o con uno que cambia cada 30 segundos (ver docs/qr-dinamico.md).
+enum QrMode {
+  STATIC
+  DYNAMIC
+}
+
+/// Formas de leer una entrada en puerta. Se configura por tipo de entrada.
+enum AccessMethod {
+  QR
+  BARCODE
+  NFC
 }
 
 /// Cada lectura en puerta, aceptada o rechazada: es el historial de auditoría del acceso.
@@ -543,6 +682,8 @@ model AccessScan {
   offline       Boolean    @default(false)
   /// Id que genera la app de puerta por lectura: si reenvía la misma al sincronizar, no se duplica.
   clientScanId  String?    @unique
+  /// Cómo se leyó: QR, BARCODE, NFC o MANUAL (código escrito a mano).
+  method        String?
 
   session     EventSession @relation(fields: [sessionId], references: [id])
   ticket      Ticket?      @relation(fields: [ticketId], references: [id])
@@ -569,10 +710,16 @@ model QueueEntry {
   expiresAt   DateTime?
   /// Terminó (creó su orden): libera su lugar para el siguiente.
   completedAt DateTime?
+  /// Última vez que la página preguntó por su turno. Quien cierra la pestaña deja de preguntar:
+  /// sin esto, esos "fantasmas" bloquean la fila (esperando) o retienen un lugar (admitidos).
+  lastSeenAt  DateTime  @default(now())
+  /// Cuenta de quien está en la fila: una persona, un lugar (no sirve abrir varias pestañas).
+  customerId  String?
 
   session EventSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@unique([sessionId, token])
+  @@index([sessionId, customerId])
   @@index([sessionId, admittedAt, joinedAt])
 }
 
@@ -589,8 +736,92 @@ model AuditLog {
   entity    String
   entityId  String
   data      Json?
+  /// Organización a la que pertenece el evento (para que cada organizador vea solo lo suyo). Nulo: de la plataforma o de un comprador.
+  organizationId String?
+  /// "info" | "warn" (logins fallidos, bloqueos, dispositivos nuevos, reutilización de tokens…).
+  severity  String   @default("info")
+  /// Desde dónde y con qué se hizo el cambio.
+  ip         String?
+  userAgent  String?
+  /// Teléfono de la app de puerta (identificador estable y nombre del modelo).
+  deviceId   String?
+  deviceName String?
   createdAt DateTime @default(now())
 
   @@index([entity, entityId])
   @@index([createdAt])
+  @@index([action, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([ip, createdAt])
+}
+
+/// Intentos recientes para limitar abusos (login, registro, compras…). Se purgan solos pasado un día.
+model RateLimitHit {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+}
+
+enum PromoDiscountType {
+  PERCENT
+  /// Monto fijo que se descuenta de cada entrada.
+  FIXED
+}
+
+/// Código promocional: descuento por porcentaje o monto fijo por entrada, con límites de uso y vigencia.
+/// Puede llevar el nombre de un promotor (RRPP) y su comisión, para medir cuánto vendió cada uno.
+model PromoCode {
+  id                    String            @id @default(cuid())
+  organizationId        String
+  /// Evento al que aplica; vacío = todos los eventos de la organización.
+  eventId               String?
+  /// Normalizado (mayúsculas, sin espacios). Único por organización.
+  code                  String
+  description           String?
+  discountType          PromoDiscountType
+  /// PERCENT: 1 a 100. FIXED: centavos por entrada.
+  discountValue         Int
+  /// ¿Se suma al descuento de preventa? Por defecto no.
+  combinableWithPresale Boolean           @default(false)
+  /// Usos totales (órdenes). Vacío = sin límite.
+  maxUses               Int?
+  /// Usos por cuenta de comprador. Vacío = sin límite.
+  maxUsesPerCustomer    Int?
+  startsAt              DateTime?
+  endsAt                DateTime?
+  active                Boolean           @default(true)
+  /// Promotor o RRPP al que se atribuyen las ventas con este código.
+  promoterName          String?
+  /// Comisión del promotor sobre lo vendido con el código (informativa, para el reporte).
+  commissionPercent     Int?
+  createdById           String?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id])
+  event        Event?            @relation(fields: [eventId], references: [id])
+  redemptions  PromoRedemption[]
+
+  @@unique([organizationId, code])
+  @@index([eventId])
+}
+
+/// Un uso del código en una orden. Cuenta para los límites mientras la orden esté pagada o reservada.
+model PromoRedemption {
+  id             String   @id @default(cuid())
+  promoCodeId    String
+  orderId        String   @unique
+  customerId     String?
+  discountAmount Int
+  createdAt      DateTime @default(now())
+
+  promoCode PromoCode @relation(fields: [promoCodeId], references: [id])
+  order     Order     @relation(fields: [orderId], references: [id])
+  customer  Customer? @relation(fields: [customerId], references: [id])
+
+  @@index([promoCodeId])
+  @@index([customerId, promoCodeId])
 }

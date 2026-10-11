@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { prisma } from "@ticketera/db";
+import { requireBuyer } from "@/lib/customer";
 import { WaitingRoom } from "./waiting-room";
 
 export const metadata: Metadata = { title: "Sala de espera", robots: { index: false } };
@@ -15,6 +16,8 @@ export default async function WaitingRoomPage({ params }: Props) {
     select: { id: true, event: { select: { title: true } } },
   });
   if (!session) notFound();
+  // Primero la cuenta: la fila es solo para quien puede comprar (cuenta con carnet).
+  await requireBuyer(`/comprar/${session.id}`);
 
   return (
     <main className="mx-auto flex min-h-[75vh] w-full max-w-lg flex-col items-center justify-center gap-8 px-6 text-center">

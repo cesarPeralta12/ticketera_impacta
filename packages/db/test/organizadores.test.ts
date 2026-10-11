@@ -6,7 +6,6 @@ import { afterAll, describe, expect, it } from "vitest";
 import { randomCode } from "@ticketera/core";
 import { prisma } from "../src/client";
 import { changeStaffPassword, verifyStaffCredentials } from "../src/operations/accounts";
-import { createPendingOrder } from "../src/operations/orders";
 import {
   approveEvent,
   createOrganizer,
@@ -14,7 +13,7 @@ import {
   setOrganizationStatus,
   submitEventForReview,
 } from "../src/operations/organizations";
-import { buyer, createGeneralAdmissionEvent } from "./fixtures";
+import { buyer, createPendingOrder, createGeneralAdmissionEvent } from "./fixtures";
 
 afterAll(() => prisma.$disconnect());
 

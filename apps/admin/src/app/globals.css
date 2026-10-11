@@ -17,6 +17,13 @@
   --danger: #b91c1c;
   --danger-soft: #fdecec;
 
+  /* Menú lateral */
+  --side-bg: #14181b;
+  --side-ink: #e9ece8;
+  --side-dim: #8d948f;
+  --side-border: #262c30;
+  --side-hover: #1e2428;
+
   --font-body: var(--font-manrope), "Segoe UI", sans-serif;
   --font-mono: var(--font-mono-plex), ui-monospace, monospace;
 }
@@ -46,7 +53,8 @@ body {
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  border-radius: 0.875rem;
+  box-shadow: 0 1px 2px rgb(20 24 27 / 0.04);
 }
 
 .field {
@@ -59,8 +67,16 @@ body {
   outline: none;
   transition: border-color 0.15s;
 }
+.field:hover {
+  border-color: var(--ink-dim);
+}
 .field:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .btn {
@@ -125,4 +141,68 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   white-space: nowrap;
+}
+
+/* Menú lateral oscuro: la sección activa se ve de un vistazo */
+.sidebar {
+  background: var(--side-bg);
+  color: var(--side-ink);
+}
+.side-title {
+  padding: 0.5rem 0.75rem 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--side-dim);
+}
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  white-space: nowrap;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--side-dim);
+  transition: background-color 0.12s, color 0.12s;
+}
+.nav-link:hover {
+  background: var(--side-hover);
+  color: var(--side-ink);
+}
+.nav-link-active,
+.nav-link-active:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.side-btn {
+  width: 100%;
+  border: 1px solid var(--side-border);
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--side-ink);
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+.side-btn:hover {
+  background: var(--side-hover);
+}
+
+/* Títulos de página y tablas */
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.btn-primary {
+  box-shadow: 0 1px 2px rgb(15 138 107 / 0.35);
+}
+table tbody tr {
+  transition: background-color 0.1s;
+}
+table tbody tr:hover {
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
 }

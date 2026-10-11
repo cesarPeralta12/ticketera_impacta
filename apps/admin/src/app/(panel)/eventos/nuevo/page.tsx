@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { prisma } from "@ticketera/db";
+import { eventLimitMessage, getEventQuota, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { createEventAction } from "@/lib/actions/events";
 import { ROLES, requireStaff } from "@/lib/session";
@@ -15,6 +15,8 @@ export default async function NewEventPage() {
     orderBy: { name: "asc" },
     select: { id: true, name: true },
   });
+  // IMPACTA no tiene tope; un organizador, el que le fijó IMPACTA.
+  const quota = staff.platform ? null : await getEventQuota(staff.organization.id);
   return (
     <div className="max-w-2xl space-y-6">
       <div>
@@ -26,9 +28,17 @@ export default async function NewEventPage() {
           Se crea como borrador. Después agregas funciones (fecha, hora y recinto) y sus entradas.
         </p>
       </div>
+      {quota?.limit != null && (
+        <p
+          role="status"
+          className={`rounded-xl border px-4 py-3 text-sm ${quota.reached ? "border-[var(--warn)]/40 bg-[var(--warn-soft)] text-[var(--warn)]" : "border-[var(--border)] bg-[var(--surface-2)]"}`}
+        >
+          {quota.reached ? eventLimitMessage(quota.limit) : `Estás usando ${quota.used} de ${quota.limit} eventos activos (te quedan ${quota.remaining}).`}
+        </p>
+      )}
       <ActionForm action={createEventAction} className="card flex flex-col gap-5 p-6">
         <EventFields clients={staff.organization.isPlatform ? clients : null} />
-        <button type="submit" className="btn btn-primary w-fit">
+        <button type="submit" disabled={quota?.reached} className="btn btn-primary w-fit disabled:cursor-not-allowed disabled:opacity-50">
           Crear evento
         </button>
       </ActionForm>

@@ -14,7 +14,10 @@ import {
   MAX_SEATS_PER_ROW,
   SECTION_COLORS,
   computeSeatPositions,
+  zoneLabelPoint,
+  zonePath,
   type SectionShape,
+  type ZoneShape,
 } from "@ticketera/core";
 import { addSeatSectionAction, deleteSectionAction, updateSeatSectionAction } from "@/lib/actions/venues";
 
@@ -68,7 +71,16 @@ function freeGridSpot(sections: DesignerSection[]) {
   return { x: DEFAULTS.gridX, y: DEFAULTS.gridY };
 }
 
-export function SeatDesigner({ venueId, existingSections }: { venueId: string; existingSections: DesignerSection[] }) {
+export function SeatDesigner({
+  venueId,
+  existingSections,
+  zones = [],
+}: {
+  venueId: string;
+  existingSections: DesignerSection[];
+  /** Zonas de entrada general ya dibujadas: se ven de fondo para ubicar las butacas sin pisarlas. */
+  zones?: { id: string; name: string; color: string; layout: ZoneShape }[];
+}) {
   const [initialSpot] = useState(() => freeGridSpot(existingSections));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [shapeType, setShapeType] = useState<"grid" | "arc">("grid");
@@ -263,6 +275,18 @@ export function SeatDesigner({ venueId, existingSections }: { venueId: string; e
           <text x={CANVAS_WIDTH / 2} y={30} textAnchor="middle" fontSize="10" letterSpacing="2" fill="#fff">
             ESCENARIO
           </text>
+
+          {zones.map((z) => {
+            const p = zoneLabelPoint(z.layout);
+            return (
+              <g key={z.id} opacity={0.6} pointerEvents="none">
+                <path d={zonePath(z.layout)} fill={z.color} fillOpacity={0.2} stroke={z.color} strokeWidth={1.5} />
+                <text x={p.x} y={p.y} textAnchor="middle" fontSize="13" fontWeight="700" fill="#1a1a18">
+                  {z.name}
+                </text>
+              </g>
+            );
+          })}
 
           <rect
             x={minX}

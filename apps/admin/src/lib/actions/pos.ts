@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { checkoutSchema } from "@ticketera/core";
+import { DOCUMENT_ERROR, checkoutSchema } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, DomainError, POS_METHODS, prisma, sellAtBoxOffice, type PosMethod } from "@ticketera/db";
 import { ROLES, requireStaff } from "@/lib/session";
 
@@ -32,7 +32,8 @@ export async function sellAction(_prev: PosState, formData: FormData): Promise<P
     }
     return [];
   });
-  // En caja los datos del comprador son opcionales: vacíos, quedan como "Venta en boletería".
+  // En caja el nombre y el email son opcionales (quedan como "Venta en boletería"), pero el carnet
+  // del cliente es obligatorio, igual que online: las entradas salen con ese carnet.
   const input = {
     sessionId,
     items,
@@ -45,6 +46,7 @@ export async function sellAction(_prev: PosState, formData: FormData): Promise<P
   const parsed = checkoutSchema.safeParse(input);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
+    if (issue?.path[0] === "buyer" && issue.path[1] === "document") return { error: DOCUMENT_ERROR };
     if (issue?.path[0] === "buyer") {
       return { error: "Revisa los datos del comprador: nombre de al menos 3 letras y email válido (o déjalos vacíos)." };
     }
@@ -53,8 +55,9 @@ export async function sellAction(_prev: PosState, formData: FormData): Promise<P
 
   let code: string;
   try {
-    ({ code } = await sellAtBoxOffice(input, { staffId: staff.id, method }));
+    ({ code } = await sellAtBoxOffice(input, { staffId: staff.id, method, promoCode: String(formData.get("promo") ?? "").trim() || undefined }));
   } catch (error) {
+    if (error instanceof DomainError && error.code === "PROMO_INVALID") return { error: `Código promocional: ${error.message}` };
     if (error instanceof DomainError) {
       return { error: error.message, refresh: error.code === "SEAT_TAKEN" || error.code === "SOLD_OUT" };
     }

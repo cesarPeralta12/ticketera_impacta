@@ -7,6 +7,7 @@ import { DomainError, cancelGuestTicket, issueGuestTickets, prisma } from "@tick
 import { readSheet } from "read-excel-file/universal";
 import { formObject, intField, zodErrors, type FormState } from "@/lib/forms";
 import { ROLES, can, requireStaff, visibleEvent, type Staff } from "@/lib/session";
+import { logAudit } from "@/lib/audit";
 
 /** IMPACTA en cualquier evento; el cliente solo en sus eventos con lista de invitados y con su espacio abierto. */
 async function guestEvent(staff: Staff, eventId: string) {
@@ -83,9 +84,7 @@ export async function createGuestTypeAction(_prev: FormState, formData: FormData
       sortOrder: await prisma.ticketType.count({ where: { sessionId: session.id } }),
     },
   });
-  await prisma.auditLog.create({
-    data: { actorType: "staff", actorId: staff.id, action: "guest_type.create", entity: "TicketType", entityId: type.id },
-  });
+  await logAudit({ actorType: "staff", actorId: staff.id, action: "guest_type.create", entity: "TicketType", entityId: type.id });
   revalidateGuests(session.eventId, session.id);
   return { ok: true };
 }

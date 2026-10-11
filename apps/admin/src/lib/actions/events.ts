@@ -3,15 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { formatDateTime, normalizeImageUrl, slugify, windowsOverlap, zonedDateTimeToUtc } from "@ticketera/core";
-import { DomainError, EventCategory, EventMode, prisma, publicationProblem, submitEventForReview } from "@ticketera/db";
+import { MAX_DISCOUNT_PERCENT, formatDateTime, normalizeImageUrl, slugify, windowsOverlap, zonedDateTimeToUtc } from "@ticketera/core";
+import { DomainError, EventCategory, EventMode, createEventWithinLimit, prisma, publicationProblem, setTicketTypeQrMode, submitEventForReview } from "@ticketera/db";
 import { formObject, intField, moneyField, zodErrors, type FormState } from "@/lib/forms";
 import { ROLES, requireStaff } from "@/lib/session";
+import { logAudit } from "@/lib/audit";
 
 async function audit(actorId: string, action: string, entity: string, entityId: string, data?: object) {
-  await prisma.auditLog.create({
-    data: { actorType: "staff", actorId, action, entity, entityId, data: data ? JSON.parse(JSON.stringify(data)) : undefined },
-  });
+  await logAudit({ actorType: "staff", actorId, action, entity, entityId, data: data ? JSON.parse(JSON.stringify(data)) : undefined });
 }
 
 const eventSchema = z.object({
@@ -26,6 +25,11 @@ const eventSchema = z.object({
     .optional(),
   mode: z.enum(Object.values(EventMode) as [EventMode, ...EventMode[]]).default("TICKETING"),
   clientId: z.string().optional(),
+  /** Casilla "permitir transferir entradas": sin marcar, el navegador no la envía. */
+  transfersEnabled: z
+    .literal("on")
+    .optional()
+    .transform((v) => v === "on"),
 });
 
 /** El cliente elegido tiene que ser de la organización; vacío = evento propio de IMPACTA. */
@@ -56,14 +60,22 @@ export async function createEventAction(_prev: FormState, formData: FormData): P
   const client = await checkClient(staff.organization.id, parsed.data.clientId);
   if (!client.ok) return { fieldErrors: { clientId: "Cliente no encontrado." } };
 
-  const event = await prisma.event.create({
-    data: {
-      organizationId: staff.organization.id,
-      slug: await uniqueSlug(parsed.data.title),
-      ...parsed.data,
-      clientId: client.clientId,
-    },
-  });
+  let event;
+  try {
+    // IMPACTA no tiene tope (puede trabajar dentro de un organizador sin importar su límite); el organizador, sí.
+    event = await createEventWithinLimit(
+      {
+        organizationId: staff.organization.id,
+        slug: await uniqueSlug(parsed.data.title),
+        ...parsed.data,
+        clientId: client.clientId,
+      },
+      { ignoreLimit: staff.platform },
+    );
+  } catch (error) {
+    if (error instanceof DomainError && error.code === "EVENT_LIMIT") return { error: error.message };
+    throw error;
+  }
   await audit(staff.id, "event.create", "Event", event.id);
   redirect(`/eventos/${event.id}`);
 }
@@ -216,7 +228,23 @@ const ticketTypeSchema = z.object({
   salesEndAt: z.string().optional(),
   /** Preventa: mientras dure, las otras entradas de la sección no se venden. */
   exclusive: z.literal("on").optional(),
+  /** QR dinámico: cambia cada 30 s, solo QR y solo venta online. */
+  qrDynamic: z.literal("on").optional(),
+  /** Descuento de preventa sobre el mismo tipo de entrada. */
+  discountPercent: z.string().optional(),
+  discountStartsAt: z.string().optional(),
+  discountEndsAt: z.string().optional(),
 });
+
+const ACCESS_METHODS = ["QR", "BARCODE", "NFC"] as const;
+
+/** Métodos de lectura marcados en el formulario; si no marca ninguno, solo QR. */
+function readAccessMethods(formData: FormData) {
+  const picked = formData.getAll("methods").filter((m): m is (typeof ACCESS_METHODS)[number] =>
+    ACCESS_METHODS.includes(m as (typeof ACCESS_METHODS)[number]),
+  );
+  return picked.length > 0 ? [...new Set(picked)] : (["QR"] as const);
+}
 
 type Window = { salesStartAt: Date | null; salesEndAt: Date | null };
 
@@ -241,6 +269,37 @@ function parseSaleWindow(
   return { ok: true, window };
 }
 
+type Discount = { discountPercent: number | null; discountStartsAt: Date | null; discountEndsAt: Date | null };
+const NO_DISCOUNT: Discount = { discountPercent: null, discountStartsAt: null, discountEndsAt: null };
+
+/** Descuento de preventa escrito en la hora del recinto: porcentaje, desde (opcional) y hasta (obligatorio). */
+function parseDiscount(
+  input: { discountPercent?: string; discountStartsAt?: string; discountEndsAt?: string },
+  timeZone: string,
+): { ok: true; discount: Discount } | { ok: false; error: FormState } {
+  const raw = input.discountPercent?.trim();
+  if (!raw) return { ok: true, discount: NO_DISCOUNT };
+  const percent = Number(raw.replace(",", "."));
+  if (!Number.isInteger(percent) || percent < 1 || percent > MAX_DISCOUNT_PERCENT) {
+    return { ok: false, error: { fieldErrors: { discountPercent: `El descuento debe ser un porcentaje entero de 1 a ${MAX_DISCOUNT_PERCENT}.` } } };
+  }
+  if (!input.discountEndsAt) {
+    return { ok: false, error: { fieldErrors: { discountEndsAt: "Indica hasta cuándo dura el descuento de preventa." } } };
+  }
+  let startsAt: Date | null;
+  let endsAt: Date;
+  try {
+    startsAt = input.discountStartsAt ? zonedDateTimeToUtc(input.discountStartsAt, timeZone) : null;
+    endsAt = zonedDateTimeToUtc(input.discountEndsAt, timeZone);
+  } catch {
+    return { ok: false, error: { fieldErrors: { discountEndsAt: "Fecha inválida." } } };
+  }
+  if (startsAt && endsAt <= startsAt) {
+    return { ok: false, error: { fieldErrors: { discountEndsAt: "El descuento tiene que terminar después de empezar." } } };
+  }
+  return { ok: true, discount: { discountPercent: percent, discountStartsAt: startsAt, discountEndsAt: endsAt } };
+}
+
 const seatedOverlapError = (sectionName: string) =>
   `"${sectionName}" es de butacas numeradas: solo puede tener un precio a la vez. Pon fecha de fin a la preventa y la general empieza cuando termina (casilla "no vender las otras").`;
 
@@ -252,17 +311,23 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
 
   const session = await prisma.eventSession.findFirst({
     where: { id: data.sessionId, event: { organizationId: staff.organization.id } },
-    include: { venue: { select: { timezone: true } } },
+    include: { venue: { select: { timezone: true } }, event: { select: { mode: true } } },
   });
   const section = await prisma.section.findFirst({
     where: { id: data.sectionId, venueId: session?.venueId },
     include: { _count: { select: { seats: true } } },
   });
   if (!session || !section) return { error: "Función o sección no encontrada." };
+  const qrMode = data.qrDynamic ? ("DYNAMIC" as const) : ("STATIC" as const);
+  if (qrMode === "DYNAMIC" && session.event.mode !== "TICKETING") {
+    return { error: "El QR dinámico es para eventos con venta de entradas, no para listas de invitados." };
+  }
 
   const parsedWindow = parseSaleWindow(data, session.venue.timezone);
   if (!parsedWindow.ok) return parsedWindow.error;
   const window = parsedWindow.window;
+  const parsedDiscount = parseDiscount(data, session.venue.timezone);
+  if (!parsedDiscount.ok) return parsedDiscount.error;
   const presale = Boolean(data.presale);
   if (presale && window.salesEndAt && window.salesEndAt <= new Date()) {
     return { fieldErrors: { salesEndAt: "La fecha de fin de la preventa ya pasó." } };
@@ -310,6 +375,10 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
         capacity,
         maxPerOrder: data.maxPerOrder,
         presale,
+        ...parsedDiscount.discount,
+        // El QR dinámico solo se lee con QR: el código de barras y el NFC son fijos.
+        accessMethods: qrMode === "DYNAMIC" ? ["QR" as const] : [...readAccessMethods(formData)],
+        qrMode,
         salesStartAt: window.salesStartAt,
         salesEndAt: window.salesEndAt,
         sortOrder: await tx.ticketType.count({ where: { sessionId: session.id } }),
@@ -326,8 +395,48 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
   return { ok: true };
 }
 
+/** Cambia cómo se lee una entrada en puerta (QR, código de barras, NFC). Vale también para las ya vendidas. */
+export async function updateAccessMethodsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireStaff(ROLES.manage);
+  const type = await prisma.ticketType.findFirst({
+    where: { id: String(formData.get("ticketTypeId")), session: { event: { organizationId: staff.organization.id } } },
+    include: { session: true },
+  });
+  if (!type) return { error: "Tipo de entrada no encontrado." };
+  if (type.qrMode === "DYNAMIC") return { error: "Una entrada de QR dinámico se lee solo con QR." };
+  const methods = [...readAccessMethods(formData)];
+  await prisma.ticketType.update({ where: { id: type.id }, data: { accessMethods: methods } });
+  await audit(staff.id, "ticket_type.access_methods", "TicketType", type.id, { methods });
+  revalidatePath(`/eventos/${type.session.eventId}/funciones/${type.sessionId}`);
+  return { ok: true };
+}
+
+/** Activa o desactiva el QR dinámico de un tipo de entrada (solo mientras no tenga ventas). */
+export async function setQrModeAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireStaff(ROLES.manage);
+  const mode = formData.get("mode") === "DYNAMIC" ? "DYNAMIC" : "STATIC";
+  const typeId = String(formData.get("ticketTypeId"));
+  const result = await setTicketTypeQrMode(typeId, staff.organization.id, mode);
+  if (!result.ok) {
+    return {
+      error: {
+        NOT_FOUND: "Tipo de entrada no encontrado.",
+        HAS_SALES: "Ya hay ventas de este tipo de entrada: el modo del QR no se puede cambiar.",
+        GUEST_LIST: "El QR dinámico es para eventos con venta de entradas, no para listas de invitados.",
+      }[result.reason],
+    };
+  }
+  const type = await prisma.ticketType.findUniqueOrThrow({ where: { id: typeId }, include: { session: true } });
+  if (result.changed) await audit(staff.id, "ticket_type.qr_mode", "TicketType", typeId, { mode });
+  revalidatePath(`/eventos/${type.session.eventId}/funciones/${type.sessionId}`);
+  return { ok: true };
+}
+
 const saleDatesSchema = z.object({
   ticketTypeId: z.string(),
+  discountPercent: z.string().optional(),
+  discountStartsAt: z.string().optional(),
+  discountEndsAt: z.string().optional(),
   presale: z.literal("on").optional(),
   salesStartAt: z.string().optional(),
   salesEndAt: z.string().optional(),
@@ -347,6 +456,8 @@ export async function updateTicketTypeSalesAction(_prev: FormState, formData: Fo
   const parsedWindow = parseSaleWindow(parsed.data, type.session.venue.timezone);
   if (!parsedWindow.ok) return parsedWindow.error;
   const window = parsedWindow.window;
+  const parsedDiscount = parseDiscount(parsed.data, type.session.venue.timezone);
+  if (!parsedDiscount.ok) return parsedDiscount.error;
   if (type.section?.seatingMode === "RESERVED") {
     const others = await prisma.ticketType.findMany({
       where: { sessionId: type.sessionId, sectionId: type.sectionId, id: { not: type.id } },
@@ -356,12 +467,19 @@ export async function updateTicketTypeSalesAction(_prev: FormState, formData: Fo
 
   await prisma.ticketType.update({
     where: { id: type.id },
-    data: { presale: Boolean(parsed.data.presale), salesStartAt: window.salesStartAt, salesEndAt: window.salesEndAt },
+    data: {
+      presale: Boolean(parsed.data.presale),
+      salesStartAt: window.salesStartAt,
+      salesEndAt: window.salesEndAt,
+      ...parsedDiscount.discount,
+    },
   });
   await audit(staff.id, "ticket_type.sales", "TicketType", type.id, {
     presale: Boolean(parsed.data.presale),
     salesStartAt: window.salesStartAt?.toISOString() ?? null,
     salesEndAt: window.salesEndAt?.toISOString() ?? null,
+    discountPercent: parsedDiscount.discount.discountPercent,
+    discountEndsAt: parsedDiscount.discount.discountEndsAt?.toISOString() ?? null,
   });
   revalidatePath(`/eventos/${type.session.eventId}/funciones/${type.sessionId}`);
   return { ok: true };

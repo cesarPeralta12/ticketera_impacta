@@ -3,7 +3,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { MIN_PASSWORD_LENGTH } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
-import { changePasswordAction } from "@/lib/actions/account";
+import { changePasswordAction, signOutEverywhereAction } from "@/lib/actions/account";
 import { HOME_BY_ROLE, ROLES, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Cambiar contraseña" };
@@ -53,6 +53,17 @@ export default async function ChangePasswordPage() {
           Guardar contraseña
         </button>
       </ActionForm>
+      {!staff.mustChangePassword && (
+        <form action={signOutEverywhereAction} className="card flex flex-col gap-2 p-6">
+          <h2 className="text-sm font-semibold">Sesiones</h2>
+          <p className="text-xs text-[var(--ink-muted)]">
+            ¿Entraste desde un aparato ajeno o perdiste un teléfono? Cierra la sesión en todos los navegadores y teléfonos.
+          </p>
+          <button type="submit" className="btn">
+            Cerrar todas mis sesiones
+          </button>
+        </form>
+      )}
       {!staff.mustChangePassword && (
         <Link href={HOME_BY_ROLE[staff.role]} className="text-sm text-[var(--ink-dim)] hover:text-[var(--ink)]">
           ← Volver

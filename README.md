@@ -10,7 +10,8 @@ eventos, editor y mapa de butacas, sala de espera, diseño visual, datos bolivia
 
 ```
 apps/web       Sitio público: eventos, compra (general y butacas), sala de espera, pago, QR, Mis eventos → :3000
-apps/admin     Panel de IMPACTA, boletería, espacio del cliente y app de puerta (/puerta, instalable) → :3001
+apps/admin     Panel de IMPACTA, boletería, espacio del cliente y API móvil (/api/v1) → :3001
+apps/puerta_app App móvil Flutter del portero: QR, código de barras y NFC, con validación sin internet
 packages/db    Esquema Prisma, migraciones, operaciones transaccionales y pruebas de integración
 packages/core  Reglas puras: dinero, estados, inventario, QR, checkout, geometría de butacas, fechas
 docs/          Plan de trabajo, propuesta técnica y decisiones del Sprint 0
@@ -50,30 +51,29 @@ datos nuevos (cliente, cajero, puertas por sección, evento con invitados) **sin
 | Dónde | Email | Contraseña | Rol |
 |---|---|---|---|
 | Panel :3001 | `admin@impacta.test` | `Impacta2026!` | Dueño: todo el panel |
-| Panel :3001 | `puerta@impacta.test` | `Puerta2026!` | Operador: solo la app de puerta |
+| App móvil | `puerta@impacta.test` | `Puerta2026!` | Portero: solo la app móvil (no entra al panel) |
 | Panel :3001 | `caja@impacta.test` | `Caja2026!` | Cajero: solo boletería |
 | Panel :3001 | `cliente@impacta.test` | `Cliente2026!` | Cliente (Producciones Andinas): solo sus eventos |
 | Panel :3001 | `organizador@andeslive.test` | `Organizador2026!` | Organizador "Andes Live": su propio panel |
 | Panel :3001 | `organizador@cumbre.test` | `Organizador2026!` | Organizador "Cumbre Eventos": su propio panel |
-| Sitio :3000 | `comprador@impacta.test` | `Comprador2026!` | Comprador (comprar no exige cuenta) |
-| Sitio :3000 | `amiga@impacta.test` | `Comprador2026!` | Segundo comprador: para probar transferencias |
+| Sitio :3000 | `comprador@impacta.test` | `Comprador2026!` | Comprador (comprar exige cuenta con carnet) |
 
-Cada rol entra directo a su pantalla y no puede abrir las de los demás.
+Cada rol entra directo a su pantalla y no puede abrir las de los demás. El portero no tiene sesión en el panel web.
 
 ## Qué probar
 
-1. **Butacas**: http://localhost:3000 → *La Deliciosa Historia del Xocolate* → Comprar → elige
-   butacas en el mapa → Reservar y pagar → en la *pasarela simulada*, Aprobar → entradas con QR y butaca.
+1. **Butacas**: http://localhost:3000 → inicia sesión (comprar exige cuenta con carnet; usa `comprador@impacta.test` o crea una) → *La Deliciosa Historia del Xocolate* → Comprar → elige
+   butacas en el mapa → Reservar y pagar (pase directo: queda pagada en el acto, sin cobrar) → entradas con QR y butaca, y llegan por correo.
 2. **Entrada general y cupo compartido**: *Loko Fest* (Preventa y General comparten el Campo).
 3. **Cola virtual**: *Loko Fest* y *Alok* tienen sala de espera. Para verla esperar, baja el
    "cupo simultáneo" de la función a 1 en el panel y entra desde dos navegadores.
-4. **Pago demorado**: en la pasarela, "Aprobar con webhook demorado": la orden espera la confirmación.
 5. **Panel**: crea un evento → agrega una función → carga precios por sección → Publicar → aparece en el sitio.
 6. **Recintos**: diseña secciones de butacas (grilla o arco) con el editor visual.
-7. **Puerta** (`/puerta`, o entra con la cuenta de puerta): elige la función → cámara, NFC, lector
-   USB o el código bajo el QR. Repite: rechaza el reingreso. En *Loko Fest*, el Acceso sur solo
-   acepta Palco: una entrada de Campo sale "Puerta equivocada" y dice por dónde entrar.
-   **Sin internet** sigue validando con la lista descargada y sube las lecturas al volver.
+7. **Puerta (app móvil)**: en el panel, *Usuarios → Funciones y teléfonos* asigna funciones (y puerta) al
+   portero. En cada tipo de entrada se elige cómo se lee en puerta: QR, código de barras y/o NFC. El portero
+   inicia sesión en la app (`apps/puerta_app`), elige la función, **descarga los datos** y solo ve los métodos
+   que admiten sus entradas. Valida sin internet y sube las lecturas al volver la señal. Una entrada leída por
+   un método no admitido se rechaza. En *Loko Fest*, el Acceso sur solo acepta Palco.
 8. **Boletería** (cuenta de cajero): vende → ticket para impresora térmica de 80 mm o A4. Comparte
    el cupo con la venta online y sigue vendiendo durante el evento. "Mi caja de hoy" = arqueo.
 9. **Lista de invitados**: *Lanzamiento Andino* no se vende ni aparece en el sitio. En la función →
@@ -92,11 +92,8 @@ Cada rol entra directo a su pantalla y no puede abrir las de los demás.
 15. **Vista general de Impacta**: Resumen general, Ventas e Ingresos en puerta de todos los organizadores.
 16. **Compradores**: cada persona una sola vez, con sus compras, lo gastado y los eventos. Ventas y
     Compradores se exportan a Excel. Impacta ve todos (y filtra por organizador); cada organizador, los suyos.
-17. **Mis eventos** (sitio, con `comprador@impacta.test`): próximas entradas con su QR, historial
-    (si ingresó o no) y compras.
-18. **Transferir una entrada**: en Mis eventos → "Transferir a otra persona" → `amiga@impacta.test`.
-    Ella la ve con un QR nuevo; el QR viejo sale "Entrada transferida" en la puerta, también sin
-    internet. Solo a cuentas registradas, hasta que empieza la función; las invitaciones no se transfieren.
+17. **Mis eventos** (sitio, con `comprador@impacta.test`): sus compras y el historial de eventos
+    pasados (a qué hora ingresó, o "no asististe"). Las entradas con su QR están en *Mis entradas*.
 
 ## Comandos
 
@@ -124,7 +121,7 @@ Cada rol entra directo a su pantalla y no puede abrir las de los demás.
 - **Cola virtual**: en Postgres (funciona con varios servidores). El token lo genera el servidor
   (cookie httpOnly) y **la creación de la orden exige un turno vigente**: no se puede saltar
   llamando a la acción directamente. La admisión se serializa: nunca entran más que el cupo.
-- **Pagos**: solo el webhook verificado confirma un pago. Idempotente; resuelve el pago tardío
+- **Pagos**: hoy rige el *pase directo* (sin cobro; ver docs/pasarela-de-pago.md). Con una pasarela real, solo el webhook verificado confirma un pago. Idempotente; resuelve el pago tardío
   (si ya no hay cupo o la butaca se vendió, la orden queda expirada y el pago se marca para reembolso).
 - **Sesiones**: comprador y staff en tablas, cookies y secretos distintos. El panel verifica el
   rol contra la base en cada acción (una cuenta desactivada pierde el acceso al instante) y no
@@ -139,16 +136,106 @@ Cada rol entra directo a su pantalla y no puede abrir las de los demás.
   organizador salen en la web cuando Impacta los aprueba; uno suspendido no entra ni vende.
 - **Canales**: online, boletería e invitaciones descuentan del mismo inventario con la misma
   transacción: nunca se vende de más. Cada orden guarda su canal y quién la emitió.
-- **Puerta sin internet**: al abrir la función el celular descarga la lista de entradas (sin el
-  secreto del QR: valida que el código exista; son aleatorios e imposibles de adivinar). Sin
-  conexión decide con esa lista y guarda las lecturas en el equipo; al volver las sube con su hora
-  real. Cada lectura tiene un id, así que reenviarla no la duplica. Para que dos puertas sin
-  internet no acepten la misma entrada, cada puerta tiene sus secciones; si igual ocurre, queda
-  registrado como doble ingreso. La cámara necesita https (o localhost).
+- **Puerta sin internet**: la app móvil descarga la lista de entradas de la función (completas para su
+  puerta, compactas para las demás, sin el secreto del QR) y valida en el teléfono: que el código exista,
+  que el método de lectura esté permitido, que sea de su puerta y que no haya entrado. Cada lectura se guarda
+  con un id y la hora real, y se sube sola en cuanto hay internet (reenviar no duplica). Si un código no está
+  en la lista y hay internet, el servidor decide en el momento (venta posterior a la descarga). Para que
+  dos puertas sin internet no acepten la misma entrada, cada puerta tiene sus secciones; si igual ocurre
+  (dos lectores en la misma puerta), queda registrado como doble ingreso al sincronizar.
+- **App móvil (API `/api/v1`)**: el teléfono inicia sesión con email y contraseña y recibe un token propio
+  (solo se guarda su hash). Se revoca desde *Usuarios → Funciones y teléfonos*, y una cuenta desactivada
+  pierde el acceso al instante.
+
+## App móvil de puerta (Flutter)
+
+```bash
+cd apps/puerta_app
+flutter pub get
+flutter test && flutter analyze
+flutter run --dart-define=API_URL=http://10.0.2.2:3001   # emulador Android → panel local
+```
+
+En un teléfono real usa la IP de tu PC (o el dominio https del panel) en `API_URL`, o cámbiala en la
+pantalla de login ("Configurar servidor"). Para generar el APK hay que aceptar las licencias de Android
+(`flutter doctor --android-licenses`). El NFC lee etiquetas NDEF (texto o enlace) con el código de la entrada;
+en iOS requiere el permiso *Near Field Communication Tag Reading* de la cuenta de Apple Developer.
+
+- **Descuento de preventa**: un tipo de entrada puede llevar un porcentaje de descuento con fecha de inicio
+  (opcional) y de fin. Es la misma entrada y el mismo cupo: hasta la fecha se cobra el precio con descuento y
+  después vuelve al normal solo. El servidor calcula el precio al crear la orden (la web muestra el precio
+  normal tachado). Se configura en la función, al agregar o editar el tipo de entrada.
+
+- **Transferir entradas**: en *Mis entradas*, el titular ofrece una entrada a otra persona registrada (por email o
+  carnet). Ella la acepta y entonces la entrada pasa a su cuenta con su nombre y su carnet y **recibe un código nuevo**:
+  el QR/barras anterior deja de valer, también en las puertas (la app descarga los códigos revocados). Hasta que la
+  acepten, la entrada sigue siendo del titular; la oferta vence a las 72 h; máximo 2 transferencias por entrada y hasta
+  2 horas antes de la función; el organizador puede desactivarlo por evento. Los dos reciben correo.
+
+- **Límite de intentos**: ingresar (sitio, panel y app de puerta): 20 intentos por IP cada 10 min y, por cuenta, 6
+  contraseñas incorrectas cada 15 min (después se bloquea un rato); crear cuentas: 5 por IP por hora; "olvidé mi
+  contraseña": 10 por IP por hora; reservas: 8 cada 10 min por cuenta; pedidos de transferencia: 10 por hora. Viven
+  en Postgres (`RateLimitHit`) y se ajustan en `packages/db/src/operations/rate-limit.ts`.
+
+- **Códigos promocionales** (panel → *Promociones*): descuento por porcentaje o monto fijo por entrada, para un
+  evento o toda la organización, con vigencia, máximo de usos total y por persona, y activar/desactivar. En la compra
+  hay un cuadro "Código promocional" (y en boletería): el descuento se ve antes de reservar y queda en la orden. Por
+  defecto no se suma al precio de preventa (opción "combinable"). Un código puede llevar el nombre de un **promotor
+  (RRPP)** y su comisión: el panel muestra por código y por promotor las entradas vendidas, lo descontado y la comisión
+  (solo de ventas pagadas). Un uso se libera si la reserva vence sin pagar; el código y el descuento no se editan una
+  vez creados (se desactiva y se crea otro).
+
+## Correo (confirmar email, contraseña y entradas)
+
+El sistema envía cuatro correos: **confirmar el email** (obligatorio para comprar), **cambiar la contraseña**
+(compradores y personal del panel), **aviso de contraseña cambiada** y **tus entradas** al pagar (el QR de cada
+entrada va como imagen dentro del mensaje, más un botón a "Ver mis entradas"; también se pueden reenviar desde la
+orden). Los enlaces sirven una sola vez, vencen (24 h confirmar, 1 h contraseña) y hay un mínimo entre envíos.
+
+- **Desarrollo** (`MAIL_PROVIDER="console"`, por defecto): no se envía nada. Cada correo queda como HTML en
+  `.dev-mail/` (ábrelo en el navegador) y el enlace aparece en la consola del servidor.
+- **Producción con Resend** (`MAIL_PROVIDER="resend"`): crea una cuenta en https://resend.com, genera una API key
+  (`RESEND_API_KEY`), **verifica tu dominio** (registros SPF/DKIM que te indica Resend) y pon el remitente en
+  `MAIL_FROM="Impacta <entradas@tudominio.bo>"`. Sin dominio verificado, Resend solo entrega a tu propio correo.
+- **Con Gmail** (`MAIL_PROVIDER="smtp"`): sirve para pruebas y un piloto pequeño. Activa la verificación en dos pasos
+  de la cuenta, crea una *contraseña de aplicación* y ponla en `SMTP_PASS` (con `SMTP_HOST="smtp.gmail.com"`,
+  `SMTP_PORT="465"`, `SMTP_USER="tu-cuenta@gmail.com"`). Límites: unos 500 destinatarios al día en una cuenta
+  personal; el remitente real siempre es la cuenta de Gmail (el nombre puede ser `Impacta (no responder)` en
+  `MAIL_FROM`, pero la dirección no puede ser `noreply@`); y si Google detecta envíos masivos puede bloquear la cuenta.
+  No guardes la contraseña en el repositorio: va solo en el `.env` del servidor.
+- Todos los correos dicen "mensaje automático: no respondas". Con `MAIL_REPLY_TO` las respuestas llegan a una dirección de soporte.
+- Cambiar de proveedor es agregar una función en `packages/mail/src/send.ts`; nada más del sistema lo sabe.
+
+| Opción | Gratis | Para qué sirve |
+|---|---|---|
+| **Resend** | 3.000/mes y **100/día** | Lo más simple de integrar. El tope diario se agota con ~100 compras al día: para eventos grandes, plan de pago |
+| **Gmail (SMTP)** | ~500/día en cuenta personal | Sirve para pruebas; riesgo de bloqueo con envío automático y sin dirección `noreply@` propia |
+| **Brevo** | **300/día** (sin tope mensual) | Más margen diario; lleva marca de Brevo en el plan gratis |
+| **Amazon SES** | casi nada (~US$0,10 cada 1.000) | El más barato a volumen; exige más configuración |
+| **MailerSend** | 500/mes y 100/día | Muy poco para producción |
+
+Los topes cambian: confirma en la página de precios de cada proveedor antes de decidir.
+
+## Zonas de entrada general en el mapa
+Las secciones de entrada general (sin butacas) se dibujan en el mismo mapa que las butacas, con la forma que elijas: rectángulo, óvalo, trapecio o arco. En *Recintos → (recinto)* el editor deja arrastrar la forma y ajustar sus medidas, avisa si pisa otra zona o butacas, y permite colocar en el mapa las zonas antiguas que solo estaban en la lista. En la web, el comprador ve cada zona en el mapa con lo que queda y el precio desde, toca una zona para saltar a su selector de cantidad abajo, y la zona se marca con su cantidad elegida. El aforo no cambia con la forma.
+
+## Organizadores y límite de eventos
+Cada organizador es una organización propia: crea y edita **sus** eventos, recintos y entradas, ve sus ventas e ingresos, y nunca ve ni modifica lo de otro. IMPACTA aprueba sus eventos antes de publicarlos. En *Organizadores → (organizador)* IMPACTA fija el **máximo de eventos activos** (vacío = sin límite): cuentan los borradores, los eventos en revisión y los publicados con funciones por venir; no cuentan los cancelados ni los ya realizados. El límite solo frena crear eventos nuevos (bajarlo no borra nada) y se comprueba en el servidor aunque se intente saltar el formulario. IMPACTA no tiene límite.
+
+## QR dinámico
+Por tipo de entrada se puede activar un QR que **cambia cada 30 segundos** y funciona sin internet, en la puerta y en el celular del comprador (no sirve una captura). Solo QR y solo venta online. Detalle, límites y pendientes en [`docs/qr-dinamico.md`](docs/qr-dinamico.md).
+
+## Seguridad
+Detalle en [`docs/seguridad.md`](docs/seguridad.md).
+
+- **API cerrada**: `/api/v1` solo acepta la app (rechaza peticiones con `Origin` de navegador); las demás APIs, solo su propio sitio. Cabeceras CSP, HSTS, anti-iframe y nosniff; tope de tamaño de cuerpo; IP real del cliente (`TRUSTED_PROXY_HOPS`).
+- **Sesiones revocables**: cambiar la contraseña o *Cerrar todas las sesiones* invalida las sesiones web y los teléfonos. La app usa un token de acceso de 60 min con renovación que rota y detecta reutilización.
+- **Registro de seguridad** (panel → *Seguridad*): quién, qué, cuándo y desde dónde (IP, navegador o teléfono), con alertas de dispositivo nuevo, fallos y bloqueos; los eventos de acceso se guardan 12 meses.
 
 ## Despliegue (Coolify u otro servidor con Nixpacks)
 
-Dos aplicaciones desde este mismo repo (Base Directory `/`) y una base PostgreSQL:
+Guía completa, paso a paso: **[docs/despliegue-coolify.md](docs/despliegue-coolify.md)** (base de datos, las dos apps, variables
+de entorno, primer arranque, revisión y la APK de puerta). Resumen:
 
 | | Web | Panel |
 |---|---|---|
@@ -157,18 +244,22 @@ Dos aplicaciones desde este mismo repo (Base Directory `/`) y una base PostgreSQ
 | Start Command | `npm run start -w @ticketera/web` | `npm run start -w @ticketera/admin` |
 | Pre-deployment | `npm run db:deploy` (migraciones) | — |
 
-Variables en las dos: `DATABASE_URL`, `WEB_URL` (URL pública de la web), `PAYMENT_PROVIDER=mock`,
-`NIXPACKS_NODE_VERSION=22` y un secreto aleatorio distinto para `TICKET_QR_SECRET`,
-`PAYMENT_MOCK_SECRET`, `WEB_AUTH_SECRET` y `ADMIN_AUTH_SECRET`.
+Variables en las dos: `DATABASE_URL`, `WEB_URL`, `ADMIN_URL`, `NIXPACKS_NODE_VERSION=22`, `PAYMENT_PROVIDER`, el correo
+(`MAIL_PROVIDER`, `RESEND_API_KEY`, `MAIL_FROM`) y un secreto aleatorio para `TICKET_QR_SECRET` (el mismo en las dos),
+`WEB_AUTH_SECRET` y `ADMIN_AUTH_SECRET`.
 
-Datos de demostración en un servidor nuevo (la semilla **borra todo**; sin `SEED_PASSWORD` se
-niega, porque las contraseñas de prueba de arriba son públicas). Desde la terminal de la app web:
+Primer arranque de un servidor **real** (no borra nada; crea Impacta y su primer dueño con contraseña temporal):
+
+```bash
+BOOTSTRAP_EMAIL=tu@correo.com BOOTSTRAP_NAME="Tu Nombre" npm run db:bootstrap
+```
+
+Datos de **demostración** en un servidor de pruebas (la semilla **borra todo**; sin `SEED_PASSWORD` se niega, porque
+las contraseñas de prueba de arriba son públicas). Nunca en producción:
 
 ```bash
 SEED_ALLOW=si SEED_PASSWORD='una-contraseña-propia' npm run db:seed
 ```
-
-Todas las cuentas de la tabla quedan con esa contraseña.
 
 ## Problemas comunes
 

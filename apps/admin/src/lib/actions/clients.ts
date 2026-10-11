@@ -6,6 +6,7 @@ import { zonedDateTimeToUtc } from "@ticketera/core";
 import { defaultClientAccessUntil, prisma } from "@ticketera/db";
 import { formObject, zodErrors, type FormState } from "@/lib/forms";
 import { requirePlatform } from "@/lib/session";
+import { logAudit } from "@/lib/audit";
 
 const clientSchema = z.object({
   name: z.string({ error: "Ingresa el nombre del cliente." }).min(2).max(120),
@@ -22,9 +23,7 @@ export async function createClientAction(_prev: FormState, formData: FormData): 
   });
   if (exists) return { fieldErrors: { name: "Ya existe un cliente con ese nombre." } };
   const client = await prisma.client.create({ data: { organizationId: staff.organization.id, ...parsed.data } });
-  await prisma.auditLog.create({
-    data: { actorType: "staff", actorId: staff.id, action: "client.create", entity: "Client", entityId: client.id },
-  });
+  await logAudit({ actorType: "staff", actorId: staff.id, action: "client.create", entity: "Client", entityId: client.id });
   revalidatePath("/clientes");
   return { ok: true };
 }
@@ -61,16 +60,14 @@ export async function updateClientAccessAction(_prev: FormState, formData: FormD
     where: { id: event.id },
     data: { clientAccessEnabled: enabled, clientAccessUntil: until },
   });
-  await prisma.auditLog.create({
-    data: {
+  await logAudit({
       actorType: "staff",
       actorId: staff.id,
       action: enabled ? "client_access.enable" : "client_access.disable",
       entity: "Event",
       entityId: event.id,
       data: { until: until?.toISOString() ?? null },
-    },
-  });
+    });
   revalidatePath(`/eventos/${event.id}`);
   return { ok: true };
 }

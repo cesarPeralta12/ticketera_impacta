@@ -4,14 +4,21 @@ import { checkoutSchema, orderTotals } from "./checkout";
 const valid = {
   sessionId: "s1",
   items: [{ ticketTypeId: "t1", quantity: 2 }],
-  buyer: { name: "Ana Pérez", email: " Ana@Correo.CL ", document: "" },
+  buyer: { name: "Ana Pérez", email: " Ana@Correo.CL ", document: "1.234.567-lp" },
 };
 
 describe("checkout", () => {
   it("normaliza los datos del comprador", () => {
     const parsed = checkoutSchema.parse(valid);
     expect(parsed.buyer.email).toBe("ana@correo.cl");
-    expect(parsed.buyer.document).toBeUndefined();
+    expect(parsed.buyer.document).toBe("1234567LP");
+  });
+
+  it("el carnet es obligatorio y tiene que ser válido", () => {
+    for (const document of ["", "   ", "123", "ABCDEFGH", undefined]) {
+      expect(checkoutSchema.safeParse({ ...valid, buyer: { ...valid.buyer, document } }).success, String(document)).toBe(false);
+    }
+    expect(checkoutSchema.safeParse({ ...valid, buyer: { ...valid.buyer, document: "7654321 1A" } }).success).toBe(true);
   });
 
   it("exige al menos una entrada y respeta el máximo por compra", () => {
@@ -47,6 +54,13 @@ describe("checkout", () => {
         { unitAmount: 30000, quantity: 2 },
         { unitAmount: 80000, quantity: 1 },
       ]),
-    ).toEqual({ subtotalAmount: 140000, feeAmount: 0, totalAmount: 140000 });
+    ).toEqual({ subtotalAmount: 140000, discountAmount: 0, feeAmount: 0, totalAmount: 140000 });
+  });
+
+  it("resta el descuento de un código promocional sin dejar el total en negativo", () => {
+    const items = [{ unitAmount: 30000, quantity: 2 }];
+    expect(orderTotals(items, 12000)).toEqual({ subtotalAmount: 60000, discountAmount: 12000, feeAmount: 0, totalAmount: 48000 });
+    expect(orderTotals(items, 999999)).toMatchObject({ discountAmount: 60000, totalAmount: 0 });
+    expect(orderTotals(items, -5)).toMatchObject({ discountAmount: 0, totalAmount: 60000 });
   });
 });

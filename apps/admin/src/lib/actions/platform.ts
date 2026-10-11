@@ -11,6 +11,7 @@ import {
   createOrganizer,
   prisma,
   rejectEvent,
+  setMaxActiveEvents,
   setOrganizationStatus,
 } from "@ticketera/db";
 import { formObject, zodErrors, type FormState } from "@/lib/forms";
@@ -110,5 +111,20 @@ export async function rejectEventAction(_prev: FormState, formData: FormData): P
     throw error;
   }
   revalidatePath("/aprobaciones");
+  return { ok: true };
+}
+
+/** Fija el máximo de eventos activos de un organizador (vacío = sin límite). */
+export async function setEventLimitAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requirePlatform();
+  const raw = String(formData.get("maxActiveEvents") ?? "").trim();
+  const limit = raw === "" ? null : Number(raw);
+  try {
+    await setMaxActiveEvents(String(formData.get("organizationId")), limit, staff.id);
+  } catch (error) {
+    if (error instanceof DomainError) return { fieldErrors: { maxActiveEvents: error.message } };
+    throw error;
+  }
+  revalidatePath("/organizadores", "layout");
   return { ok: true };
 }

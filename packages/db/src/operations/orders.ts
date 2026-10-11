@@ -1,20 +1,33 @@
-import {
-  RESERVATION_MINUTES,
-  checkoutSchema,
-  findShortage,
-  orderTotals,
-  randomCode,
-  remainingByType,
-  type CheckoutInput,
-} from "@ticketera/core";
+import { RESERVATION_MINUTES, checkoutSchema, currentPrice, findShortage, orderTotals, randomCode, remainingByType, type CheckoutInput } from "@ticketera/core";
 import { prisma } from "../client";
 import type { OrderChannel } from "../generated/prisma/client";
 import { completeTurn, hasActiveTurn } from "./queue";
+import { resolvePromo } from "./promos";
+import { TX_OPTIONS } from "./shared";
 import { DomainError, findTakenSeats, loadInventory, lockInventory } from "./shared";
 
 /** Cuántas entradas quedan de cada tipo en una función (sin bloquear: solo para mostrar). */
 export async function getSessionAvailability(sessionId: string, now = new Date()) {
   return remainingByType(await loadInventory(prisma, sessionId, now));
+}
+
+/**
+ * Zonas sin asientos (de pie) de una función con su aforo y cuánto queda. Cuenta lo vendido y lo reservado
+ * por todos los tipos de entrada de la zona (Preventa + General comparten el mismo aforo).
+ */
+export async function getZoneAvailability(sessionId: string, now = new Date()) {
+  const [lines, sections] = await Promise.all([
+    loadInventory(prisma, sessionId, now),
+    prisma.section.findMany({
+      where: { seatingMode: "GENERAL_ADMISSION", ticketTypes: { some: { sessionId } } },
+      orderBy: { sortOrder: "asc" },
+      select: { id: true, name: true, color: true, capacity: true },
+    }),
+  ]);
+  return sections.map((s) => {
+    const sold = lines.filter((l) => l.sectionId === s.id).reduce((sum, l) => sum + l.used, 0);
+    return { id: s.id, name: s.name, color: s.color, capacity: s.capacity, sold, remaining: Math.max(0, s.capacity - sold) };
+  });
 }
 
 /** Butacas vendidas o reservadas en una función, para pintar el mapa (solo para mostrar). */
@@ -66,12 +79,34 @@ export async function createPendingOrder(
     customerId?: string;
     channel?: OrderChannel;
     issuedById?: string;
+    /** Código promocional que escribió el comprador. Si no es válido, la compra se rechaza (no se cobra sin descuento en silencio). */
+    promoCode?: string;
   } = {},
 ) {
   const now = options.now ?? new Date();
   const channel = options.channel ?? "ONLINE";
   const data = checkoutSchema.parse(input);
   const ids = data.items.map((i) => i.ticketTypeId);
+
+  // Comprar online exige cuenta con carnet. Los datos del comprador salen SIEMPRE de la cuenta,
+  // nunca de lo que mande el formulario: nadie puede comprar a nombre de otro ni sin identificarse.
+  // (En boletería el cajero ingresa el carnet del cliente; las invitaciones no pasan por aquí.)
+  if (channel === "ONLINE") {
+    if (!options.customerId) throw new DomainError("LOGIN_REQUIRED", "Inicia sesión para comprar tus entradas.");
+    const customer = await prisma.customer.findUnique({
+      where: { id: options.customerId },
+      select: { name: true, email: true, documentId: true, emailVerified: true },
+    });
+    if (!customer) throw new DomainError("LOGIN_REQUIRED", "Inicia sesión para comprar tus entradas.");
+    if (!customer.documentId) {
+      throw new DomainError("DOCUMENT_REQUIRED", "Completa tu carnet de identidad en tu cuenta para poder comprar.");
+    }
+    // Las entradas se envían a este correo: tiene que estar confirmado.
+    if (!customer.emailVerified) {
+      throw new DomainError("EMAIL_NOT_VERIFIED", "Confirma tu correo para poder comprar: te enviamos un enlace.");
+    }
+    data.buyer = { name: customer.name, email: customer.email, document: customer.documentId };
+  }
 
   return prisma.$transaction(async (tx) => {
     const session = await tx.eventSession.findUnique({
@@ -171,11 +206,37 @@ export async function createPendingOrder(
     // Entrada general: una línea por tipo. Butacas: una línea por butaca.
     const priced = data.items.flatMap((item) => {
       const type = byId.get(item.ticketTypeId)!;
-      const line = { ticketTypeId: type.id, unitAmount: type.unitAmount, name: type.name };
+      // El precio lo decide el servidor al crear la orden (descuento de preventa vigente, si hay).
+      const line = { ticketTypeId: type.id, unitAmount: currentPrice(type, now).unitAmount, name: type.name };
       return item.seatIds
         ? item.seatIds.map((seatId) => ({ ...line, quantity: 1, seatId }))
         : [{ ...line, quantity: item.quantity }];
     });
+
+    // Código promocional: se valida con la fila del código bloqueada, así dos compras a la vez no gastan el último uso.
+    let promo: { id: string; discount: number } | null = null;
+    if (options.promoCode?.trim()) {
+      const event = types[0]!.session.event;
+      const resolved = await resolvePromo(tx, {
+        code: options.promoCode,
+        organizationId: event.organizationId,
+        eventId: event.id,
+        customerId: options.customerId,
+        now,
+        lock: true,
+        lines: data.items.map((item) => {
+          const type = byId.get(item.ticketTypeId)!;
+          const price = currentPrice(type, now);
+          return {
+            ticketTypeId: type.id,
+            unitAmount: price.unitAmount,
+            quantity: item.quantity,
+            presaleDiscountActive: price.discountPercent !== null,
+          };
+        }),
+      });
+      promo = { id: resolved.promo.id, discount: resolved.discount };
+    }
 
     if (options.queueToken) await completeTurn(tx, data.sessionId, options.queueToken, now);
 
@@ -190,12 +251,15 @@ export async function createPendingOrder(
         buyerDocument: data.buyer.document,
         status: "PENDING_PAYMENT",
         currency: [...currencies][0]!,
-        ...orderTotals(priced),
+        ...orderTotals(priced, promo?.discount ?? 0),
         expiresAt: new Date(now.getTime() + RESERVATION_MINUTES * 60_000),
         items: { create: priced },
+        promoRedemption: promo
+          ? { create: { promoCodeId: promo.id, customerId: options.customerId ?? null, discountAmount: promo.discount } }
+          : undefined,
       },
     });
-  });
+  }, TX_OPTIONS);
 }
 
 /**
@@ -217,11 +281,17 @@ export async function getOrderByCode(code: string) {
     include: {
       items: {
         include: {
-          ticketType: { include: { session: { include: { event: true, venue: true } }, section: true } },
+          ticketType: {
+            include: {
+              session: { include: { event: true, venue: { include: { accessPoints: { include: { sections: { select: { id: true } } } } } } } },
+              section: true,
+            },
+          },
           seat: true,
         },
       },
       payments: { orderBy: { createdAt: "desc" } },
+      promoRedemption: { include: { promoCode: { select: { code: true } } } },
       tickets: { include: { ticketType: true, seat: { include: { section: true } } }, orderBy: { issuedAt: "asc" } },
     },
   });

@@ -6,7 +6,7 @@
  *
  * Cuentas de prueba (solo desarrollo local):
  *   Panel   admin@impacta.test      / Impacta2026!    (OWNER)
- *   Puerta  puerta@impacta.test     / Puerta2026!     (OPERATOR: solo control de acceso)
+ *   Puerta  puerta@impacta.test     / Puerta2026!     (OPERATOR: solo la app móvil de puerta)
  *   Sitio   comprador@impacta.test  / Comprador2026!
  *   + cliente y cajero: ver seed-demo.ts
  */
@@ -22,6 +22,7 @@ import {
   utcToZonedInput,
   zonedDateTimeToUtc,
   type SectionShape,
+  type ZoneShape,
 } from "@ticketera/core";
 
 config({ path: path.resolve(import.meta.dirname, "../../../.env"), quiet: true });
@@ -37,7 +38,7 @@ function laPaz(daysFromNow: number, hour: number): Date {
 }
 
 type SectionSeed =
-  | { name: string; color: string; capacity: number }
+  | { name: string; color: string; capacity: number; /** Forma en el mapa (zona general). */ zone?: ZoneShape }
   | { name: string; color: string; shape: SectionShape };
 
 type VenueSeed = { key: string; name: string; address: string; city: string; sections: SectionSeed[]; gates: string[] };
@@ -84,8 +85,8 @@ const VENUES: VenueSeed[] = [
     city: "Santa Cruz de la Sierra",
     gates: ["Acceso general", "Acceso VIP"],
     sections: [
-      { name: "Cancha", color: AMBAR, capacity: 400 },
-      { name: "VIP", color: ROSA, capacity: 60 },
+      { name: "Cancha", color: AMBAR, capacity: 400, zone: { type: "zone", shape: "rect", x: 100, y: 190, width: 800, height: 380 } },
+      { name: "VIP", color: ROSA, capacity: 60, zone: { type: "zone", shape: "trapezoid", x: 280, y: 70, width: 440, height: 90, taper: 0.3 } },
     ],
   },
   {
@@ -95,8 +96,8 @@ const VENUES: VenueSeed[] = [
     city: "Santa Cruz de la Sierra",
     gates: ["Acceso norte", "Acceso sur"],
     sections: [
-      { name: "Campo", color: VERDE, capacity: 800 },
-      { name: "Palco", color: VIOLETA, capacity: 40 },
+      { name: "Campo", color: VERDE, capacity: 800, zone: { type: "zone", shape: "rect", x: 100, y: 150, width: 800, height: 340 } },
+      { name: "Palco", color: VIOLETA, capacity: 40, zone: { type: "zone", shape: "rect", x: 100, y: 510, width: 800, height: 90 } },
     ],
   },
   {
@@ -106,8 +107,8 @@ const VENUES: VenueSeed[] = [
     city: "Santa Cruz de la Sierra",
     gates: ["Acceso principal"],
     sections: [
-      { name: "Pista", color: AZUL, capacity: 500 },
-      { name: "VIP", color: ROSA, capacity: 100 },
+      { name: "Pista", color: AZUL, capacity: 500, zone: { type: "zone", shape: "ellipse", x: 150, y: 210, width: 700, height: 360 } },
+      { name: "VIP", color: ROSA, capacity: 100, zone: { type: "zone", shape: "trapezoid", x: 290, y: 70, width: 420, height: 110, taper: 0.3 } },
     ],
   },
   {
@@ -117,8 +118,8 @@ const VENUES: VenueSeed[] = [
     city: "Santa Cruz de la Sierra",
     gates: ["Puerta 1", "Puerta 2", "Puerta 3"],
     sections: [
-      { name: "General", color: AMBAR, capacity: 3000 },
-      { name: "Preferencial", color: AZUL, capacity: 500 },
+      { name: "General", color: AMBAR, capacity: 3000, zone: { type: "zone", shape: "arc", centerX: 500, centerY: 70, innerRadius: 190, outerRadius: 420, startAngleDeg: 15, spanDeg: 150 } },
+      { name: "Preferencial", color: AZUL, capacity: 500, zone: { type: "zone", shape: "rect", x: 250, y: 70, width: 500, height: 80 } },
     ],
   },
 ];
@@ -248,31 +249,12 @@ async function main() {
   const db = await import("../src/index");
   const { prisma, hashPassword } = db;
 
-  await prisma.$transaction([
-    prisma.accessScan.deleteMany(),
-    prisma.ticket.deleteMany(),
-    prisma.payment.deleteMany(),
-    prisma.orderItem.deleteMany(),
-    prisma.order.deleteMany(),
-    prisma.queueEntry.deleteMany(),
-    prisma.webhookEvent.deleteMany(),
-    prisma.auditLog.deleteMany(),
-    prisma.ticketType.deleteMany(),
-    prisma.eventSession.deleteMany(),
-    prisma.event.deleteMany(),
-    prisma.seat.deleteMany(),
-    prisma.section.deleteMany(),
-    prisma.accessPoint.deleteMany(),
-    prisma.venue.deleteMany(),
-    prisma.membership.deleteMany(),
-    prisma.client.deleteMany(),
-    prisma.staffUser.deleteMany(),
-    prisma.customer.deleteMany(),
-    prisma.organization.deleteMany(),
-  ]);
+  // Vacía TODAS las tablas (menos el historial de migraciones): así no hay que mantener esta lista al agregar tablas.
+  const tables = await prisma.$queryRaw<{ tablename: string }[]>`SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
+  await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${tables.map((t) => `"${t.tablename}"`).join(", ")} RESTART IDENTITY CASCADE`);
 
   const org = await prisma.organization.create({
-    data: { name: "Impacta", slug: "impacta", currency: DEFAULT_CURRENCY },
+    data: { name: "Impacta", slug: "impacta", currency: DEFAULT_CURRENCY, isPlatform: true },
   });
 
   await prisma.staffUser.create({
@@ -293,7 +275,7 @@ async function main() {
     },
   });
   await prisma.customer.create({
-    data: { email: "comprador@impacta.test", name: "Comprador Demo", passwordHash: await hashPassword(seedPassword("Comprador2026!")) },
+    data: { email: "comprador@impacta.test", name: "Comprador Demo", documentId: "1234567", emailVerified: true, passwordHash: await hashPassword(seedPassword("Comprador2026!")) },
   });
 
   // ── Recintos ──
@@ -313,7 +295,7 @@ async function main() {
     for (const [i, s] of v.sections.entries()) {
       if ("capacity" in s) {
         const section = await prisma.section.create({
-          data: { venueId: venue.id, name: s.name, color: s.color, seatingMode: "GENERAL_ADMISSION", capacity: s.capacity, sortOrder: i },
+          data: { venueId: venue.id, name: s.name, color: s.color, seatingMode: "GENERAL_ADMISSION", capacity: s.capacity, sortOrder: i, ...(s.zone ? { layout: s.zone } : {}) },
         });
         sections.set(s.name, { id: section.id, capacity: s.capacity });
       } else {

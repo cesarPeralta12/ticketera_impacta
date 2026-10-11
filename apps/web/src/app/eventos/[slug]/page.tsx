@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { CATEGORY_COLOR, CATEGORY_LABEL, formatDate, formatDateTime, formatMoney, saleState } from "@ticketera/core";
+import { CATEGORY_COLOR, CATEGORY_LABEL, formatDate, formatDateTime, formatMoney, currentPrice, saleState } from "@ticketera/core";
 import { getSessionAvailability } from "@ticketera/db";
 import { EventImage } from "@/components/event-image";
 import { getPublishedEvent } from "@/lib/events";
@@ -32,9 +32,20 @@ export default async function EventPage({ params }: Props) {
         const open = s.ticketTypes.filter((t) => saleState(t, now) === "open");
         const left = open.reduce((sum, t) => sum + (remaining.get(t.id) ?? 0), 0);
         const priced = open.length ? open : s.ticketTypes.filter((t) => saleState(t, now) !== "closed");
-        const minPrice = priced.reduce<number | null>((m, t) => (m === null || t.unitAmount < m ? t.unitAmount : m), null);
+        const effective = priced.map((t) => ({ type: t, price: currentPrice(t, now) }));
+        const minPrice = effective.reduce<number | null>((m, x) => (m === null || x.price.unitAmount < m ? x.price.unitAmount : m), null);
         const presale = open.find((t) => t.presale && t.salesEndAt);
-        return { ...s, left, minPrice, presaleUntil: presale?.salesEndAt ?? null };
+        // Descuento de preventa vigente: el mayor porcentaje y hasta cuándo.
+        const discount = effective
+          .filter((x) => x.price.discountPercent)
+          .toSorted((a, b) => b.price.discountPercent! - a.price.discountPercent!)[0]?.price;
+        return {
+          ...s,
+          left,
+          minPrice,
+          presaleUntil: presale?.salesEndAt ?? null,
+          discount: discount ? { percent: discount.discountPercent!, until: discount.discountEndsAt! } : null,
+        };
       }),
   );
   const color = CATEGORY_COLOR[event.category] ?? CATEGORY_COLOR.OTRO;
@@ -112,6 +123,11 @@ export default async function EventPage({ params }: Props) {
                       {s.presaleUntil && (
                         <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-[var(--accent-2)]">
                           Preventa hasta {formatDateTime(s.presaleUntil, s.venue.timezone)}
+                        </p>
+                      )}
+                      {s.discount && (
+                        <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-[var(--accent-2)]">
+                          Preventa: {s.discount.percent}% menos hasta {formatDateTime(s.discount.until, s.venue.timezone)}
                         </p>
                       )}
                     </div>

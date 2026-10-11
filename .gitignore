@@ -22,3 +22,5 @@ Thumbs.db
 
 # Datos del Postgres local (npm run db:local)
 packages/db/.pgdata/
+.dev-mail/
+credenciales*.md

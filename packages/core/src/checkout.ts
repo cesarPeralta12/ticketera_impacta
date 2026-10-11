@@ -2,6 +2,7 @@
  * Reglas del checkout que no dependen de la base de datos.
  */
 import { z } from "zod";
+import { DOCUMENT_ERROR, isValidDocument, normalizeDocument } from "./accounts";
 import { lineTotal } from "./money";
 
 /**
@@ -43,12 +44,11 @@ export const checkoutSchema = z.object({
   buyer: z.object({
     name: z.string().trim().min(3, "Ingresa tu nombre completo.").max(120),
     email: z.string().trim().toLowerCase().pipe(z.email("Ingresa un email válido.")),
+    /** Carnet obligatorio en toda compra (online y boletería): se guarda normalizado. */
     document: z
-      .string()
-      .trim()
-      .max(20)
-      .optional()
-      .transform((v) => v || undefined),
+      .string({ error: DOCUMENT_ERROR })
+      .transform(normalizeDocument)
+      .refine(isValidDocument, DOCUMENT_ERROR),
   }),
 });
 
@@ -65,8 +65,10 @@ export function serviceFee(_subtotal: number): number {
   return 0;
 }
 
-export function orderTotals(items: PricedItem[]) {
+/** Totales de la orden. `discountAmount` es el descuento de un código promocional (nunca deja el total en negativo). */
+export function orderTotals(items: PricedItem[], discountAmount = 0) {
   const subtotalAmount = items.reduce((sum, i) => sum + lineTotal(i.unitAmount, i.quantity), 0);
-  const feeAmount = serviceFee(subtotalAmount);
-  return { subtotalAmount, feeAmount, totalAmount: subtotalAmount + feeAmount };
+  const discount = Math.min(Math.max(0, discountAmount), subtotalAmount);
+  const feeAmount = serviceFee(subtotalAmount - discount);
+  return { subtotalAmount, discountAmount: discount, feeAmount, totalAmount: subtotalAmount - discount + feeAmount };
 }

@@ -3,11 +3,12 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
-import { MAX_TICKETS_PER_ORDER, formatDateTime, saleState } from "@ticketera/core";
-import { getQueueStatus, getSessionAvailability, getTakenSeatIds, prisma } from "@ticketera/db";
-import { auth } from "@/lib/auth";
+import { MAX_TICKETS_PER_ORDER, currentPrice, discountLabel, formatDateTime, formatMoney, isZoneLayout, saleState, type ZoneShape } from "@ticketera/core";
+import { getQueueStatus, getSessionAvailability, getTakenSeatIds, getZoneAvailability, prisma } from "@ticketera/db";
+import { requireBuyer } from "@/lib/customer";
 import { queueCookieName } from "@/lib/queue-cookie";
 import { CheckoutForm, type GeneralType, type SeatedType } from "./checkout-form";
+import type { PickerZone } from "./seat-picker";
 import { TurnCountdown } from "./turn-countdown";
 
 export const metadata: Metadata = { title: "Comprar entradas" };
@@ -40,6 +41,9 @@ export default async function BuyPage({ params }: Props) {
     notFound();
   }
 
+  // Comprar exige cuenta con carnet: sin sesión, al login; sin carnet, a completarlo (y vuelve aquí).
+  const buyer = await requireBuyer(`/comprar/${session.id}`);
+
   // Cola virtual: sin turno vigente, a la sala de espera. (createPendingOrder lo vuelve a
   // verificar: esto es para la experiencia, no la protección.)
   let turnEndsAt: Date | undefined;
@@ -50,24 +54,29 @@ export default async function BuyPage({ params }: Props) {
     turnEndsAt = status.expiresAt;
   }
 
-  const [remaining, taken, account] = await Promise.all([
+  const [remaining, taken, zoneAvailability] = await Promise.all([
     getSessionAvailability(session.id),
     getTakenSeatIds(session.id),
-    auth(),
+    getZoneAvailability(session.id),
   ]);
 
   // Lo que ya terminó (una preventa vencida) no se muestra; lo que todavía no empieza, sí,
   // con su fecha (solo en generales: una butaca tiene un único precio a la vez).
   const tz = session.venue.timezone;
   const types = session.ticketTypes.filter((t) => saleState(t) !== "closed");
+  const now = new Date();
   const general: GeneralType[] = types
     .filter((t) => t.section?.seatingMode !== "RESERVED")
     .map((t) => ({
       id: t.id,
+      sectionId: t.sectionId,
       name: t.name,
       detail: t.section ? `${t.section.name} · Entrada general` : null,
-      unitAmount: t.unitAmount,
+      unitAmount: currentPrice(t, now).unitAmount,
+      listAmount: currentPrice(t, now).discountPercent ? t.unitAmount : null,
+      discountLabel: discountLabel(t, now, tz),
       currency: t.currency,
+      left: remaining.get(t.id) ?? 0,
       max: saleState(t) === "open" ? Math.min(remaining.get(t.id) ?? 0, t.maxPerOrder, MAX_TICKETS_PER_ORDER) : 0,
       presaleUntil: t.presale && t.salesEndAt ? formatDateTime(t.salesEndAt, tz) : null,
       opensAt: saleState(t) === "scheduled" && t.salesStartAt ? formatDateTime(t.salesStartAt, tz) : null,
@@ -81,7 +90,8 @@ export default async function BuyPage({ params }: Props) {
       ticketTypeId: t.id,
       name: t.section!.name,
       color: t.section!.color,
-      unitAmount: t.unitAmount,
+      unitAmount: currentPrice(t, now).unitAmount,
+      discountPercent: currentPrice(t, now).discountPercent,
       currency: t.currency,
       presale: t.presale,
       maxPerOrder: Math.min(t.maxPerOrder, MAX_TICKETS_PER_ORDER),
@@ -93,6 +103,25 @@ export default async function BuyPage({ params }: Props) {
         ),
     }))
     .filter((t) => t.seats.length > 0);
+
+  // Zonas generales con forma en el mapa: una por sección, con lo que queda de TODA la zona y el precio más bajo
+  // a la venta ahora. Las que no tienen forma siguen apareciendo solo en la lista.
+  const zones: PickerZone[] = [];
+  for (const section of new Map(types.flatMap((t) => (t.section?.seatingMode === "GENERAL_ADMISSION" && t.section ? [[t.section.id, t.section] as const] : []))).values()) {
+    if (!isZoneLayout(section.layout)) continue;
+    const open = types.filter((t) => t.sectionId === section.id && saleState(t) === "open");
+    const cheapest = open.length ? Math.min(...open.map((t) => currentPrice(t, now).unitAmount)) : null;
+    const currency = types.find((t) => t.sectionId === section.id)?.currency ?? "BOB";
+    zones.push({
+      sectionId: section.id,
+      name: section.name,
+      color: section.color,
+      zone: section.layout as ZoneShape,
+      left: zoneAvailability.find((z) => z.id === section.id)?.remaining ?? 0,
+      capacity: section.capacity,
+      fromPrice: cheapest === null ? null : `desde ${formatMoney(cheapest, currency)}`,
+    });
+  }
 
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 px-6 py-10">
@@ -114,7 +143,8 @@ export default async function BuyPage({ params }: Props) {
           sessionId={session.id}
           general={general}
           seated={seated}
-          buyer={account?.user ? { name: account.user.name ?? "", email: account.user.email ?? "" } : undefined}
+          zones={zones}
+          buyer={{ name: buyer.name, email: buyer.email, document: buyer.documentId }}
         />
       )}
     </main>

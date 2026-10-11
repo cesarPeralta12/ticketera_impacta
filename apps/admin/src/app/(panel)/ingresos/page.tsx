@@ -43,8 +43,9 @@ export default async function EntriesPage({ searchParams }: Props) {
         },
         session: {
           select: {
+            id: true,
             startsAt: true,
-            event: { select: { title: true, organization: { select: { name: true } } } },
+            event: { select: { id: true, title: true, organization: { select: { name: true } } } },
             venue: { select: { timezone: true } },
           },
         },
@@ -152,7 +153,15 @@ export default async function EntriesPage({ searchParams }: Props) {
                     )}
                   </td>
                   <td className="px-4 py-2.5">
-                    <p>{s.session.event.title}</p>
+                    <p>
+                      <Link
+                        href={`/eventos/${s.session.event.id}/funciones/${s.session.id}/en-vivo`}
+                        className="text-[var(--accent)] hover:underline"
+                        title="Ver el mapa y la lista de ingreso de esta función"
+                      >
+                        {s.session.event.title}
+                      </Link>
+                    </p>
                     {global && <p className="text-xs font-medium text-[var(--ink-muted)]">{s.session.event.organization.name}</p>}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-[var(--ink-muted)]">

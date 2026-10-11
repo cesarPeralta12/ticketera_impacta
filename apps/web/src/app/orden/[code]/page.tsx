@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { formatCode, formatDateTime, formatMoney } from "@ticketera/core";
-import { BOX_OFFICE_BUYER, expireStaleOrders, getOrderByCode } from "@ticketera/db";
-import { ticketQrSvg } from "@/lib/ticket-qr";
+import QRCode from "qrcode";
+import { code128Svg, entranceText, formatCode, formatDateTime, formatMoney, signTicketPayload, type GateInfo } from "@ticketera/core";
+import { BOX_OFFICE_BUYER, expireStaleOrders, getOrderByCode, requireEnv } from "@ticketera/db";
 import { payOrderAction } from "./actions";
+import { auth } from "@/lib/auth";
 import { AutoRefresh, Countdown } from "./live";
+import { ResendTickets } from "./resend-button";
 
 export const metadata: Metadata = { title: "Tu orden", robots: { index: false } };
 
@@ -27,6 +29,8 @@ export default async function OrderPage({ params }: Props) {
   const guest = order.channel === "GUEST";
   // En boletería el email es opcional: si no lo dieron, no se muestra el de relleno.
   const email = order.buyerEmail && order.buyerEmail !== BOX_OFFICE_BUYER.email ? order.buyerEmail : null;
+  const account = await auth();
+  const isOwner = Boolean(account?.user?.id && account.user.id === order.customerId);
   const latestPayment = order.payments[0];
   const approvedPayments = order.payments.filter((p) => p.status === "APPROVED").length;
 
@@ -108,8 +112,23 @@ export default async function OrderPage({ params }: Props) {
                   ? `Te enviamos las entradas a ${email}. Presenta el QR en la puerta.`
                   : "Presenta el QR en la puerta. Cada entrada vale para un ingreso."}
             </p>
+            {isOwner && order.channel === "ONLINE" && <ResendTickets code={order.code} />}
           </div>
-          <TicketList tickets={order.tickets} guest={guest} ownerId={order.customerId} />
+          <TicketList
+            tickets={order.tickets}
+            guest={guest}
+            ownerId={order.customerId}
+            gates={(session?.venue.accessPoints ?? []).map((g) => ({ name: g.name, sectionIds: g.sections.map((s) => s.id) }))}
+          />
+          {isOwner && order.channel === "ONLINE" && (
+            <p className="text-sm text-[var(--ink-muted)]">
+              ¿Quieres darle una entrada a otra persona?{" "}
+              <Link href="/mis-entradas" className="text-[var(--accent)] underline underline-offset-4">
+                Transferirla desde Mis entradas
+              </Link>
+              .
+            </p>
+          )}
         </section>
       )}
 
@@ -126,6 +145,12 @@ export default async function OrderPage({ params }: Props) {
                 <span className="tabular-nums">{formatMoney(item.unitAmount * item.quantity, order.currency)}</span>
               </li>
             ))}
+            {order.discountAmount > 0 && (
+              <li className="flex justify-between px-5 py-3 text-[var(--green)]">
+                <span>Descuento{order.promoRedemption ? ` (${order.promoRedemption.promoCode.code})` : ""}</span>
+                <span className="tabular-nums">−{formatMoney(order.discountAmount, order.currency)}</span>
+              </li>
+            )}
             <li className="flex justify-between px-5 py-3 font-semibold">
               <span>Total</span>
               <span className="tabular-nums">{formatMoney(order.totalAmount, order.currency)}</span>
@@ -144,30 +169,41 @@ type TicketForList = {
   id: string;
   code: string;
   status: string;
-  holderName: string | null;
   customerId: string | null;
-  ticketType: { name: string };
+  holderName: string | null;
+  ticketType: { name: string; accessMethods: ("QR" | "BARCODE" | "NFC")[]; qrMode: "STATIC" | "DYNAMIC"; sectionId: string | null };
   seat: { label: string; section: { name: string } } | null;
 };
 
-/**
- * Entradas de la orden con su QR. Una entrada que su dueño transfirió ya es de otra cuenta:
- * aquí no se muestra su QR (el link de la compra lo tiene quien compró, no quien la recibió).
- */
 async function TicketList({
   tickets,
   guest,
   ownerId,
+  gates,
 }: {
   tickets: TicketForList[];
   guest: boolean;
   ownerId: string | null;
+  gates: GateInfo[];
 }) {
+  const secret = requireEnv("TICKET_QR_SECRET");
   const rendered = await Promise.all(
-    tickets.map(async (ticket) => {
-      const transferred = ticket.customerId !== ownerId;
-      return { ...ticket, transferred, qr: transferred ? null : await ticketQrSvg(ticket.code) };
-    }),
+    tickets.map(async (ticket) => ({
+      ...ticket,
+      // Si la entrada se transfirió a otra cuenta, su QR ya no se muestra aquí (lo ve su nueva dueña en "Mis entradas").
+      transferred: Boolean(ownerId && ticket.customerId && ticket.customerId !== ownerId),
+      // Cada tipo de entrada define cómo se lee en puerta: se muestra solo lo que el lector admite.
+      qr: !(ownerId && ticket.customerId && ticket.customerId !== ownerId) && ticket.ticketType.qrMode !== "DYNAMIC" && ticket.ticketType.accessMethods.includes("QR")
+        ? await QRCode.toString(await signTicketPayload(ticket.code, secret), {
+            type: "svg",
+            margin: 1,
+            errorCorrectionLevel: "M",
+          })
+        : null,
+      barcode: !(ownerId && ticket.customerId && ticket.customerId !== ownerId) && ticket.ticketType.qrMode !== "DYNAMIC" && ticket.ticketType.accessMethods.includes("BARCODE") ? code128Svg(ticket.code, { height: 56 }) : null,
+      dynamic: !(ownerId && ticket.customerId && ticket.customerId !== ownerId) && ticket.ticketType.qrMode === "DYNAMIC" && ticket.status === "VALID",
+      nfc: ticket.ticketType.accessMethods.includes("NFC"),
+    })),
   );
 
   return (
@@ -185,22 +221,39 @@ async function TicketList({
               {ticket.seat.section.name} · {ticket.seat.label}
             </p>
           )}
-          {ticket.qr ? (
-            <>
-              <div
-                className={`mx-auto my-3 w-48 ${ticket.status === "VALID" ? "" : "opacity-30"}`}
-                dangerouslySetInnerHTML={{ __html: ticket.qr }}
-              />
-              <p className="font-mono text-sm tracking-wider">{formatCode(ticket.code)}</p>
-            </>
-          ) : (
-            <p className="my-6 text-sm font-semibold text-[#6b687a]">
-              Transferida a otra persona: la ve en su cuenta con un QR nuevo.
+          {!ticket.transferred && entranceText(gates, ticket.ticketType.sectionId) && (
+            <p className="mt-1 text-sm font-bold text-[#0f8a6b]">{entranceText(gates, ticket.ticketType.sectionId)}</p>
+          )}
+          {ticket.transferred && (
+            <p className="my-4 rounded-lg bg-[#fff4d6] px-3 py-3 text-sm font-semibold">Esta entrada fue transferida a otra persona.</p>
+          )}
+          {ticket.dynamic && (
+            <div className="my-3">
+              <Link href={`/entrada/${ticket.code}`} className="btn-accent inline-block">
+                Abrir entrada (QR dinámico)
+              </Link>
+              <p className="mt-2 text-xs text-[#6b687a]">Ábrela con internet antes de salir: el QR cambia cada 30 segundos y funciona sin señal.</p>
+            </div>
+          )}
+          {ticket.qr && (
+            <div
+              className={`mx-auto my-3 w-48 ${ticket.status === "VALID" ? "" : "opacity-30"}`}
+              dangerouslySetInnerHTML={{ __html: ticket.qr }}
+            />
+          )}
+          {ticket.barcode && (
+            <div
+              className={`mx-auto my-3 w-full max-w-60 overflow-hidden rounded-md bg-white [&>svg]:h-auto [&>svg]:w-full ${ticket.status === "VALID" ? "" : "opacity-30"}`}
+              dangerouslySetInnerHTML={{ __html: ticket.barcode }}
+            />
+          )}
+          {ticket.nfc && (
+            <p className="my-2 text-xs font-semibold text-[#6b687a]">
+              {ticket.qr || ticket.barcode ? "También se lee por NFC." : "Esta entrada se lee por NFC: acércala al lector."}
             </p>
           )}
-          {!ticket.transferred && ticket.status === "USED" && (
-            <p className="mt-1 text-xs font-semibold text-[#6b687a]">Ya utilizada</p>
-          )}
+          <p className="font-mono text-sm tracking-wider">{formatCode(ticket.code)}</p>
+          {ticket.status === "USED" && <p className="mt-1 text-xs font-semibold text-[#6b687a]">Ya utilizada</p>}
           {ticket.status === "CANCELLED" && <p className="mt-1 text-xs font-semibold text-[#c2183e]">Anulada</p>}
         </li>
       ))}

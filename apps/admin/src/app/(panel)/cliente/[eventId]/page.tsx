@@ -39,6 +39,26 @@ export default async function ClientEventPage({ params }: Props) {
         <PrintButton />
       </div>
 
+      <section className="card p-5 print:hidden">
+        <h2 className="eyebrow mb-3">Ingreso en vivo</h2>
+        <ul className="flex flex-col gap-2">
+          {report.sessions.map((s) => (
+            <li key={s.id}>
+              <Link
+                href={`/cliente/${event.id}/en-vivo/${s.id}`}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--border)] px-4 py-3 text-sm hover:border-[var(--accent)]"
+              >
+                <span>
+                  <span className="font-mono">{formatDateTime(s.startsAt, s.venue.timezone)}</span>
+                  <span className="text-[var(--ink-muted)]"> · {s.venue.name}</span>
+                </span>
+                <span className="text-[var(--accent)]">Ver mapa y lista de ingreso →</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
+
       {event.mode === "GUEST_LIST" && (
         <section className="card p-5 print:hidden">
           <h2 className="eyebrow mb-3">Lista de invitados</h2>

@@ -3,7 +3,7 @@
  * una cuenta de comprador nunca puede entrar al panel, ni al revés.
  */
 import bcrypt from "bcryptjs";
-import { MIN_PASSWORD_LENGTH } from "@ticketera/core";
+import { MIN_PASSWORD_LENGTH, isValidDocument, normalizeDocument } from "@ticketera/core";
 import type { StaffRole } from "../generated/prisma/client";
 import { prisma } from "../client";
 import { isUniqueViolation } from "./shared";
@@ -18,7 +18,7 @@ export function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, BCRYPT_COST);
 }
 
-async function passwordMatches(password: string, hash: string | undefined): Promise<boolean> {
+export async function passwordMatches(password: string, hash: string | undefined): Promise<boolean> {
   dummyHash ??= hashPassword("contraseña-de-relleno");
   const ok = await bcrypt.compare(password, hash ?? (await dummyHash));
   return ok && hash !== undefined;
@@ -30,17 +30,56 @@ export async function verifyCustomerCredentials(email: string, password: string)
   return customer;
 }
 
-export async function registerCustomer(input: { name: string; email: string; password: string }) {
+/**
+ * Crea la cuenta de un comprador. El carnet es obligatorio y único (una persona, una cuenta).
+ * Devuelve la causa si no se pudo: el email o el carnet ya tienen cuenta.
+ */
+export async function registerCustomer(input: {
+  name: string;
+  email: string;
+  password: string;
+  document: string;
+  phone?: string;
+}): Promise<{ customer: Awaited<ReturnType<typeof prisma.customer.create>> } | { error: "EMAIL_TAKEN" | "DOCUMENT_TAKEN" | "DOCUMENT_INVALID" }> {
+  const documentId = normalizeDocument(input.document);
+  if (!isValidDocument(documentId)) return { error: "DOCUMENT_INVALID" };
+  const email = input.email.trim().toLowerCase();
+  if (await prisma.customer.findUnique({ where: { email }, select: { id: true } })) return { error: "EMAIL_TAKEN" };
+  if (await prisma.customer.findUnique({ where: { documentId }, select: { id: true } })) return { error: "DOCUMENT_TAKEN" };
   try {
-    return await prisma.customer.create({
+    const customer = await prisma.customer.create({
       data: {
         name: input.name.trim(),
-        email: input.email.trim().toLowerCase(),
+        email,
+        documentId,
+        phone: input.phone?.trim() || null,
         passwordHash: await hashPassword(input.password),
       },
     });
+    return { customer };
   } catch (error) {
-    if (isUniqueViolation(error)) return null; // ya existe una cuenta con ese email
+    if (isUniqueViolation(error)) return { error: "DOCUMENT_TAKEN" }; // alguien lo creó justo ahora
+    throw error;
+  }
+}
+
+/** Completa o corrige los datos de una cuenta (las antiguas no tenían carnet). */
+export async function updateCustomerProfile(
+  customerId: string,
+  input: { name: string; document: string; phone?: string },
+): Promise<{ ok: true } | { error: "DOCUMENT_TAKEN" | "DOCUMENT_INVALID" }> {
+  const documentId = normalizeDocument(input.document);
+  if (!isValidDocument(documentId)) return { error: "DOCUMENT_INVALID" };
+  const other = await prisma.customer.findUnique({ where: { documentId }, select: { id: true } });
+  if (other && other.id !== customerId) return { error: "DOCUMENT_TAKEN" };
+  try {
+    await prisma.customer.update({
+      where: { id: customerId },
+      data: { name: input.name.trim(), documentId, phone: input.phone?.trim() || null },
+    });
+    return { ok: true };
+  } catch (error) {
+    if (isUniqueViolation(error)) return { error: "DOCUMENT_TAKEN" };
     throw error;
   }
 }
@@ -66,6 +105,7 @@ export async function verifyStaffCredentials(email: string, password: string) {
     role: membership.role,
     organizationId: membership.organizationId,
     clientId: membership.clientId,
+    sessionVersion: staff.sessionVersion,
   };
 }
 
@@ -102,12 +142,35 @@ export async function createStaffUser(input: {
  * Cambia la contraseña de una cuenta del panel verificando la actual. Devuelve false si
  * la actual no coincide. Al cambiarla deja de ser temporal.
  */
-export async function changeStaffPassword(userId: string, current: string, next: string) {
+export async function changeStaffPassword(userId: string, current: string, next: string, options: { keepDeviceTokenId?: string } = {}) {
   const staff = await prisma.staffUser.findUnique({ where: { id: userId } });
   if (!staff || !(await passwordMatches(current, staff.passwordHash))) return false;
   await prisma.staffUser.update({
     where: { id: userId },
-    data: { passwordHash: await hashPassword(next), mustChangePassword: false },
+    // Subir la versión cierra todas las sesiones web abiertas con la contraseña anterior.
+    data: { passwordHash: await hashPassword(next), mustChangePassword: false, sessionVersion: { increment: 1 } },
+  });
+  // Los teléfonos también: salvo el que está haciendo el cambio (la app lo hace al primer ingreso).
+  await prisma.deviceToken.updateMany({
+    where: { userId, revokedAt: null, ...(options.keepDeviceTokenId ? { id: { not: options.keepDeviceTokenId } } : {}) },
+    data: { revokedAt: new Date() },
   });
   return true;
+}
+
+/**
+ * "Cerrar todas las sesiones" de una cuenta: las sesiones web dejan de valer (versión de sesión) y, si es
+ * personal del panel, también los teléfonos con la app de puerta. `exceptDeviceTokenId` conserva uno.
+ */
+export async function revokeAllSessions(kind: "staff" | "customer", id: string, options: { exceptDeviceTokenId?: string } = {}) {
+  if (kind === "customer") {
+    await prisma.customer.update({ where: { id }, data: { sessionVersion: { increment: 1 } } });
+    return { devices: 0 };
+  }
+  await prisma.staffUser.update({ where: { id }, data: { sessionVersion: { increment: 1 } } });
+  const { count } = await prisma.deviceToken.updateMany({
+    where: { userId: id, revokedAt: null, ...(options.exceptDeviceTokenId ? { id: { not: options.exceptDeviceTokenId } } : {}) },
+    data: { revokedAt: new Date() },
+  });
+  return { devices: count };
 }

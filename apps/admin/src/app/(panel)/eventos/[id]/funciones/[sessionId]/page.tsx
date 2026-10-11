@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { formatDateTime, formatMoney, saleState, utcToZonedInput, type SaleState } from "@ticketera/core";
-import { getSessionAvailability, prisma } from "@ticketera/db";
+import { currentPrice, formatDateTime, formatMoney, isZoneLayout, saleState, utcToZonedInput, type SaleState, type ZoneShape } from "@ticketera/core";
+import { getSessionAvailability, getZoneAvailability, prisma } from "@ticketera/db";
+import { AccessMethodsField } from "@/components/access-methods-field";
 import { ActionForm } from "@/components/action-form";
 import { SeatMapPreview, positioned } from "@/components/seat-map-preview";
 import {
@@ -11,6 +12,8 @@ import {
   updateTicketTypeSalesAction,
   deleteSessionAction,
   deleteTicketTypeAction,
+  setQrModeAction,
+  updateAccessMethodsAction,
   updateQueueSettingsAction,
 } from "@/lib/actions/events";
 import { SEATING_LABEL } from "@/lib/labels";
@@ -41,18 +44,24 @@ export default async function SessionPage({ params }: Props) {
   });
   if (!session) notFound();
 
-  const [remaining, guests] = await Promise.all([
+  const [remaining, zones, guests] = await Promise.all([
     getSessionAvailability(session.id),
+    getZoneAvailability(session.id),
     prisma.ticket.count({ where: { sessionId: session.id, order: { channel: "GUEST" }, status: { in: ["VALID", "USED"] } } }),
   ]);
   const guestList = session.event.mode === "GUEST_LIST";
   const pricedSections = new Set(session.ticketTypes.map((t) => t.sectionId));
   const seatedSections = session.venue.sections.filter((s) => s.seatingMode === "RESERVED");
+  // Zonas generales dibujadas en el mapa del recinto (con lo que queda en esta función).
+  const drawnZones = session.venue.sections.flatMap((s) =>
+    s.seatingMode === "GENERAL_ADMISSION" && isZoneLayout(s.layout) ? [{ section: s, zone: s.layout as ZoneShape }] : [],
+  );
   // Secciones del recinto que no se venden en esta función: no aparecen en el sitio.
   const unpriced = session.venue.sections.filter((s) => !pricedSections.has(s.id));
   // En el selector, primero las que faltan por cargar.
   const sectionOptions = [...unpriced, ...session.venue.sections.filter((s) => pricedSections.has(s.id))];
   const tz = session.venue.timezone;
+  const now = new Date();
 
   return (
     <div className="space-y-8">
@@ -66,6 +75,19 @@ export default async function SessionPage({ params }: Props) {
           {session.doorsOpenAt && ` · puertas ${formatDateTime(session.doorsOpenAt, tz)}`}
         </p>
       </div>
+
+      <Link
+        href={`/eventos/${id}/funciones/${session.id}/en-vivo`}
+        className="card flex flex-wrap items-center justify-between gap-3 border-[var(--accent)] p-5 transition-colors hover:bg-[var(--accent-soft)]"
+      >
+        <span>
+          <span className="block font-medium">Ingreso en vivo</span>
+          <span className="text-sm text-[var(--ink-muted)]">
+            Mapa del recinto y lista de entradas: se van pintando de verde las que ingresan, con hora, puerta y rechazos.
+          </span>
+        </span>
+        <span className="font-mono text-sm text-[var(--accent)]">Abrir →</span>
+      </Link>
 
       <Link
         href={`/eventos/${id}/funciones/${session.id}/invitados`}
@@ -82,6 +104,34 @@ export default async function SessionPage({ params }: Props) {
         <span className="font-mono text-sm text-[var(--accent)]">{guests} invitado(s) →</span>
       </Link>
 
+      {zones.length > 0 && (
+        <section className="card p-6">
+          <h2 className="eyebrow mb-1">Zonas sin asientos (de pie)</h2>
+          <p className="mb-4 text-sm text-[var(--ink-muted)]">Aforo de cada zona y cuántos lugares quedan, sumando todos sus tipos de entrada (preventa, general…).</p>
+          <ul className="space-y-3">
+            {zones.map((z) => {
+              const pct = z.capacity === 0 ? 0 : Math.round((z.sold / z.capacity) * 100);
+              return (
+                <li key={z.id}>
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="flex items-center gap-2 font-medium">
+                      <span className="h-3 w-3 rounded-full" style={{ background: z.color }} />
+                      {z.name}
+                    </span>
+                    <span className="font-mono text-sm">
+                      <strong>{z.remaining}</strong> restantes <span className="text-[var(--ink-dim)]">· {z.sold} de {z.capacity} ({pct}%)</span>
+                    </span>
+                  </div>
+                  <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[var(--surface-2)]">
+                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: z.remaining === 0 ? "var(--danger)" : z.color }} />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       <section className="card p-6">
         <h2 className="eyebrow mb-4">Tipos de entrada</h2>
         {session.ticketTypes.length === 0 ? (
@@ -95,6 +145,7 @@ export default async function SessionPage({ params }: Props) {
                   <th className="py-2 pr-4 font-normal">Sección</th>
                   <th className="py-2 pr-4 text-right font-normal">Precio</th>
                   <th className="py-2 pr-4 text-right font-normal">Quedan</th>
+                  <th className="py-2 pr-4 font-normal">Lectura en puerta</th>
                   <th className="py-2 pr-4 font-normal">Venta</th>
                   <th className="py-2" />
                 </tr>
@@ -105,13 +156,49 @@ export default async function SessionPage({ params }: Props) {
                     <td className="py-2.5 pr-4 font-medium">
                       {t.name}
                       {t.presale && <span className="badge ml-2 bg-[var(--warn-soft)] text-[var(--warn)]">preventa</span>}
+                      {t.qrMode === "DYNAMIC" && <span className="badge ml-2 bg-[#e8eefc] text-[#3b5bb5]">QR dinámico</span>}
                     </td>
                     <td className="py-2.5 pr-4 text-[var(--ink-muted)]">
                       {t.section ? `${t.section.name} · ${SEATING_LABEL[t.section.seatingMode]}` : "—"}
                     </td>
-                    <td className="py-2.5 pr-4 text-right font-mono">{formatMoney(t.unitAmount, t.currency)}</td>
+                    <td className="py-2.5 pr-4 text-right font-mono">
+                      {formatMoney(currentPrice(t, now).unitAmount, t.currency)}
+                      {currentPrice(t, now).discountPercent ? (
+                        <span className="block text-xs text-[var(--warn)]">
+                          -{t.discountPercent}% (lista {formatMoney(t.unitAmount, t.currency)})
+                        </span>
+                      ) : t.discountPercent ? (
+                        <span className="block text-xs text-[var(--ink-dim)]">
+                          {t.discountEndsAt && t.discountEndsAt <= now ? "descuento terminado" : `-${t.discountPercent}% programado`}
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="py-2.5 pr-4 text-right font-mono">
                       {remaining.get(t.id) ?? 0} / {t.capacity}
+                    </td>
+                    <td className="py-2.5 pr-4">
+                      {t.qrMode === "DYNAMIC" ? (
+                        <p className="text-xs text-[var(--ink-muted)]">
+                          Solo QR, y cambia cada 30 segundos. El comprador lo abre en su celular; no se vende en boletería ni se imprime.
+                        </p>
+                      ) : (
+                        <ActionForm action={updateAccessMethodsAction} successMessage="Guardado." className="flex flex-wrap items-center gap-2">
+                          <input type="hidden" name="ticketTypeId" value={t.id} />
+                          <AccessMethodsField defaultValue={t.accessMethods} />
+                          <button type="submit" className="btn px-2 py-1 text-xs">
+                            Guardar
+                          </button>
+                        </ActionForm>
+                      )}
+                      {t._count.orderItems === 0 && session.event.mode === "TICKETING" && (
+                        <ActionForm action={setQrModeAction} successMessage="Guardado." className="mt-1">
+                          <input type="hidden" name="ticketTypeId" value={t.id} />
+                          <input type="hidden" name="mode" value={t.qrMode === "DYNAMIC" ? "STATIC" : "DYNAMIC"} />
+                          <button type="submit" className="text-xs text-[var(--accent)] hover:underline">
+                            {t.qrMode === "DYNAMIC" ? "Volver a QR fijo" : "Usar QR dinámico"}
+                          </button>
+                        </ActionForm>
+                      )}
                     </td>
                     <td className="py-2.5 pr-4 text-xs">
                       <span className={`badge ${SALE_STATE[saleState(t)].className}`}>{SALE_STATE[saleState(t)].text}</span>
@@ -151,6 +238,34 @@ export default async function SessionPage({ params }: Props) {
                               type="datetime-local"
                               name="salesEndAt"
                               defaultValue={t.salesEndAt ? utcToZonedInput(t.salesEndAt, tz) : ""}
+                              className="field"
+                            />
+                          </label>
+                          <label className="label">
+                            Descuento de preventa (%)
+                            <input
+                              name="discountPercent"
+                              inputMode="numeric"
+                              defaultValue={t.discountPercent ?? ""}
+                              placeholder="sin descuento"
+                              className="field w-32"
+                            />
+                          </label>
+                          <label className="label">
+                            Descuento desde
+                            <input
+                              type="datetime-local"
+                              name="discountStartsAt"
+                              defaultValue={t.discountStartsAt ? utcToZonedInput(t.discountStartsAt, tz) : ""}
+                              className="field"
+                            />
+                          </label>
+                          <label className="label">
+                            Descuento hasta
+                            <input
+                              type="datetime-local"
+                              name="discountEndsAt"
+                              defaultValue={t.discountEndsAt ? utcToZonedInput(t.discountEndsAt, tz) : ""}
                               className="field"
                             />
                           </label>
@@ -233,6 +348,17 @@ export default async function SessionPage({ params }: Props) {
               Máx. por compra
               <input name="maxPerOrder" type="number" min={1} max={10} defaultValue={10} className="field w-24" />
             </label>
+            <div className="label">
+              Lectura en puerta
+              <div className="flex h-[38px] items-center">
+                <AccessMethodsField />
+              </div>
+            </div>
+            {session.event.mode === "TICKETING" && (
+              <label className="flex items-center gap-2 self-center text-sm" title="El QR cambia cada 30 segundos y solo se lee con QR. Solo venta online (no boletería ni invitaciones).">
+                <input type="checkbox" name="qrDynamic" className="h-4 w-4 accent-[var(--accent)]" /> QR dinámico
+              </label>
+            )}
             <div className="flex basis-full flex-wrap items-end gap-3 rounded-md border border-dashed border-[var(--border)] p-3">
               <label className="flex items-center gap-2 self-center text-sm">
                 <input type="checkbox" name="presale" className="h-4 w-4" /> Es preventa
@@ -255,18 +381,39 @@ export default async function SessionPage({ params }: Props) {
                 butaca a la vez).
               </p>
             </div>
+            <div className="flex basis-full flex-wrap items-end gap-3 rounded-md border border-dashed border-[var(--border)] p-3">
+              <p className="basis-full text-sm font-medium">Descuento de preventa (opcional)</p>
+              <label className="label">
+                Porcentaje (%)
+                <input name="discountPercent" inputMode="numeric" placeholder="ej. 20" className="field w-28" />
+              </label>
+              <label className="label">
+                Desde (opcional)
+                <input type="datetime-local" name="discountStartsAt" className="field" />
+              </label>
+              <label className="label">
+                Hasta
+                <input type="datetime-local" name="discountEndsAt" className="field" />
+              </label>
+              <p className="basis-full text-xs text-[var(--ink-dim)]">
+                Misma entrada, mismo cupo: hasta la fecha se cobra el precio con ese porcentaje menos y después vuelve al
+                precio normal solo. La web muestra el precio normal tachado y el descuento.
+              </p>
+            </div>
             <button type="submit" className="btn btn-dark">
               Agregar
             </button>
           </ActionForm>
         )}
         <p className="mt-3 text-xs text-[var(--ink-dim)]">
+          <strong>Lectura en puerta</strong>: la app del portero solo ofrece los métodos que admitan las entradas de su
+          función (por ejemplo, solo QR, o código de barras y NFC). Una entrada leída con un método no admitido se rechaza.
           En secciones numeradas el cupo es la cantidad de butacas. Varios tipos pueden compartir una sección general
           (ej. Preventa y General): juntos nunca superan su aforo.
         </p>
       </section>
 
-      {seatedSections.length > 0 && (
+      {(seatedSections.length > 0 || drawnZones.length > 0) && (
         <section className="card space-y-3 p-6">
           <div className="flex items-center justify-between">
             <h2 className="eyebrow">Mapa del recinto</h2>
@@ -275,7 +422,21 @@ export default async function SessionPage({ params }: Props) {
             </Link>
           </div>
           <SeatMapPreview
-            sections={seatedSections.map((s) => ({ ...s, seats: positioned(s.seats), muted: !pricedSections.has(s.id) }))}
+            sections={[
+              ...drawnZones.map(({ section, zone }) => {
+                const availability = zones.find((z) => z.id === section.id);
+                return {
+                  id: section.id,
+                  name: section.name,
+                  color: section.color,
+                  seats: [],
+                  zone,
+                  detail: availability ? `Quedan ${availability.remaining} / ${availability.capacity}` : `Aforo ${section.capacity}`,
+                  muted: !pricedSections.has(section.id),
+                };
+              }),
+              ...seatedSections.map((s) => ({ ...s, seats: positioned(s.seats), muted: !pricedSections.has(s.id) })),
+            ]}
           />
           <p className="text-xs text-[var(--ink-dim)]">Las secciones atenuadas no tienen precio en esta función.</p>
         </section>

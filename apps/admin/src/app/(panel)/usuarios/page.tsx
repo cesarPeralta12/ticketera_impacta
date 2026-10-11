@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { connection } from "next/server";
 import { MIN_PASSWORD_LENGTH, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
@@ -31,11 +32,18 @@ export default async function UsersPage() {
         </h1>
         <p className="text-sm text-[var(--ink-muted)]">
           {organizer
-            ? "Solo Impacta crea cuentas. Cada una ve únicamente los eventos de este organizador: el administrador, todo lo suyo; el operador, la app de puerta; el cajero, la boletería."
-            : "No hay registro público: las cuentas se crean aquí. Cada rol ve solo lo suyo: el operador, la app de puerta; el cajero, la boletería; el cliente, sus eventos mientras su espacio esté abierto."}{" "}
+            ? "Solo Impacta crea cuentas. Cada una ve únicamente los eventos de este organizador: el administrador, todo lo suyo; el portero, la app móvil de puerta; el cajero, la boletería."
+            : "No hay registro público: las cuentas se crean aquí. Cada rol ve solo lo suyo: el portero, la app móvil de puerta; el cajero, la boletería; el cliente, sus eventos mientras su espacio esté abierto."}{" "}
           La contraseña es temporal: la persona la cambia al entrar por primera vez.
         </p>
       </div>
+
+      {!organizer && (
+        <p role="note" className="rounded-xl border border-[var(--warn)]/40 bg-[var(--warn-soft)] px-4 py-3 text-sm text-[var(--warn)]">
+          Estás creando cuentas de <strong>Impacta</strong>: solo ven los eventos de Impacta. Para el portero, el cajero o el administrador de un
+          organizador, entra primero en él: <Link href="/organizadores" className="font-semibold underline">Organizadores → Ver → Gestionar sus cuentas</Link>.
+        </p>
+      )}
 
       <div className="card overflow-x-auto">
         <table className="w-full text-left text-sm">
@@ -66,7 +74,12 @@ export default async function UsersPage() {
                     {m.user.active ? "Activo" : "Desactivado"}
                   </span>
                 </td>
-                <td className="px-5 py-3 text-right">
+                <td className="flex items-center justify-end gap-2 px-5 py-3 text-right">
+                  {m.role === "OPERATOR" && (
+                    <Link href={`/usuarios/${m.userId}`} className="btn text-xs">
+                      Funciones y teléfonos
+                    </Link>
+                  )}
                   {m.userId !== staff.id && (
                     <ActionForm action={toggleStaffActiveAction}>
                       <input type="hidden" name="userId" value={m.userId} />

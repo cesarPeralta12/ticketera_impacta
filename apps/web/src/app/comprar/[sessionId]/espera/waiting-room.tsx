@@ -47,6 +47,10 @@ export function WaitingRoom({ sessionId }: { sessionId: string }) {
           method === "POST"
             ? await joinOnce(sessionId)
             : await fetch(`/api/cola/${sessionId}`, { cache: "no-store" });
+        if (response.status === 401) {
+          router.replace(`/login?next=${encodeURIComponent(`/comprar/${sessionId}`)}`);
+          return;
+        }
         if (!response.ok) throw new Error(String(response.status));
         const data = (await response.json()) as Status;
         if (cancelled) return;

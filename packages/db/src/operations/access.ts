@@ -1,7 +1,17 @@
-import { parseTicketPayload } from "@ticketera/core";
+import {
+  deriveTicketKey,
+  parseDynamicPayload,
+  parseManualWithOtp,
+  parseTicketPayload,
+  verifyDynamicOtp,
+  verifyDynamicPayload,
+} from "@ticketera/core";
 import { prisma } from "../client";
-import type { ScanResult } from "../generated/prisma/client";
+import type { AccessMethod, ScanResult } from "../generated/prisma/client";
 import { isUniqueViolation, requireEnv } from "./shared";
+
+/** Métodos de lectura que reporta la app; MANUAL (código escrito) siempre se admite. */
+export type ScanMethod = AccessMethod | "MANUAL";
 
 export type ScanOutcome = {
   result: ScanResult;
@@ -17,7 +27,15 @@ export type ScanOutcome = {
   previousEntry: { at: Date; accessPoint: string | null } | null;
   /** Para WRONG_GATE: por qué puertas sí puede entrar. */
   allowedGates: string[];
+  /**
+   * Solo QR dinámico leído sin conexión, al sincronizar: BAD_PROOF = la prueba no corresponde a la entrada
+   * (teléfono modificado o QR falsificado); STALE_OFFLINE = auténtica pero de un momento lejano a la lectura.
+   */
+  proofNote?: "BAD_PROOF" | "STALE_OFFLINE";
 };
+
+/** Pasos que se toleran al revisar una lectura hecha sin conexión: el reloj del teléfono pudo desajustarse. */
+const OFFLINE_STEP_WINDOW = 2;
 
 /**
  * Valida una entrada en puerta y deja registrada la lectura (aceptada o no).
@@ -45,33 +63,69 @@ export async function scanTicket(input: {
   /** Rechazo decidido por el dispositivo sin conexión: se registra tal cual. */
   offlineResult?: Exclude<ScanResult, "ACCEPTED">;
   clientScanId?: string;
+  /** Cómo se leyó la entrada. Si el tipo de entrada no admite ese método, se rechaza. */
+  method?: ScanMethod;
 }): Promise<ScanOutcome> {
   if (input.clientScanId) {
     const done = await prisma.accessScan.findUnique({ where: { clientScanId: input.clientScanId } });
     if (done) return replayOutcome(done);
   }
   const scannedAt = input.scannedAt ?? new Date();
-  const parsed = await parseTicketPayload(input.raw, requireEnv("TICKET_QR_SECRET"));
+  const secret = requireEnv("TICKET_QR_SECRET");
+  const raw = input.raw.trim();
+  // Tres formas de leer una entrada: QR dinámico (TK2), código + OTP escrito a mano, o código estático (TK1 / solo código).
+  const dynamic = raw.startsWith("TK2.") ? parseDynamicPayload(raw) : null;
+  const otp = dynamic ? null : parseManualWithOtp(raw);
+  const statik = dynamic || otp ? null : await parseTicketPayload(raw, secret);
+  const code = dynamic?.code ?? otp?.code ?? (statik?.ok ? statik.code : null);
 
   let result: ScanResult = "INVALID";
   let allowedGates: string[] = [];
-  const ticket = parsed.ok
+  let proofNote: ScanOutcome["proofNote"];
+  const ticket = code
     ? await prisma.ticket.findUnique({
-        where: { code: parsed.code },
+        where: { code },
         include: { ticketType: true, seat: { include: { section: true } }, session: { include: { event: true } } },
       })
     : null;
-  // Un QR viejo de una entrada que su dueño transfirió: la entrada ahora tiene otro código.
-  const transfer =
-    parsed.ok && !ticket
-      ? await prisma.ticketTransfer.findUnique({ where: { oldCode: parsed.code }, select: { ticketId: true } })
-      : null;
+
+  // Tipo de QR: una entrada dinámica solo se acepta con una prueba vigente (QR o código + OTP); su código estático no sirve.
+  let qrFailure: ScanResult | null = null;
+  if (ticket && !input.offlineResult) {
+    const isDynamicType = ticket.ticketType.qrMode === "DYNAMIC";
+    const at = (input.offline ? scannedAt : new Date()).getTime();
+    const window = input.offline ? OFFLINE_STEP_WINDOW : undefined;
+    if (dynamic) {
+      if (!isDynamicType) qrFailure = "INVALID"; // un TK2 solo existe para entradas dinámicas
+      else {
+        const verdict = await verifyDynamicPayload(await deriveTicketKey(secret, ticket.code), dynamic, at, window);
+        if (verdict === "INVALID") {
+          qrFailure = "INVALID";
+          if (input.offline) proofNote = "BAD_PROOF";
+        } else if (verdict === "EXPIRED") {
+          // En vivo es una captura vieja. Sin conexión ya entró: se acepta y se deja anotado.
+          if (input.offline) proofNote = "STALE_OFFLINE";
+          else qrFailure = "QR_EXPIRED";
+        }
+      }
+    } else if (otp) {
+      if (isDynamicType && !(await verifyDynamicOtp(await deriveTicketKey(secret, ticket.code), ticket.code, otp.otp, at, window))) {
+        qrFailure = "INVALID";
+        if (input.offline) proofNote = "BAD_PROOF";
+      }
+    } else if (isDynamicType) {
+      qrFailure = "STATIC_NOT_ALLOWED";
+    }
+  }
 
   if (input.offlineResult) result = input.offlineResult;
-  else if (parsed.ok) {
-    if (!ticket) result = transfer ? "TRANSFERRED" : "NOT_FOUND";
+  else if (code) {
+    if (!ticket) result = "NOT_FOUND";
     else if (ticket.sessionId !== input.sessionId) result = "WRONG_SESSION";
-    else {
+    else if (qrFailure) result = qrFailure;
+    else if (input.method && input.method !== "MANUAL" && !ticket.ticketType.accessMethods.includes(input.method)) {
+      result = "METHOD_NOT_ALLOWED";
+    } else {
       const gate = input.accessPointId
         ? await prisma.accessPoint.findUnique({
             where: { id: input.accessPointId },
@@ -90,19 +144,14 @@ export async function scanTicket(input: {
             ).map((g) => g.name)
           : [];
       } else {
-        // También exige el mismo código: si la transfirieron justo ahora, el QR viejo no entra.
         const { count } = await prisma.ticket.updateMany({
-          where: { id: ticket.id, status: "VALID", code: ticket.code },
+          where: { id: ticket.id, status: "VALID" },
           data: { status: "USED", usedAt: scannedAt },
         });
         if (count === 1) result = "ACCEPTED";
         else {
-          const current = await prisma.ticket.findUniqueOrThrow({
-            where: { id: ticket.id },
-            select: { status: true, code: true },
-          });
-          result =
-            current.code !== ticket.code ? "TRANSFERRED" : current.status === "CANCELLED" ? "CANCELLED" : "ALREADY_USED";
+          const current = await prisma.ticket.findUniqueOrThrow({ where: { id: ticket.id }, select: { status: true } });
+          result = current.status === "CANCELLED" ? "CANCELLED" : "ALREADY_USED";
         }
       }
     }
@@ -121,7 +170,7 @@ export async function scanTicket(input: {
     await prisma.accessScan.create({
       data: {
         sessionId: input.sessionId,
-        ticketId: ticket?.id ?? transfer?.ticketId,
+        ticketId: ticket?.id,
         accessPointId: input.accessPointId,
         operatorId: input.operatorId,
         deviceId: input.deviceId?.slice(0, 64),
@@ -131,6 +180,7 @@ export async function scanTicket(input: {
         offline: Boolean(input.offline),
         syncedAt: input.offline ? new Date() : null,
         clientScanId: input.clientScanId,
+        method: input.method,
       },
     });
   } catch (error) {
@@ -155,6 +205,7 @@ export async function scanTicket(input: {
       : null,
     previousEntry: previous ? { at: previous.scannedAt, accessPoint: previous.accessPoint?.name ?? null } : null,
     allowedGates,
+    ...(proofNote ? { proofNote } : {}),
   };
 }
 
@@ -216,11 +267,6 @@ export async function getSessionSyncData(sessionId: string) {
       order: { select: { buyerName: true } },
     },
   });
-  // QR viejos de entradas transferidas: sin conexión la puerta igual sabe que no valen.
-  const transferred = await prisma.ticketTransfer.findMany({
-    where: { ticket: { sessionId } },
-    select: { oldCode: true },
-  });
   return {
     syncedAt: new Date().toISOString(),
     session: {
@@ -245,7 +291,6 @@ export async function getSessionSyncData(sessionId: string) {
       sectionId: t.ticketType.sectionId,
       seat: t.seat?.label ?? null,
     })),
-    transferredCodes: transferred.map((t) => t.oldCode),
   };
 }
 
