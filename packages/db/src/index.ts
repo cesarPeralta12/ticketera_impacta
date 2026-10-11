@@ -9,3 +9,4 @@ export * from "./operations/payments";
 export * from "./operations/queue";
 export * from "./operations/report";
 export * from "./operations/sales";
+export * from "./operations/transfers";

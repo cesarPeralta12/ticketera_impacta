@@ -20,7 +20,7 @@ Aplicado completo:
 - **Espacio temporal del cliente**: IMPACTA lo habilita por evento y se cierra solo (por defecto 24 h
   después de la última función). El cliente ve solo sus eventos: reporte en vivo, CSV y su lista de invitados.
 - **Modalidad 2: lista de invitados** (`GUEST_LIST`): sin venta y fuera del sitio público; invitados
-  desde Excel (pegar), CSV o a mano; QR único por invitado; anular; hoja de QRs para imprimir.
+  desde Excel (pegar o .xlsx), CSV o a mano; QR único por invitado; anular; hoja de QRs para imprimir.
   En eventos con venta, las cortesías salen del cupo de un tipo de entrada.
 - **Boletería (POS)** con rol cajero: efectivo/QR/tarjeta (declarado, sin banco), ticket térmico 80 mm o
   A4, vende durante el evento, arqueo "Mi caja de hoy".
@@ -42,6 +42,25 @@ Aplicado completo:
 - **Preventa** por tipo de entrada: fecha de fin (y de inicio opcional); la General empieza sola al
   terminar; en butacas numeradas un solo precio a la vez. Web, boletería y mapa la muestran.
 - Se mantiene el modo "Clientes" (Impacta opera el evento y el cliente solo mira).
+
+## Lista de funciones del cliente (2026-10-09)
+
+Hecho:
+
+- **Compradores**: directorio sin repetidos (por email), con compras, entradas, total, canales y eventos;
+  búsqueda, orden y filtro por organizador. Impacta ve todos; cada organizador solo los suyos.
+- **Exportar a Excel** las ventas (con los filtros aplicados) y los compradores (CSV con `;`, BOM y
+  protección contra fórmulas, se abre directo en Excel).
+- **Invitados desde .xlsx**: se lee la primera hoja (nombre, email, documento); el .xls antiguo se rechaza
+  con instrucciones.
+- **Mis eventos** completo: próximas entradas con QR (compradas o recibidas), historial con hora de
+  ingreso o "no asististe", entradas transferidas y compras.
+- **Transferencia de entradas** a una cuenta registrada: por entrada, solo válidas y hasta que empieza la
+  función; las invitaciones no se transfieren. La receptora recibe un QR nuevo; el viejo sale "Entrada
+  transferida" en la puerta, también sin conexión (va en la lista descargada). Queda en auditoría.
+
+Dejado para después (decisión del cliente): códigos promocionales, rol de promotor, QR dinámico,
+apps nativas y NFC (los hace otra persona), pasarela de pago real y facturación electrónica.
 
 ## Integración con el prototipo del compañero (2026-10-01)
 
@@ -92,7 +111,7 @@ Aplicado completo:
 - [ ] **Pruebas de carga** de la cola y la compra con volúmenes reales.
 - [ ] **Conciliación** de pagos con la pasarela real.
 - [ ] **https** en el entorno de pruebas: la cámara del celular no funciona por http en la red local.
-- [ ] **Excel nativo (.xlsx)** para invitados, si pegar o CSV no alcanza.
+- [ ] **Aviso por email** de una transferencia a quien recibe la entrada (depende del email transaccional).
 - [ ] **Invitación por email** al crear un organizador o una cuenta (hoy se le pasa la contraseña temporal a mano).
 - [ ] **Comisión de Impacta** por organizador y liquidaciones (cuánto se le paga a cada uno).
 - [ ] **Editor de butacas**: editar/mover secciones existentes, zoom, deshacer (mejoras ya conversadas con el cliente; propuesta: Konva.js).

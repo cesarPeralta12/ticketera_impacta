@@ -11,7 +11,14 @@ const STORE = "kv";
 export type DoorData = SessionSyncData;
 export type DoorTicket = DoorData["tickets"][number];
 
-export type RejectionResult = "ALREADY_USED" | "NOT_FOUND" | "CANCELLED" | "WRONG_SESSION" | "WRONG_GATE" | "INVALID";
+export type RejectionResult =
+  | "ALREADY_USED"
+  | "NOT_FOUND"
+  | "CANCELLED"
+  | "WRONG_SESSION"
+  | "WRONG_GATE"
+  | "INVALID"
+  | "TRANSFERRED";
 export type ScanResult = "ACCEPTED" | RejectionResult;
 
 /** Lectura hecha sin conexión, a subir cuando vuelva internet. */
@@ -80,7 +87,11 @@ export function decideOffline(
 ): { result: ScanResult; ticket: DoorTicket | null; allowedGates: string[] } {
   if (!code) return { result: "INVALID", ticket: null, allowedGates: [] };
   const ticket = tickets.get(code) ?? null;
-  if (!ticket) return { result: "NOT_FOUND", ticket: null, allowedGates: [] };
+  if (!ticket) {
+    // QR viejo de una entrada transferida (listas descargadas antes de este cambio no lo traen).
+    const transferred = data.transferredCodes?.includes(code) ?? false;
+    return { result: transferred ? "TRANSFERRED" : "NOT_FOUND", ticket: null, allowedGates: [] };
+  }
   const gate = data.gates.find((g) => g.id === gateId);
   if (gate && gate.sectionIds.length > 0 && !gate.sectionIds.includes(ticket.sectionId ?? "")) {
     const allowedGates = data.gates.filter((g) => g.sectionIds.includes(ticket.sectionId ?? "")).map((g) => g.name);

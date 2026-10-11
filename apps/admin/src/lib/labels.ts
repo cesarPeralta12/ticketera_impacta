@@ -28,6 +28,7 @@ export const SCAN_LABEL = {
   WRONG_SESSION: "Otra función",
   WRONG_GATE: "Puerta equivocada",
   INVALID: "QR inválido",
+  TRANSFERRED: "Transferida (QR viejo)",
 } as const;
 
 export const TICKET_STATUS = {

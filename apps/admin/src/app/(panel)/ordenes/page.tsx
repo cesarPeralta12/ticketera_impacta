@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { DEFAULT_TIMEZONE, formatCode, formatDateTime, formatMoney } from "@ticketera/core";
-import { BOX_OFFICE_BUYER, expireStaleOrders, prisma, type OrderStatus, type Prisma } from "@ticketera/db";
+import { BOX_OFFICE_BUYER, expireStaleOrders, prisma, type OrderStatus } from "@ticketera/db";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { CHANNEL_LABEL } from "@/lib/labels";
-import { ROLES, eventScope, isGlobalView, requireStaff } from "@/lib/session";
+import { listSales, salesWhere } from "@/lib/sales";
+import { ROLES, isGlobalView, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Ventas" };
 
@@ -32,41 +33,14 @@ export default async function SalesPage({ searchParams }: Props) {
   const { q = "", estado = "", org = "" } = await searchParams;
   const term = q.trim();
 
-  const scope = eventScope(staff);
-  const eventFilter: Prisma.EventWhereInput = global && org ? { organizationId: org } : scope;
-  const where: Prisma.OrderWhereInput = {
-    items: { some: { ticketType: { session: { event: eventFilter } } } },
-    ...(estado in statusLabel ? { status: estado as OrderStatus } : {}),
-    ...(term
-      ? {
-          OR: [
-            { buyerName: { contains: term, mode: "insensitive" } },
-            { buyerEmail: { contains: term, mode: "insensitive" } },
-            { buyerDocument: { contains: term } },
-            { code: { contains: term.replace(/[\s-]/g, "").toUpperCase() } },
-          ],
-        }
-      : {}),
-  };
-
+  const filters = { q, estado, org };
+  const where = salesWhere(staff, filters);
   const [orders, organizers, totals] = await Promise.all([
-    prisma.order.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: 200,
-      include: {
-        items: {
-          include: {
-            ticketType: { include: { session: { include: { event: { include: { organization: true } }, venue: true } } } },
-          },
-        },
-        payments: { orderBy: { createdAt: "desc" } },
-        _count: { select: { tickets: true } },
-      },
-    }),
+    listSales(staff, filters, 200),
     global ? prisma.organization.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }) : [],
     prisma.order.aggregate({ where: { ...where, status: "PAID" }, _sum: { totalAmount: true }, _count: true }),
   ]);
+  const exportHref = `/ordenes/csv?${new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString()}`;
 
   return (
     <div className="space-y-6">
@@ -120,6 +94,9 @@ export default async function SalesPage({ searchParams }: Props) {
             Limpiar
           </Link>
         )}
+        <a href={exportHref} className="btn ml-auto">
+          Exportar a Excel
+        </a>
       </form>
 
       <div className="card overflow-x-auto">

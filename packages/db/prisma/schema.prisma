@@ -129,8 +129,10 @@ model Customer {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  orders  Order[]
-  tickets Ticket[]
+  orders            Order[]
+  tickets           Ticket[]
+  transfersSent     TicketTransfer[] @relation("TransfersSent")
+  transfersReceived TicketTransfer[] @relation("TransfersReceived")
 }
 
 // ─────────────────────────────── Recintos ───────────────────────────────
@@ -460,13 +462,14 @@ model Ticket {
   usedAt       DateTime?
   cancelledAt  DateTime?
 
-  order      Order        @relation(fields: [orderId], references: [id])
-  orderItem  OrderItem    @relation(fields: [orderItemId], references: [id])
-  ticketType TicketType   @relation(fields: [ticketTypeId], references: [id])
-  session    EventSession @relation(fields: [sessionId], references: [id])
-  seat       Seat?        @relation(fields: [seatId], references: [id])
-  customer   Customer?    @relation(fields: [customerId], references: [id])
+  order      Order            @relation(fields: [orderId], references: [id])
+  orderItem  OrderItem        @relation(fields: [orderItemId], references: [id])
+  ticketType TicketType       @relation(fields: [ticketTypeId], references: [id])
+  session    EventSession     @relation(fields: [sessionId], references: [id])
+  seat       Seat?            @relation(fields: [seatId], references: [id])
+  customer   Customer?        @relation(fields: [customerId], references: [id])
   scans      AccessScan[]
+  transfers  TicketTransfer[]
 
   // Para asientos numerados se agregará un índice único parcial
   // (sessionId, seatId) WHERE status <> 'CANCELLED' mediante SQL en la migración:
@@ -480,6 +483,23 @@ model Ticket {
 /// Si tiene secciones asignadas, solo acepta entradas de esas secciones. Además de ordenar
 /// el ingreso, evita el doble ingreso sin conexión: una misma entrada no puede ser aceptada
 /// por dos puertas distintas que estén offline a la vez.
+/// Entrada que su dueño le pasó a otra cuenta registrada. La entrada recibe un código
+/// (QR) nuevo; el viejo queda aquí para que la puerta diga "transferida" si alguien lo usa.
+model TicketTransfer {
+  id             String   @id @default(cuid())
+  ticketId       String
+  fromCustomerId String
+  toCustomerId   String
+  oldCode        String   @unique
+  createdAt      DateTime @default(now())
+
+  ticket Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  from   Customer @relation("TransfersSent", fields: [fromCustomerId], references: [id])
+  to     Customer @relation("TransfersReceived", fields: [toCustomerId], references: [id])
+
+  @@index([ticketId])
+}
+
 model AccessPoint {
   id      String @id @default(cuid())
   venueId String
@@ -501,6 +521,8 @@ enum ScanResult {
   /// La entrada es de una sección que no entra por esta puerta.
   WRONG_GATE
   INVALID
+  /// QR viejo de una entrada que su dueño transfirió a otra persona (tiene un QR nuevo).
+  TRANSFERRED
 }
 
 /// Cada lectura en puerta, aceptada o rechazada: es el historial de auditoría del acceso.

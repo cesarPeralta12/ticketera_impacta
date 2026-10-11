@@ -3,7 +3,7 @@ import { prisma, scanTicket } from "@ticketera/db";
 import { doorSession } from "@/lib/door";
 import { ROLES, can, currentStaff } from "@/lib/session";
 
-const REJECTIONS = ["ALREADY_USED", "NOT_FOUND", "CANCELLED", "WRONG_SESSION", "WRONG_GATE", "INVALID"] as const;
+const REJECTIONS = ["ALREADY_USED", "NOT_FOUND", "CANCELLED", "WRONG_SESSION", "WRONG_GATE", "INVALID", "TRANSFERRED"] as const;
 
 const bodySchema = z.object({
   sessionId: z.string().min(1),

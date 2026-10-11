@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import QRCode from "qrcode";
-import { formatCode, formatDateTime, formatMoney, signTicketPayload } from "@ticketera/core";
-import { BOX_OFFICE_BUYER, expireStaleOrders, getOrderByCode, requireEnv } from "@ticketera/db";
+import { formatCode, formatDateTime, formatMoney } from "@ticketera/core";
+import { BOX_OFFICE_BUYER, expireStaleOrders, getOrderByCode } from "@ticketera/db";
+import { ticketQrSvg } from "@/lib/ticket-qr";
 import { payOrderAction } from "./actions";
 import { AutoRefresh, Countdown } from "./live";
 
@@ -109,7 +109,7 @@ export default async function OrderPage({ params }: Props) {
                   : "Presenta el QR en la puerta. Cada entrada vale para un ingreso."}
             </p>
           </div>
-          <TicketList tickets={order.tickets} guest={guest} />
+          <TicketList tickets={order.tickets} guest={guest} ownerId={order.customerId} />
         </section>
       )}
 
@@ -145,21 +145,29 @@ type TicketForList = {
   code: string;
   status: string;
   holderName: string | null;
+  customerId: string | null;
   ticketType: { name: string };
   seat: { label: string; section: { name: string } } | null;
 };
 
-async function TicketList({ tickets, guest }: { tickets: TicketForList[]; guest: boolean }) {
-  const secret = requireEnv("TICKET_QR_SECRET");
+/**
+ * Entradas de la orden con su QR. Una entrada que su dueño transfirió ya es de otra cuenta:
+ * aquí no se muestra su QR (el link de la compra lo tiene quien compró, no quien la recibió).
+ */
+async function TicketList({
+  tickets,
+  guest,
+  ownerId,
+}: {
+  tickets: TicketForList[];
+  guest: boolean;
+  ownerId: string | null;
+}) {
   const rendered = await Promise.all(
-    tickets.map(async (ticket) => ({
-      ...ticket,
-      qr: await QRCode.toString(await signTicketPayload(ticket.code, secret), {
-        type: "svg",
-        margin: 1,
-        errorCorrectionLevel: "M",
-      }),
-    })),
+    tickets.map(async (ticket) => {
+      const transferred = ticket.customerId !== ownerId;
+      return { ...ticket, transferred, qr: transferred ? null : await ticketQrSvg(ticket.code) };
+    }),
   );
 
   return (
@@ -177,12 +185,22 @@ async function TicketList({ tickets, guest }: { tickets: TicketForList[]; guest:
               {ticket.seat.section.name} · {ticket.seat.label}
             </p>
           )}
-          <div
-            className={`mx-auto my-3 w-48 ${ticket.status === "VALID" ? "" : "opacity-30"}`}
-            dangerouslySetInnerHTML={{ __html: ticket.qr }}
-          />
-          <p className="font-mono text-sm tracking-wider">{formatCode(ticket.code)}</p>
-          {ticket.status === "USED" && <p className="mt-1 text-xs font-semibold text-[#6b687a]">Ya utilizada</p>}
+          {ticket.qr ? (
+            <>
+              <div
+                className={`mx-auto my-3 w-48 ${ticket.status === "VALID" ? "" : "opacity-30"}`}
+                dangerouslySetInnerHTML={{ __html: ticket.qr }}
+              />
+              <p className="font-mono text-sm tracking-wider">{formatCode(ticket.code)}</p>
+            </>
+          ) : (
+            <p className="my-6 text-sm font-semibold text-[#6b687a]">
+              Transferida a otra persona: la ve en su cuenta con un QR nuevo.
+            </p>
+          )}
+          {!ticket.transferred && ticket.status === "USED" && (
+            <p className="mt-1 text-xs font-semibold text-[#6b687a]">Ya utilizada</p>
+          )}
           {ticket.status === "CANCELLED" && <p className="mt-1 text-xs font-semibold text-[#c2183e]">Anulada</p>}
         </li>
       ))}

@@ -183,12 +183,18 @@ export async function GuestsView({
               />
             </label>
             <label className="label">
-              O sube un archivo CSV
-              <input name="file" type="file" accept=".csv,.txt,text/csv,text/plain" className="text-sm" />
+              O sube un archivo de Excel (.xlsx) o CSV
+              <input
+                name="file"
+                type="file"
+                accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain"
+                className="text-sm"
+              />
             </label>
             <p className="text-xs text-[var(--ink-dim)]">
-              Desde Excel: selecciona las columnas (nombre, email, documento), cópialas y pégalas arriba; o guarda la hoja
-              como CSV. Si la primera fila es un encabezado (&ldquo;Nombre&rdquo;), se ignora. Hasta 2.000 por carga.
+              En el Excel se lee la primera hoja con las columnas en este orden: nombre, email, documento. También puedes
+              copiar esas columnas y pegarlas arriba. Si la primera fila es un encabezado (&ldquo;Nombre&rdquo;), se ignora.
+              Hasta 2.000 por carga.
             </p>
             <button type="submit" className="btn btn-primary w-fit">
               Emitir invitaciones

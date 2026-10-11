@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { parseGuestList } from "@ticketera/core";
 import { DomainError, cancelGuestTicket, issueGuestTickets, prisma } from "@ticketera/db";
+import { readSheet } from "read-excel-file/universal";
 import { formObject, intField, zodErrors, type FormState } from "@/lib/forms";
 import { ROLES, can, requireStaff, visibleEvent, type Staff } from "@/lib/session";
 
@@ -18,6 +19,22 @@ async function guestEvent(staff: Staff, eventId: string) {
 function revalidateGuests(eventId: string, sessionId: string) {
   revalidatePath(`/eventos/${eventId}/funciones/${sessionId}/invitados`);
   revalidatePath(`/cliente/${eventId}/invitados/${sessionId}`);
+}
+
+/**
+ * Primera hoja de un Excel como texto (una fila por línea, columnas separadas por
+ * tabulador): el mismo formato que pegar desde Excel, así lo lee el mismo intérprete.
+ */
+function excelToText(rows: unknown[][]) {
+  return rows
+    .map((row) =>
+      row
+        .map((cell) =>
+          cell === null || cell === undefined ? "" : cell instanceof Date ? cell.toISOString().slice(0, 10) : String(cell),
+        )
+        .join("\t"),
+    )
+    .join("\n");
 }
 
 const guestTypeSchema = z.object({
@@ -73,7 +90,7 @@ export async function createGuestTypeAction(_prev: FormState, formData: FormData
   return { ok: true };
 }
 
-/** Carga invitados pegados desde Excel o desde un archivo CSV: cada uno recibe su QR. */
+/** Carga invitados pegados desde Excel o desde un archivo .xlsx/CSV: cada uno recibe su QR. */
 export async function addGuestsAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireStaff([...ROLES.manage, ...ROLES.client]);
   const type = await prisma.ticketType.findUnique({
@@ -87,11 +104,19 @@ export async function addGuestsAction(_prev: FormState, formData: FormData): Pro
   let text = String(formData.get("list") ?? "");
   const file = formData.get("file");
   if (file instanceof File && file.size > 0) {
-    if (file.size > 1_000_000) return { fieldErrors: { file: "El archivo supera 1 MB." } };
-    if (/\.xlsx?$/i.test(file.name)) {
-      return { fieldErrors: { file: "En Excel usa Archivo → Guardar como → CSV, o copia las columnas y pégalas." } };
+    if (file.size > 2_000_000) return { fieldErrors: { file: "El archivo supera 2 MB." } };
+    if (/\.xls$/i.test(file.name)) {
+      return { fieldErrors: { file: "Es un Excel antiguo (.xls): en Excel usa Archivo → Guardar como → Libro de Excel (.xlsx)." } };
     }
-    text += `\n${await file.text()}`;
+    if (/\.xlsx$/i.test(file.name)) {
+      try {
+        text += `\n${excelToText(await readSheet(await file.arrayBuffer()))}`;
+      } catch {
+        return { fieldErrors: { file: "No se pudo leer el Excel. Revisa que sea un .xlsx válido." } };
+      }
+    } else {
+      text += `\n${await file.text()}`;
+    }
   }
 
   const { guests, errors } = parseGuestList(text);
@@ -100,7 +125,7 @@ export async function addGuestsAction(_prev: FormState, formData: FormData): Pro
     if (errors.length > shown.length) shown.push(`…y ${errors.length - shown.length} error(es) más.`);
     return { error: "Revisa la lista.", fieldErrors: Object.fromEntries(shown.map((e, i) => [`line${i}`, e])) };
   }
-  if (guests.length === 0) return { fieldErrors: { list: "Pega la lista o sube un archivo CSV." } };
+  if (guests.length === 0) return { fieldErrors: { list: "Pega la lista o sube un archivo de Excel o CSV." } };
 
   try {
     await issueGuestTickets({ ticketTypeId: type.id, guests, staffId: staff.id });

@@ -56,6 +56,7 @@ datos nuevos (cliente, cajero, puertas por sección, evento con invitados) **sin
 | Panel :3001 | `organizador@andeslive.test` | `Organizador2026!` | Organizador "Andes Live": su propio panel |
 | Panel :3001 | `organizador@cumbre.test` | `Organizador2026!` | Organizador "Cumbre Eventos": su propio panel |
 | Sitio :3000 | `comprador@impacta.test` | `Comprador2026!` | Comprador (comprar no exige cuenta) |
+| Sitio :3000 | `amiga@impacta.test` | `Comprador2026!` | Segundo comprador: para probar transferencias |
 
 Cada rol entra directo a su pantalla y no puede abrir las de los demás.
 
@@ -76,7 +77,8 @@ Cada rol entra directo a su pantalla y no puede abrir las de los demás.
 8. **Boletería** (cuenta de cajero): vende → ticket para impresora térmica de 80 mm o A4. Comparte
    el cupo con la venta online y sigue vendiendo durante el evento. "Mi caja de hoy" = arqueo.
 9. **Lista de invitados**: *Lanzamiento Andino* no se vende ni aparece en el sitio. En la función →
-   Invitados: pega la lista desde Excel o sube un CSV; cada invitado tiene su QR (hoja para imprimir).
+   Invitados: pega la lista desde Excel o sube el archivo (.xlsx o CSV); cada invitado tiene su QR
+   (hoja para imprimir).
 10. **Cliente**: Clientes → asigna el evento a un cliente → en el evento, "Espacio del cliente" (se
     cierra solo). La cuenta del cliente ve solo sus eventos: reporte en vivo, CSV y sus invitados.
 11. **Reporte** (botón en cada evento): por canal, ingresados, ausentes, rechazos en puerta, boletería
@@ -88,6 +90,13 @@ Cada rol entra directo a su pantalla y no puede abrir las de los demás.
 14. **Preventa**: en la función, un tipo de entrada "Es preventa" con fecha de fin. La General de esa
     sección empieza sola cuando termina; la web muestra "Preventa hasta…" y la General "desde…".
 15. **Vista general de Impacta**: Resumen general, Ventas e Ingresos en puerta de todos los organizadores.
+16. **Compradores**: cada persona una sola vez, con sus compras, lo gastado y los eventos. Ventas y
+    Compradores se exportan a Excel. Impacta ve todos (y filtra por organizador); cada organizador, los suyos.
+17. **Mis eventos** (sitio, con `comprador@impacta.test`): próximas entradas con su QR, historial
+    (si ingresó o no) y compras.
+18. **Transferir una entrada**: en Mis eventos → "Transferir a otra persona" → `amiga@impacta.test`.
+    Ella la ve con un QR nuevo; el QR viejo sale "Entrada transferida" en la puerta, también sin
+    internet. Solo a cuentas registradas, hasta que empieza la función; las invitaciones no se transfieren.
 
 ## Comandos
 

@@ -1,17 +1,7 @@
 import { formatCode, formatDateTime } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, listEventAttendees } from "@ticketera/db";
+import { csvResponse } from "./csv";
 import { CHANNEL_LABEL } from "./labels";
-
-/**
- * Celda CSV con punto y coma (lo que Excel en español abre directo). Lo que empieza con
- * =, +, - o @ se antepone con ' para que Excel no lo ejecute como fórmula: los nombres
- * los escriben los compradores.
- */
-function cell(value: string | null | undefined) {
-  let text = value ?? "";
-  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-  return /[";\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
 
 /** Asistentes de un evento como CSV descargable (una fila por entrada emitida). */
 export async function attendeesCsvResponse(eventId: string, slug: string) {
@@ -52,17 +42,7 @@ export async function attendeesCsvResponse(eventId: string, slug: string) {
       scan?.accessPoint?.name,
       scan?.deviceId,
       scan ? (scan.offline ? "Sí" : "No") : "",
-    ]
-      .map(cell)
-      .join(";");
+    ];
   });
-  // BOM: sin él, Excel muestra mal los acentos.
-  const body = `﻿${[header.join(";"), ...lines].join("\r\n")}\r\n`;
-  return new Response(body, {
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${slug}-asistentes.csv"`,
-      "Cache-Control": "no-store",
-    },
-  });
+  return csvResponse(`${slug}-asistentes.csv`, header, lines);
 }

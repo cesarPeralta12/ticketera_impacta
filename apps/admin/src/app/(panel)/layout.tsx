@@ -27,6 +27,7 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
           { href: "/organizadores", label: "Organizadores" },
           { href: "/aprobaciones", label: "Aprobaciones", badge: pending },
           { href: "/ordenes", label: "Ventas" },
+          { href: "/compradores", label: "Compradores" },
           { href: "/ingresos", label: "Ingresos en puerta" },
         ],
       },
@@ -51,6 +52,7 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
           { href: "/eventos", label: "Eventos" },
           { href: "/recintos", label: "Recintos" },
           { href: "/ordenes", label: "Ventas" },
+          { href: "/compradores", label: "Compradores" },
           { href: "/ingresos", label: "Ingresos en puerta" },
           ...operate,
           // Las cuentas de un organizador las crea IMPACTA (al entrar en él).

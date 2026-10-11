@@ -8,6 +8,7 @@
  * Cuentas de prueba (solo desarrollo local):
  *   Cliente  cliente@impacta.test  / Cliente2026!   (CLIENT: Producciones Andinas)
  *   Cajero   caja@impacta.test     / Caja2026!      (CASHIER: solo boletería)
+ *   Comprador  amiga@impacta.test  / Comprador2026!  (segunda cuenta del sitio, para transferencias)
  *   Organizador  organizador@andeslive.test / Organizador2026!  (ADMIN de "Andes Live")
  *   Organizador  organizador@cumbre.test    / Organizador2026!  (ADMIN de "Cumbre Eventos")
  * Con SEED_PASSWORD definida, todas las cuentas usan esa contraseña (ver seedPassword).
@@ -98,6 +99,13 @@ export async function seedArchitectureDemo(db: Db, orgId: string) {
   }
   if (await ensureStaff(db, orgId, { email: "caja@impacta.test", name: "Cajero Demo", password: seedPassword("Caja2026!"), role: "CASHIER" })) {
     log.push("cuenta de cajero");
+  }
+  // Un segundo comprador, para probar la transferencia de entradas entre cuentas.
+  if (!(await prisma.customer.findUnique({ where: { email: "amiga@impacta.test" } }))) {
+    await prisma.customer.create({
+      data: { email: "amiga@impacta.test", name: "Sofía Vargas", passwordHash: await db.hashPassword(seedPassword("Comprador2026!")) },
+    });
+    log.push("segunda cuenta de comprador");
   }
 
   // ── El festival es del cliente, con su espacio abierto hasta 24 h después ──

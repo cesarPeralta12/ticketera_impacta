@@ -23,6 +23,7 @@ const RESULT_VIEW: Record<ScanResult, { title: string; className: string }> = {
   WRONG_SESSION: { title: "Es de otra función", className: "bg-amber-500" },
   WRONG_GATE: { title: "Puerta equivocada", className: "bg-amber-500" },
   INVALID: { title: "QR no válido", className: "bg-red-600" },
+  TRANSFERRED: { title: "Entrada transferida", className: "bg-red-600" },
 };
 
 /** Respuesta del servidor a una lectura (ver /api/puerta/scan). */
@@ -296,7 +297,9 @@ export function DoorApp({ sessionId, timezone }: { sessionId: string; timezone: 
                     : "Su sección no tiene puerta asignada."
                   : outcome.result === "WRONG_SESSION" && outcome.ticket
                     ? `Es para: ${outcome.ticket.event}`
-                    : null,
+                    : outcome.result === "TRANSFERRED"
+                      ? "Su dueño la transfirió a otra persona: este QR ya no vale (la otra persona tiene uno nuevo)."
+                      : null,
             offline: false,
             at: scan.scannedAt,
           });
@@ -338,7 +341,9 @@ export function DoorApp({ sessionId, timezone }: { sessionId: string; timezone: 
             ? decision.allowedGates.length
               ? `Debe entrar por: ${decision.allowedGates.join(", ")}`
               : "Su sección no tiene puerta asignada."
-            : null,
+            : decision.result === "TRANSFERRED"
+              ? "Su dueño la transfirió a otra persona: este QR ya no vale (la otra persona tiene uno nuevo)."
+              : null,
       offline: true,
       at: scan.scannedAt,
     });

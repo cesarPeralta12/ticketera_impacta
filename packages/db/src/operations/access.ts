@@ -61,10 +61,15 @@ export async function scanTicket(input: {
         include: { ticketType: true, seat: { include: { section: true } }, session: { include: { event: true } } },
       })
     : null;
+  // Un QR viejo de una entrada que su dueño transfirió: la entrada ahora tiene otro código.
+  const transfer =
+    parsed.ok && !ticket
+      ? await prisma.ticketTransfer.findUnique({ where: { oldCode: parsed.code }, select: { ticketId: true } })
+      : null;
 
   if (input.offlineResult) result = input.offlineResult;
   else if (parsed.ok) {
-    if (!ticket) result = "NOT_FOUND";
+    if (!ticket) result = transfer ? "TRANSFERRED" : "NOT_FOUND";
     else if (ticket.sessionId !== input.sessionId) result = "WRONG_SESSION";
     else {
       const gate = input.accessPointId
@@ -85,14 +90,19 @@ export async function scanTicket(input: {
             ).map((g) => g.name)
           : [];
       } else {
+        // También exige el mismo código: si la transfirieron justo ahora, el QR viejo no entra.
         const { count } = await prisma.ticket.updateMany({
-          where: { id: ticket.id, status: "VALID" },
+          where: { id: ticket.id, status: "VALID", code: ticket.code },
           data: { status: "USED", usedAt: scannedAt },
         });
         if (count === 1) result = "ACCEPTED";
         else {
-          const current = await prisma.ticket.findUniqueOrThrow({ where: { id: ticket.id }, select: { status: true } });
-          result = current.status === "CANCELLED" ? "CANCELLED" : "ALREADY_USED";
+          const current = await prisma.ticket.findUniqueOrThrow({
+            where: { id: ticket.id },
+            select: { status: true, code: true },
+          });
+          result =
+            current.code !== ticket.code ? "TRANSFERRED" : current.status === "CANCELLED" ? "CANCELLED" : "ALREADY_USED";
         }
       }
     }
@@ -111,7 +121,7 @@ export async function scanTicket(input: {
     await prisma.accessScan.create({
       data: {
         sessionId: input.sessionId,
-        ticketId: ticket?.id,
+        ticketId: ticket?.id ?? transfer?.ticketId,
         accessPointId: input.accessPointId,
         operatorId: input.operatorId,
         deviceId: input.deviceId?.slice(0, 64),
@@ -206,6 +216,11 @@ export async function getSessionSyncData(sessionId: string) {
       order: { select: { buyerName: true } },
     },
   });
+  // QR viejos de entradas transferidas: sin conexión la puerta igual sabe que no valen.
+  const transferred = await prisma.ticketTransfer.findMany({
+    where: { ticket: { sessionId } },
+    select: { oldCode: true },
+  });
   return {
     syncedAt: new Date().toISOString(),
     session: {
@@ -230,6 +245,7 @@ export async function getSessionSyncData(sessionId: string) {
       sectionId: t.ticketType.sectionId,
       seat: t.seat?.label ?? null,
     })),
+    transferredCodes: transferred.map((t) => t.oldCode),
   };
 }
 
