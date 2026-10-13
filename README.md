@@ -286,6 +286,19 @@ ya tiene datos, **sin borrar nada** (todas las cuentas nuevas quedan con `SEED_P
 SEED_ALLOW=si SEED_PASSWORD='una-contraseña-propia' npm run db:demo -w @ticketera/db
 ```
 
+### Pasar un organizador de tu PC al servidor
+
+Exporta la estructura de un organizador (recintos con su mapa, eventos, noches, precios, mesas y promociones; **sin
+cuentas, compras ni compradores**, porque el repositorio es público), súbela con el código y cárgala en el servidor:
+
+```bash
+# En tu PC: crea packages/db/prisma/organizers/<slug>.json (luego commit y push, y redesplegar)
+npm run db:export-org -w @ticketera/db -- <slug>
+
+# En la terminal del servidor (no borra nada; si ya existe, no hace nada). La cuenta es opcional:
+SEED_ALLOW=si IMPORT_ADMIN_EMAIL=correo@del.organizador IMPORT_ADMIN_PASSWORD='temporal-de-8+' npm run db:import-org -w @ticketera/db -- prisma/organizers/<slug>.json
+```
+
 ## Problemas comunes
 
 - **Todas las páginas dan 404 salvo la portada** tras agregar rutas: caché de Turbopack

@@ -1,0 +1,308 @@
+{
+  "version": 1,
+  "organization": {
+    "name": "soho",
+    "slug": "soho",
+    "kind": "NIGHTLIFE",
+    "currency": "BOB",
+    "taxId": "23415667",
+    "maxActiveEvents": null
+  },
+  "venues": [
+    {
+      "name": "soho",
+      "address": "centro santa cruz",
+      "city": "Santa Cruz de la Sierra",
+      "timezone": "America/La_Paz",
+      "sections": [
+        {
+          "name": "general",
+          "seatingMode": "GENERAL_ADMISSION",
+          "capacity": 350,
+          "sortOrder": 0,
+          "color": "#F5B700",
+          "layout": {
+            "x": 189,
+            "y": 69,
+            "type": "zone",
+            "shape": "trapezoid",
+            "taper": 0.48,
+            "width": 642,
+            "height": 300
+          },
+          "seats": []
+        },
+        {
+          "name": "lounge",
+          "seatingMode": "RESERVED",
+          "capacity": 24,
+          "sortOrder": 1,
+          "color": "#F5B700",
+          "layout": {
+            "x": 125,
+            "y": 49,
+            "rows": 8,
+            "type": "grid",
+            "rowGap": 45,
+            "seatGap": 76,
+            "seatsPerRow": 3
+          },
+          "seats": [
+            {
+              "row": "A",
+              "number": "1",
+              "label": "Fila A · 1",
+              "x": 125,
+              "y": 49
+            },
+            {
+              "row": "A",
+              "number": "2",
+              "label": "Fila A · 2",
+              "x": 201,
+              "y": 49
+            },
+            {
+              "row": "A",
+              "number": "3",
+              "label": "Fila A · 3",
+              "x": 277,
+              "y": 49
+            },
+            {
+              "row": "B",
+              "number": "1",
+              "label": "Fila B · 1",
+              "x": 125,
+              "y": 94
+            },
+            {
+              "row": "B",
+              "number": "2",
+              "label": "Fila B · 2",
+              "x": 201,
+              "y": 94
+            },
+            {
+              "row": "B",
+              "number": "3",
+              "label": "Fila B · 3",
+              "x": 277,
+              "y": 94
+            },
+            {
+              "row": "C",
+              "number": "1",
+              "label": "Fila C · 1",
+              "x": 125,
+              "y": 139
+            },
+            {
+              "row": "C",
+              "number": "2",
+              "label": "Fila C · 2",
+              "x": 201,
+              "y": 139
+            },
+            {
+              "row": "C",
+              "number": "3",
+              "label": "Fila C · 3",
+              "x": 277,
+              "y": 139
+            },
+            {
+              "row": "D",
+              "number": "1",
+              "label": "Fila D · 1",
+              "x": 125,
+              "y": 184
+            },
+            {
+              "row": "D",
+              "number": "2",
+              "label": "Fila D · 2",
+              "x": 201,
+              "y": 184
+            },
+            {
+              "row": "D",
+              "number": "3",
+              "label": "Fila D · 3",
+              "x": 277,
+              "y": 184
+            },
+            {
+              "row": "E",
+              "number": "1",
+              "label": "Fila E · 1",
+              "x": 125,
+              "y": 229
+            },
+            {
+              "row": "E",
+              "number": "2",
+              "label": "Fila E · 2",
+              "x": 201,
+              "y": 229
+            },
+            {
+              "row": "E",
+              "number": "3",
+              "label": "Fila E · 3",
+              "x": 277,
+              "y": 229
+            },
+            {
+              "row": "F",
+              "number": "1",
+              "label": "Fila F · 1",
+              "x": 125,
+              "y": 274
+            },
+            {
+              "row": "F",
+              "number": "2",
+              "label": "Fila F · 2",
+              "x": 201,
+              "y": 274
+            },
+            {
+              "row": "F",
+              "number": "3",
+              "label": "Fila F · 3",
+              "x": 277,
+              "y": 274
+            },
+            {
+              "row": "G",
+              "number": "1",
+              "label": "Fila G · 1",
+              "x": 125,
+              "y": 319
+            },
+            {
+              "row": "G",
+              "number": "2",
+              "label": "Fila G · 2",
+              "x": 201,
+              "y": 319
+            },
+            {
+              "row": "G",
+              "number": "3",
+              "label": "Fila G · 3",
+              "x": 277,
+              "y": 319
+            },
+            {
+              "row": "H",
+              "number": "1",
+              "label": "Fila H · 1",
+              "x": 125,
+              "y": 364
+            },
+            {
+              "row": "H",
+              "number": "2",
+              "label": "Fila H · 2",
+              "x": 201,
+              "y": 364
+            },
+            {
+              "row": "H",
+              "number": "3",
+              "label": "Fila H · 3",
+              "x": 277,
+              "y": 364
+            }
+          ]
+        }
+      ],
+      "accessPoints": [
+        {
+          "name": "Puerta principal",
+          "sections": [
+            "general",
+            "lounge"
+          ]
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "slug": "noche-tecno",
+      "title": "noche tecno",
+      "description": "noche con mayor musica house electro",
+      "imageUrl": "https://www.pulsomag.com/wp-content/uploads/2026/04/b7d83a32bba8e46b37bc22edd92ed71cef47b091-1920x1280_1024x1024.jpg",
+      "category": "BOLICHE",
+      "status": "PUBLISHED",
+      "mode": "TICKETING",
+      "transfersEnabled": true,
+      "sessions": [
+        {
+          "venue": "soho",
+          "startsAt": "2026-10-18T22:06:00.000Z",
+          "endsAt": null,
+          "doorsOpenAt": "2026-10-17T22:09:00.000Z",
+          "salesStartAt": null,
+          "salesEndAt": null,
+          "queueEnabled": false,
+          "maxConcurrentCheckouts": null,
+          "ticketTypes": [
+            {
+              "section": "general",
+              "name": "general",
+              "description": null,
+              "unitAmount": 8000,
+              "currency": "BOB",
+              "capacity": 350,
+              "maxPerOrder": 5,
+              "salesStartAt": null,
+              "salesEndAt": null,
+              "presale": false,
+              "discountPercent": null,
+              "discountStartsAt": null,
+              "discountEndsAt": null,
+              "sortOrder": 0,
+              "accessMethods": [
+                "QR"
+              ],
+              "qrMode": "STATIC",
+              "kind": "ENTRY",
+              "peoplePerUnit": 1,
+              "consumptionAmount": 75000,
+              "entryUntil": "2026-10-19T17:17:00.000Z"
+            },
+            {
+              "section": "lounge",
+              "name": "vip",
+              "description": null,
+              "unitAmount": 12000,
+              "currency": "BOB",
+              "capacity": 24,
+              "maxPerOrder": 5,
+              "salesStartAt": null,
+              "salesEndAt": null,
+              "presale": false,
+              "discountPercent": null,
+              "discountStartsAt": null,
+              "discountEndsAt": null,
+              "sortOrder": 1,
+              "accessMethods": [
+                "QR"
+              ],
+              "qrMode": "STATIC",
+              "kind": "TABLE",
+              "peoplePerUnit": 2,
+              "consumptionAmount": 50000,
+              "entryUntil": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "promoCodes": []
+}
