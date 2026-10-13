@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
-import { deriveTicketKey, toBase64Url } from "@ticketera/core";
+import { deriveTicketKey, tableLabel, toBase64Url } from "@ticketera/core";
 import { prisma } from "../client";
 import type { AccessMethod, StaffRole } from "../generated/prisma/client";
 import { verifyStaffCredentials } from "./accounts";
+import { expireTimedTickets } from "./nightlife";
 import { requireEnv } from "./shared";
 
 /** Roles que pueden usar la app de puerta. */
@@ -318,6 +319,9 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
   });
   if (!session) return null;
 
+  // Las "free hasta la 01:00" que no se usaron a tiempo bajan anuladas: el teléfono valida contra esta lista.
+  await expireTimedTickets(input.sessionId);
+
   const gate = input.accessPointId ? session.venue.accessPoints.find((g) => g.id === input.accessPointId) : undefined;
   const gateSections = new Set(gate?.sections.map((s) => s.id) ?? []);
   const restricted = gateSections.size > 0;
@@ -347,6 +351,7 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
       ticketType: { select: { name: true, sectionId: true, accessMethods: true, qrMode: true } },
       seat: { select: { label: true } },
       order: { select: { buyerName: true, buyerDocument: true } },
+      credit: { select: { tableNumber: true } },
     },
   });
   const secret = tickets.some((t) => t.ticketType.qrMode === "DYNAMIC") ? requireEnv("TICKET_QR_SECRET") : "";
@@ -388,7 +393,8 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
           // Titular actual: si la entrada se transfirió, el carnet es el de quien la recibió.
           document: t.holderDocument ?? t.order.buyerDocument,
           type: t.ticketType.name,
-          seat: t.seat?.label ?? null,
+          // En un boliche, la mesa de la persona va donde iría la butaca.
+          seat: t.seat?.label ?? tableLabel(t.ticketType.name, t.credit?.tableNumber),
           methods: t.ticketType.accessMethods,
           // QR dinámico: el teléfono recalcula la prueba con esta llave (solo de las entradas de su puerta).
           dynamic,

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { MAX_DISCOUNT_PERCENT, formatDateTime, normalizeImageUrl, slugify, windowsOverlap, zonedDateTimeToUtc } from "@ticketera/core";
+import { MAX_DISCOUNT_PERCENT, entryDeadline, formatDateTime, isTimeOfDay, normalizeImageUrl, slugify, windowsOverlap, zonedDateTimeToUtc } from "@ticketera/core";
 import { DomainError, EventCategory, EventMode, createEventWithinLimit, prisma, publicationProblem, setTicketTypeQrMode, submitEventForReview } from "@ticketera/db";
 import { formObject, intField, moneyField, zodErrors, type FormState } from "@/lib/forms";
 import { ROLES, requireStaff } from "@/lib/session";
@@ -234,6 +234,13 @@ const ticketTypeSchema = z.object({
   discountPercent: z.string().optional(),
   discountStartsAt: z.string().optional(),
   discountEndsAt: z.string().optional(),
+  /** Boliche: mesa o lounge para varias personas (el cupo se cuenta en mesas). */
+  table: z.literal("on").optional(),
+  peoplePerUnit: intField(2, 50, "Las personas por mesa").optional(),
+  /** Consumo incluido en barra (Bs), por mesa o por entrada. */
+  consumption: moneyField.optional(),
+  /** Válida para entrar hasta esta hora (HH:MM, hora del recinto). */
+  entryUntil: z.string().refine(isTimeOfDay, "Hora inválida (ej. 01:00).").optional(),
 });
 
 const ACCESS_METHODS = ["QR", "BARCODE", "NFC"] as const;
@@ -318,6 +325,15 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
     include: { _count: { select: { seats: true } } },
   });
   if (!session || !section) return { error: "Función o sección no encontrada." };
+
+  // Boliche: mesa para N personas, consumo incluido y horario de ingreso.
+  const table = Boolean(data.table);
+  const peoplePerUnit = table ? data.peoplePerUnit : 1;
+  if (table && !peoplePerUnit) return { fieldErrors: { peoplePerUnit: "Indica cuántas personas entran con cada mesa." } };
+  if (table && section.seatingMode === "RESERVED") {
+    return { fieldErrors: { sectionId: "Las mesas van en una zona general (sin butacas numeradas)." } };
+  }
+  const entryUntil = data.entryUntil ? entryDeadline(session.startsAt, data.entryUntil, session.venue.timezone) : null;
   const qrMode = data.qrDynamic ? ("DYNAMIC" as const) : ("STATIC" as const);
   if (qrMode === "DYNAMIC" && session.event.mode !== "TICKETING") {
     return { error: "El QR dinámico es para eventos con venta de entradas, no para listas de invitados." };
@@ -338,9 +354,15 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
   if (seated) {
     capacity = section._count.seats; // cada butaca es una entrada
   } else {
-    if (!data.capacity) return { fieldErrors: { capacity: "Ingresa el cupo." } };
-    if (data.capacity > section.capacity) {
-      return { fieldErrors: { capacity: `"${section.name}" admite como máximo ${section.capacity} personas.` } };
+    if (!data.capacity) return { fieldErrors: { capacity: table ? "Ingresa cuántas mesas hay." : "Ingresa el cupo." } };
+    if (data.capacity * (peoplePerUnit ?? 1) > section.capacity) {
+      return {
+        fieldErrors: {
+          capacity: table
+            ? `${data.capacity} mesas de ${peoplePerUnit} son ${data.capacity * peoplePerUnit!} personas y "${section.name}" admite ${section.capacity}.`
+            : `"${section.name}" admite como máximo ${section.capacity} personas.`,
+        },
+      };
     }
     capacity = data.capacity;
   }
@@ -373,9 +395,14 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
         unitAmount: data.price,
         currency: staff.organization.currency,
         capacity,
-        maxPerOrder: data.maxPerOrder,
+        // Gratis (lista free): una por persona; createPendingOrder también lo exige.
+        maxPerOrder: data.price === 0 ? 1 : data.maxPerOrder,
         presale,
         ...parsedDiscount.discount,
+        kind: table ? ("TABLE" as const) : ("ENTRY" as const),
+        peoplePerUnit: peoplePerUnit ?? 1,
+        consumptionAmount: data.consumption || null,
+        entryUntil,
         // El QR dinámico solo se lee con QR: el código de barras y el NFC son fijos.
         accessMethods: qrMode === "DYNAMIC" ? ["QR" as const] : [...readAccessMethods(formData)],
         qrMode,
@@ -389,6 +416,9 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
     price: data.price,
     capacity,
     presale,
+    ...(table ? { table: true, peoplePerUnit } : {}),
+    ...(data.consumption ? { consumption: data.consumption } : {}),
+    ...(entryUntil ? { entryUntil: entryUntil.toISOString() } : {}),
     shifted: adjusted.filter((a) => a.changed).map((a) => a.type.id),
   });
   revalidatePath(`/eventos/${session.eventId}/funciones/${session.id}`);

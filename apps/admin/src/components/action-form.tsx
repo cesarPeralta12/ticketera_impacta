@@ -50,9 +50,9 @@ export function ActionForm({
           {fieldErrors.length > 0 ? fieldErrors.map((msg) => <p key={msg}>{msg}</p>) : <p>{state?.error}</p>}
         </div>
       )}
-      {state?.ok && successMessage && (
+      {state?.ok && (state.message ?? successMessage) && (
         <p role="status" className="w-full basis-full text-sm text-[var(--accent)]">
-          {successMessage}
+          {state.message ?? successMessage}
         </p>
       )}
     </form>

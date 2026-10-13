@@ -95,6 +95,16 @@ Cada rol entra directo a su pantalla y no puede abrir las de los demás. El port
 17. **Mis eventos** (sitio, con `comprador@impacta.test`): sus compras y el historial de eventos
     pasados (a qué hora ingresó, o "no asististe"). Las entradas con su QR están en *Mis entradas*.
 
+18. **Boliches** (sitio → *Boliches*): Lounge 360 (Santa Cruz) y Forum (La Paz), con noches cada semana.
+    Filtra por *Hoy / Este finde / Próximos 7 días* y por ciudad. En una noche: **Free hasta la 01:00**
+    (gratis, una por persona), **Entrada + trago** (consumo incluido) y **mesas o lounges** (Mesa VIP para 6
+    con Bs 1.000 de consumo): al pagar, la mesa recibe su número y un QR por persona. Código RRPP: `RRPP-VALE`.
+19. **Barra** (panel → *Barra (consumos)*, también con `caja@impacta.test`): elige la noche, escribe o lee el
+    QR de cualquier persona de la mesa y descuenta lo que piden; el saldo es compartido y no queda negativo.
+20. **Armar un boliche** (panel): evento con categoría *Boliche* → una noche → en sus precios, la caja
+    *Boliche* (mesa, personas, consumo incluido, válida hasta) → en el evento, **Repetir noches** (días que
+    abre y semanas). En la puerta, pasada la hora de la free ya no entra (también en la app móvil).
+
 ## Comandos
 
 | Comando | Qué hace |

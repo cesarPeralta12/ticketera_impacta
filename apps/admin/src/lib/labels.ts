@@ -31,6 +31,7 @@ export const SCAN_LABEL = {
   METHOD_NOT_ALLOWED: "Método no permitido",
   QR_EXPIRED: "QR vencido (captura)",
   STATIC_NOT_ALLOWED: "Exige QR dinámico",
+  OUT_OF_HOURS: "Fuera de horario",
 } as const;
 
 export const ACCESS_METHOD_LABEL = { QR: "QR", BARCODE: "Código de barras", NFC: "NFC" } as const;

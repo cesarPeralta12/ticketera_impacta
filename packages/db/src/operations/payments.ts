@@ -4,6 +4,7 @@ import {
   TICKET_TRANSITIONS,
   assertTransition,
   findShortage,
+  peopleIn,
   randomCode,
   type PaymentStatus,
 } from "@ticketera/core";
@@ -85,7 +86,11 @@ export async function applyPaymentUpdate(update: PaymentUpdate, now = new Date()
     await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${payment.orderId} FOR UPDATE`;
     const order = await tx.order.findUniqueOrThrow({
       where: { id: payment.orderId },
-      include: { items: { include: { ticketType: { select: { sessionId: true } } } } },
+      include: {
+        items: {
+          include: { ticketType: { select: { sessionId: true, kind: true, peoplePerUnit: true, consumptionAmount: true, currency: true } } },
+        },
+      },
     });
 
     if (payment.status === update.status) return { outcome: "DUPLICATE" as PaymentOutcome, orderCode: order.code };
@@ -155,20 +160,7 @@ export async function applyPaymentUpdate(update: PaymentUpdate, now = new Date()
 
     assertTransition("orden", ORDER_TRANSITIONS, order.status, "PAID");
     await tx.order.update({ where: { id: order.id }, data: { status: "PAID", paidAt: now } });
-    await tx.ticket.createMany({
-      data: order.items.flatMap((item) =>
-        Array.from({ length: item.quantity }, () => ({
-          code: randomCode(),
-          orderId: order.id,
-          orderItemId: item.id,
-          ticketTypeId: item.ticketTypeId,
-          sessionId: item.ticketType.sessionId,
-          seatId: item.seatId,
-          customerId: order.customerId,
-          holderName: order.buyerName,
-        })),
-      ),
-    });
+    await issueTickets(tx, order);
     await audit(tx, {
       actorType: "system",
       action: holdIsValid ? "order.paid" : "order.paid_late",
@@ -178,6 +170,70 @@ export async function applyPaymentUpdate(update: PaymentUpdate, now = new Date()
     });
     return result("PAID");
   });
+}
+
+type PaidOrder = {
+  id: string;
+  customerId: string | null;
+  buyerName: string;
+  items: {
+    id: string;
+    ticketTypeId: string;
+    seatId: string | null;
+    quantity: number;
+    ticketType: { sessionId: string; kind: "ENTRY" | "TABLE"; peoplePerUnit: number; consumptionAmount: number | null; currency: string };
+  }[];
+};
+
+/**
+ * Emite las entradas de una orden pagada. Una mesa emite un QR por persona, recibe su número (Mesa 1, 2…)
+ * y abre un saldo de consumo que comparten sus personas; una entrada con consumo incluido abre un saldo
+ * propio. Las mesas se numeran con su tipo de entrada bloqueado: dos pagos a la vez no repiten número.
+ */
+async function issueTickets(tx: Tx, order: PaidOrder) {
+  const tableTypes = [...new Set(order.items.filter((i) => i.ticketType.kind === "TABLE").map((i) => i.ticketTypeId))];
+  if (tableTypes.length > 0) await lockInventory(tx, tableTypes);
+
+  const rows: Prisma.TicketCreateManyInput[] = [];
+  for (const item of order.items) {
+    const type = item.ticketType;
+    const ticket = (creditId: string | null = null) => ({
+      code: randomCode(),
+      orderId: order.id,
+      orderItemId: item.id,
+      ticketTypeId: item.ticketTypeId,
+      sessionId: type.sessionId,
+      seatId: item.seatId,
+      customerId: order.customerId,
+      holderName: order.buyerName,
+      creditId,
+    });
+    const credit = (tableNumber: number | null) =>
+      tx.consumptionCredit.create({
+        data: {
+          sessionId: type.sessionId,
+          orderId: order.id,
+          ticketTypeId: item.ticketTypeId,
+          tableNumber,
+          amount: type.consumptionAmount ?? 0,
+          currency: type.currency,
+        },
+      });
+
+    if (type.kind === "TABLE") {
+      const last = await tx.consumptionCredit.aggregate({ where: { ticketTypeId: item.ticketTypeId }, _max: { tableNumber: true } });
+      let next = (last._max.tableNumber ?? 0) + 1;
+      for (let unit = 0; unit < item.quantity; unit++) {
+        const table = await credit(next++);
+        for (let person = 0; person < peopleIn(type); person++) rows.push(ticket(table.id));
+      }
+    } else if (type.consumptionAmount) {
+      for (let unit = 0; unit < item.quantity; unit++) rows.push(ticket((await credit(null)).id));
+    } else {
+      for (let unit = 0; unit < item.quantity; unit++) rows.push(ticket());
+    }
+  }
+  await tx.ticket.createMany({ data: rows });
 }
 
 async function refundOrder(

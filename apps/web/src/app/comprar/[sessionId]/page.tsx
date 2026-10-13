@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
-import { MAX_TICKETS_PER_ORDER, currentPrice, discountLabel, formatDateTime, formatMoney, isZoneLayout, saleState, type ZoneShape } from "@ticketera/core";
+import { MAX_TICKETS_PER_ORDER, currentPrice, discountLabel, formatDateTime, formatMoney, formatClock, isZoneLayout, peopleIn, saleState, type ZoneShape } from "@ticketera/core";
 import { getQueueStatus, getSessionAvailability, getTakenSeatIds, getZoneAvailability, prisma } from "@ticketera/db";
 import { requireBuyer } from "@/lib/customer";
 import { queueCookieName } from "@/lib/queue-cookie";
@@ -63,15 +63,16 @@ export default async function BuyPage({ params }: Props) {
   // Lo que ya terminó (una preventa vencida) no se muestra; lo que todavía no empieza, sí,
   // con su fecha (solo en generales: una butaca tiene un único precio a la vez).
   const tz = session.venue.timezone;
-  const types = session.ticketTypes.filter((t) => saleState(t) !== "closed");
   const now = new Date();
+  // Tampoco una "free hasta la 01:00" cuya hora ya pasó.
+  const types = session.ticketTypes.filter((t) => saleState(t) !== "closed" && !(t.entryUntil && t.entryUntil <= now));
   const general: GeneralType[] = types
     .filter((t) => t.section?.seatingMode !== "RESERVED")
     .map((t) => ({
       id: t.id,
       sectionId: t.sectionId,
       name: t.name,
-      detail: t.section ? `${t.section.name} · Entrada general` : null,
+      detail: t.section ? `${t.section.name} · ${t.kind === "TABLE" ? "Mesa" : "Entrada general"}` : null,
       unitAmount: currentPrice(t, now).unitAmount,
       listAmount: currentPrice(t, now).discountPercent ? t.unitAmount : null,
       discountLabel: discountLabel(t, now, tz),
@@ -80,6 +81,9 @@ export default async function BuyPage({ params }: Props) {
       max: saleState(t) === "open" ? Math.min(remaining.get(t.id) ?? 0, t.maxPerOrder, MAX_TICKETS_PER_ORDER) : 0,
       presaleUntil: t.presale && t.salesEndAt ? formatDateTime(t.salesEndAt, tz) : null,
       opensAt: saleState(t) === "scheduled" && t.salesStartAt ? formatDateTime(t.salesStartAt, tz) : null,
+      table: t.kind === "TABLE" ? { people: peopleIn(t) } : null,
+      consumption: t.consumptionAmount && t.consumptionAmount > 0 ? formatMoney(t.consumptionAmount, t.currency) : null,
+      entryUntil: t.entryUntil ? formatClock(t.entryUntil, tz) : null,
     }))
     // Primero lo que se puede comprar ahora (la preventa), después lo que empieza más adelante.
     .toSorted((a, b) => Number(Boolean(a.opensAt)) - Number(Boolean(b.opensAt)));

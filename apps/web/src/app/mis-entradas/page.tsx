@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import QRCode from "qrcode";
-import { MAX_TRANSFERS_PER_TICKET, code128Svg, formatCode, formatDateTime, signTicketPayload } from "@ticketera/core";
+import { MAX_TRANSFERS_PER_TICKET, code128Svg, formatCode, formatDateTime, formatMoney, formatClock, signTicketPayload } from "@ticketera/core";
 import { listCustomerTickets, listTransfers, requireEnv } from "@ticketera/db";
 import { auth } from "@/lib/auth";
 import { acceptTransferAction, cancelTransferAction, declineTransferAction } from "./actions";
@@ -118,6 +118,15 @@ export default async function MyTicketsPage({ searchParams }: Props) {
               <p className="mt-1 font-semibold">{t.typeName}</p>
               {t.seat && <p className="text-sm font-semibold">{t.seat}</p>}
               {t.entrance && <p className="mt-1 text-sm font-bold text-[#0f8a6b]">{t.entrance}</p>}
+              {t.entryUntil && t.status === "VALID" && (
+                <p className="mt-1 text-sm font-bold text-[#b35c00]">Válida para entrar hasta las {formatClock(t.entryUntil, t.timezone)}</p>
+              )}
+              {t.consumption && (
+                <p className="mx-auto mt-2 w-fit rounded-full bg-[#14181b] px-3 py-1 text-xs font-semibold text-[#f5b700]">
+                  Consumo {t.consumption.shared ? "de la mesa" : "incluido"}: te quedan {formatMoney(t.consumption.left, t.consumption.currency)} de{" "}
+                  {formatMoney(t.consumption.amount, t.consumption.currency)}
+                </p>
+              )}
               {t.qrMode === "DYNAMIC" && (
                 <div className="my-3">
                   <Link href={`/entrada/${t.code}`} className="btn-accent inline-block">

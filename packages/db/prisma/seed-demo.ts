@@ -16,6 +16,8 @@ import {
   DEFAULT_CURRENCY,
   DEFAULT_TIMEZONE,
   MIN_PASSWORD_LENGTH,
+  entryDeadline,
+  localWeekday,
   slugify,
   utcToZonedInput,
   zonedDateTimeToUtc,
@@ -218,6 +220,7 @@ export async function seedArchitectureDemo(db: Db, orgId: string) {
 
   log.push(...(await seedOrganizers(db)));
   log.push(...(await seedSalesDemo(db, orgId)));
+  log.push(...(await seedNightlife(db, orgId)));
   return log;
 }
 
@@ -431,6 +434,225 @@ async function seedSalesDemo(db: Db, orgId: string) {
     }
     await prisma.eventSession.update({ where: { id: session!.id }, data: { queueEnabled: session!.queueEnabled } });
     log.push(`${orders.length} compras pagadas en Loko Fest`);
+  }
+  return log;
+}
+
+/** Próximo día de la semana (0 = domingo) a una hora de La Paz, siempre después de hoy. */
+function nextWeekday(weekday: number, time: string): Date {
+  const today = utcToZonedInput(new Date(), DEFAULT_TIMEZONE).slice(0, 10);
+  const days = (weekday - localWeekday(new Date(), DEFAULT_TIMEZONE) + 7) % 7 || 7;
+  const day = new Date(`${today}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + days);
+  return zonedDateTimeToUtc(`${day.toISOString().slice(0, 10)}T${time}`, DEFAULT_TIMEZONE);
+}
+
+const CLUBS = [
+  {
+    title: "Lounge 360 · Viernes y Sábados",
+    description:
+      "La noche de Equipetrol: DJ residentes de house y reggaetón, terraza y zona VIP. Reserva tu mesa con consumo incluido o entra free antes de la 1.",
+    imageUrl: "https://images.unsplash.com/photo-1566737236500-c8ac43014a67?w=1200&q=80",
+    venue: { name: "Lounge 360", city: "Santa Cruz de la Sierra", address: "Av. San Martín, Equipetrol" },
+    floor: { name: "Pista", capacity: 400 },
+    vip: { name: "Zona VIP", capacity: 80 },
+    first: { weekday: 5, time: "23:00", doors: "22:30" },
+    repeat: { weekdays: [5, 6], weeks: 4 },
+    free: { name: "Free hasta la 01:00", until: "01:00", capacity: 150 },
+    general: { name: "General", price: 6_000, capacity: 250 },
+    drink: { name: "Entrada + trago", price: 8_000, consumption: 2_500, capacity: 150 },
+    tables: [
+      { name: "Mesa VIP", people: 6, price: 120_000, consumption: 100_000, capacity: 8 },
+      { name: "Lounge Black", people: 10, price: 300_000, consumption: 300_000, capacity: 3 },
+    ],
+    promo: { code: "RRPP-VALE", promoter: "Valeria Rojas (RRPP)" },
+  },
+  {
+    title: "Forum · Jueves a Sábado",
+    description: "Clásico de Sopocachi: electrónica y crossover hasta el amanecer. Mesas Box para 8 con consumo incluido.",
+    imageUrl: "https://images.unsplash.com/photo-1574391884720-bbc3740c59d1?w=1200&q=80",
+    venue: { name: "Forum Club", city: "La Paz", address: "Calle Víctor Sanjinés, Sopocachi" },
+    floor: { name: "Pista", capacity: 350 },
+    vip: { name: "Mezanine", capacity: 64 },
+    first: { weekday: 4, time: "23:30", doors: "23:00" },
+    repeat: { weekdays: [4, 5, 6], weeks: 3 },
+    free: { name: "Free hasta las 00:30", until: "00:30", capacity: 100 },
+    general: { name: "General", price: 5_000, capacity: 250 },
+    drink: { name: "Entrada + chop", price: 6_500, consumption: 2_000, capacity: 120 },
+    tables: [{ name: "Mesa Box", people: 8, price: 150_000, consumption: 120_000, capacity: 8 }],
+    promo: { code: "RRPP-MARCO", promoter: "Marco Paz (RRPP)" },
+  },
+];
+
+/**
+ * Boliches de ejemplo: dos discotecas en dos ciudades con noches que se repiten cada semana, free por
+ * horario, entrada + trago y mesas con consumo incluido, un código RRPP cada una, y unas compras en la
+ * primera noche (una mesa con un consumo ya cobrado en barra) para mostrar la Barra.
+ */
+async function seedNightlife(db: Db, orgId: string) {
+  const { prisma } = db;
+  const log: string[] = [];
+  const owner = await prisma.membership.findFirst({ where: { organizationId: orgId, role: "OWNER" } });
+  const porter = await prisma.staffUser.findUnique({ where: { email: "puerta@impacta.test" } });
+
+  for (const c of CLUBS) {
+    const slug = slugify(c.title);
+    if (await prisma.event.findUnique({ where: { slug } })) continue;
+
+    const venue = await prisma.venue.create({
+      data: {
+        organizationId: orgId,
+        name: c.venue.name,
+        city: c.venue.city,
+        address: c.venue.address,
+        timezone: DEFAULT_TIMEZONE,
+        accessPoints: { create: [{ name: "Puerta principal" }] },
+        sections: {
+          create: [
+            { name: c.floor.name, seatingMode: "GENERAL_ADMISSION", capacity: c.floor.capacity, color: "#C04BFF", sortOrder: 0 },
+            { name: c.vip.name, seatingMode: "GENERAL_ADMISSION", capacity: c.vip.capacity, color: "#F5B700", sortOrder: 1 },
+          ],
+        },
+      },
+      include: { sections: true },
+    });
+    const floor = venue.sections.find((s) => s.name === c.floor.name)!;
+    const vip = venue.sections.find((s) => s.name === c.vip.name)!;
+    const startsAt = nextWeekday(c.first.weekday, c.first.time);
+    const doorsOpenAt = nextWeekday(c.first.weekday, c.first.doors);
+    const methods = ["QR" as const, "BARCODE" as const, "NFC" as const];
+
+    const event = await prisma.event.create({
+      data: {
+        organizationId: orgId,
+        slug,
+        title: c.title,
+        description: c.description,
+        imageUrl: c.imageUrl,
+        category: "BOLICHE",
+        status: "PUBLISHED",
+        publishedAt: new Date(),
+        sessions: {
+          create: {
+            venueId: venue.id,
+            startsAt,
+            doorsOpenAt,
+            ticketTypes: {
+              create: [
+                {
+                  name: c.free.name,
+                  sectionId: floor.id,
+                  unitAmount: 0,
+                  currency: DEFAULT_CURRENCY,
+                  capacity: c.free.capacity,
+                  maxPerOrder: 1,
+                  entryUntil: entryDeadline(startsAt, c.free.until, DEFAULT_TIMEZONE),
+                  accessMethods: methods,
+                  sortOrder: 0,
+                },
+                {
+                  name: c.general.name,
+                  sectionId: floor.id,
+                  unitAmount: c.general.price,
+                  currency: DEFAULT_CURRENCY,
+                  capacity: c.general.capacity,
+                  accessMethods: methods,
+                  sortOrder: 1,
+                },
+                {
+                  name: c.drink.name,
+                  sectionId: floor.id,
+                  unitAmount: c.drink.price,
+                  currency: DEFAULT_CURRENCY,
+                  capacity: c.drink.capacity,
+                  consumptionAmount: c.drink.consumption,
+                  accessMethods: methods,
+                  sortOrder: 2,
+                },
+                ...c.tables.map((t, i) => ({
+                  name: t.name,
+                  sectionId: vip.id,
+                  unitAmount: t.price,
+                  currency: DEFAULT_CURRENCY,
+                  capacity: t.capacity,
+                  maxPerOrder: 2,
+                  kind: "TABLE" as const,
+                  peoplePerUnit: t.people,
+                  consumptionAmount: t.consumption,
+                  accessMethods: methods,
+                  sortOrder: 3 + i,
+                })),
+              ],
+            },
+            ...(porter ? { doorAssignments: { create: { userId: porter.id } } } : {}),
+          },
+        },
+      },
+      include: { sessions: { include: { ticketTypes: true } } },
+    });
+    const night = event.sessions[0]!;
+
+    await prisma.promoCode.create({
+      data: {
+        organizationId: orgId,
+        eventId: event.id,
+        code: c.promo.code,
+        description: `Lista de ${c.promo.promoter}`,
+        discountType: "PERCENT",
+        discountValue: 10,
+        promoterName: c.promo.promoter,
+        commissionPercent: 10,
+      },
+    });
+
+    if (owner) {
+      const { created } = await db.repeatWeeklyNights({
+        templateSessionId: night.id,
+        weekdays: c.repeat.weekdays,
+        weeks: c.repeat.weeks,
+        staffId: owner.userId,
+      });
+      log.push(`boliche ${c.venue.name} (${c.venue.city}): ${created + 1} noches, código ${c.promo.code}`);
+    }
+
+    // Compras de la primera noche: una mesa (con un consumo ya cobrado), una free y dos entradas + trago.
+    const typeId = (name: string) => night.ticketTypes.find((t) => t.name === name)!.id;
+    const tableTypeId = typeId(c.tables[0]!.name);
+    const purchases = [
+      { email: "comprador@impacta.test", ticketTypeId: tableTypeId, quantity: 1 },
+      { email: "comprador2@impacta.test", ticketTypeId: typeId(c.free.name), quantity: 1 },
+      { email: "comprador3@impacta.test", ticketTypeId: typeId(c.drink.name), quantity: 2 },
+    ];
+    let firstTable: string | null = null;
+    for (const p of purchases) {
+      const customer = await prisma.customer.findUnique({ where: { email: p.email } });
+      if (!customer?.documentId || !customer.emailVerified) continue;
+      const order = await db.createPendingOrder(
+        {
+          sessionId: night.id,
+          items: [{ ticketTypeId: p.ticketTypeId, quantity: p.quantity }],
+          buyer: { name: customer.name, email: customer.email, document: customer.documentId },
+        },
+        { customerId: customer.id },
+      );
+      const payment = await db.startPayment(order.code, "directo");
+      await db.applyPaymentUpdate({
+        paymentId: payment.id,
+        provider: "directo",
+        providerPaymentId: `directo_${payment.id}`,
+        status: "APPROVED",
+        providerStatus: "pase_directo",
+        amount: payment.amount,
+        currency: payment.currency,
+      });
+      if (!firstTable && p.ticketTypeId === tableTypeId) {
+        firstTable = (await prisma.ticket.findFirst({ where: { orderId: order.id }, select: { code: true } }))?.code ?? null;
+      }
+    }
+    if (firstTable && owner) {
+      await db.redeemConsumption({ raw: firstTable, sessionId: night.id, amount: 25_000, staffId: owner.userId, note: "1 botella de ron + mezcladores" });
+      log.push(`${c.venue.name}: mesa vendida con Bs 250 ya consumidos en barra`);
+    }
   }
   return log;
 }

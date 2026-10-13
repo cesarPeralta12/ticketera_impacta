@@ -7,6 +7,7 @@ export const CATEGORY_LABEL: Record<string, string> = {
   CONFERENCIA: "Conferencia",
   FIESTA: "Fiesta",
   ARTE: "Arte",
+  BOLICHE: "Boliche",
   OTRO: "Evento",
 };
 
@@ -18,5 +19,6 @@ export const CATEGORY_COLOR: Record<string, string> = {
   CONFERENCIA: "#B98CFF",
   FIESTA: "#FF7A3D",
   ARTE: "#35C48F",
+  BOLICHE: "#C04BFF",
   OTRO: "#9A96A6",
 };

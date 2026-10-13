@@ -25,7 +25,8 @@ export async function getZoneAvailability(sessionId: string, now = new Date()) {
     }),
   ]);
   return sections.map((s) => {
-    const sold = lines.filter((l) => l.sectionId === s.id).reduce((sum, l) => sum + l.used, 0);
+    // En personas: una mesa de 6 ocupa 6 lugares de la zona.
+    const sold = lines.filter((l) => l.sectionId === s.id).reduce((sum, l) => sum + l.used * (l.peoplePerUnit ?? 1), 0);
     return { id: s.id, name: s.name, color: s.color, capacity: s.capacity, sold, remaining: Math.max(0, s.capacity - sold) };
   });
 }
@@ -155,6 +156,10 @@ export async function createPendingOrder(
       if (opens.some((d) => d > now) || closes.some((d) => d <= now)) {
         throw new DomainError("NOT_ON_SALE", `La venta de "${type.name}" no está abierta.`);
       }
+      // Una entrada con horario de ingreso ("free hasta la 01:00") deja de venderse a esa hora.
+      if (type.entryUntil && type.entryUntil <= now) {
+        throw new DomainError("NOT_ON_SALE", `"${type.name}" ya no se vende: pasó su horario de ingreso.`);
+      }
       const seated = type.section?.seatingMode === "RESERVED";
       if (seated !== Boolean(item.seatIds)) {
         throw new DomainError(
@@ -190,6 +195,28 @@ export async function createPendingOrder(
             ? "Una de tus butacas acaba de ser tomada por otra persona. Elige otra."
             : `${taken.length} de tus butacas acaban de ser tomadas por otras personas. Elige otras.`,
         );
+      }
+    }
+
+    // Entrada gratis (lista free): una por persona en cada noche, contando la que ya tiene o tiene reservada.
+    // Va con los tipos de entrada bloqueados, así dos compras a la vez de la misma cuenta no se cuelan.
+    if (channel === "ONLINE" && options.customerId) {
+      for (const item of data.items) {
+        const type = byId.get(item.ticketTypeId)!;
+        if (currentPrice(type, now).unitAmount !== 0) continue;
+        if (item.quantity > 1) throw new DomainError("INVALID_ITEMS", `"${type.name}" es gratis: una por persona.`);
+        const already = await tx.orderItem.count({
+          where: {
+            ticketTypeId: type.id,
+            order: {
+              customerId: options.customerId,
+              OR: [{ status: { in: ["PAID", "PARTIALLY_REFUNDED"] } }, { status: "PENDING_PAYMENT", expiresAt: { gt: now } }],
+            },
+          },
+        });
+        if (already > 0) {
+          throw new DomainError("INVALID_ITEMS", `Ya tienes tu entrada "${type.name}" para esta noche: es una por persona.`);
+        }
       }
     }
 
@@ -292,7 +319,14 @@ export async function getOrderByCode(code: string) {
       },
       payments: { orderBy: { createdAt: "desc" } },
       promoRedemption: { include: { promoCode: { select: { code: true } } } },
-      tickets: { include: { ticketType: true, seat: { include: { section: true } } }, orderBy: { issuedAt: "asc" } },
+      tickets: {
+        include: {
+          ticketType: true,
+          seat: { include: { section: true } },
+          credit: { select: { tableNumber: true, amount: true, spent: true, currency: true } },
+        },
+        orderBy: { issuedAt: "asc" },
+      },
     },
   });
 }

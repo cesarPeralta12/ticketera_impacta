@@ -63,6 +63,25 @@ completa que la que se había hecho aquí) y se quitó la puerta del navegador, 
 
 Dejado para después (decisión del cliente): rol de promotor, pasarela de pago real y facturación electrónica.
 
+## Boliches (2026-10-13, rama `feature/boliches`, solo local para la demo)
+
+Los 5 puntos de "Fase 2" del informe del 09/10, sobre lo que ya existía (cada noche es una función: compra,
+cola, boletería, puerta, reportes y transferencias funcionan igual):
+
+- **Mesas y lounges**: tipo de entrada "mesa" para N personas; el cupo se cuenta en mesas y cada una ocupa en
+  la zona los lugares de todas sus personas. Al pagar recibe su número (Mesa VIP N° 4) y un QR por persona.
+- **Consumo mínimo / vales**: consumo incluido por mesa (compartido) o por entrada ("entrada + trago"). Se
+  descuenta en **Barra** (panel, también el cajero) leyendo cualquier QR; nunca queda negativo, ni con dos
+  barras cobrando a la vez. El comprador ve su saldo en Mis entradas.
+- **Noches que se repiten**: "Repetir noches" copia una noche (precios, mesas, horarios, porteros) a los días
+  elegidos de las próximas semanas. Sitio: apartado **/boliches** por ciudad y por hoy / este finde / 7 días.
+- **Free por horario**: "válida para entrar hasta" (ej. 01:00): una por persona, deja de venderse a esa hora
+  y en puerta sale "Fuera de horario". La app móvil la recibe anulada al sincronizar (sin cambiar la app).
+- **Promociones de boliche**: códigos RRPP con comisión (los de la rama del compañero) por boliche.
+
+Pendiente si se aprueba: reservar una mesa específica en el mapa, cobro de consumo por QR desde el celular de
+la barra (hoy lector USB o código escrito) y reportes de consumo por noche en el reporte del evento.
+
 ## Integración con el prototipo del compañero (2026-10-01)
 
 **Se trajo:**

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { currentPrice, formatDateTime, formatMoney, isZoneLayout, saleState, utcToZonedInput, type SaleState, type ZoneShape } from "@ticketera/core";
+import { currentPrice, formatDateTime, formatMoney, formatClock, isZoneLayout, saleState, utcToZonedInput, type SaleState, type ZoneShape } from "@ticketera/core";
 import { getSessionAvailability, getZoneAvailability, prisma } from "@ticketera/db";
 import { AccessMethodsField } from "@/components/access-methods-field";
 import { ActionForm } from "@/components/action-form";
@@ -62,6 +62,8 @@ export default async function SessionPage({ params }: Props) {
   const sectionOptions = [...unpriced, ...session.venue.sections.filter((s) => pricedSections.has(s.id))];
   const tz = session.venue.timezone;
   const now = new Date();
+  const nightlife = session.event.category === "BOLICHE";
+  const hasConsumption = session.ticketTypes.some((t) => t.kind === "TABLE" || (t.consumptionAmount ?? 0) > 0);
 
   return (
     <div className="space-y-8">
@@ -88,6 +90,21 @@ export default async function SessionPage({ params }: Props) {
         </span>
         <span className="font-mono text-sm text-[var(--accent)]">Abrir →</span>
       </Link>
+
+      {nightlife && hasConsumption && (
+        <Link
+          href={`/barra/${session.id}`}
+          className="card flex flex-wrap items-center justify-between gap-3 p-5 transition-colors hover:border-[var(--accent)]"
+        >
+          <span>
+            <span className="block font-medium">Barra (consumos)</span>
+            <span className="text-sm text-[var(--ink-muted)]">
+              Saldo de consumo de cada mesa y de las entradas con trago: se lee el QR y se descuenta lo que piden.
+            </span>
+          </span>
+          <span className="font-mono text-sm text-[var(--accent)]">Abrir →</span>
+        </Link>
+      )}
 
       <Link
         href={`/eventos/${id}/funciones/${session.id}/invitados`}
@@ -157,6 +174,18 @@ export default async function SessionPage({ params }: Props) {
                       {t.name}
                       {t.presale && <span className="badge ml-2 bg-[var(--warn-soft)] text-[var(--warn)]">preventa</span>}
                       {t.qrMode === "DYNAMIC" && <span className="badge ml-2 bg-[#e8eefc] text-[#3b5bb5]">QR dinámico</span>}
+                      {t.kind === "TABLE" && (
+                        <span className="badge ml-2 bg-[#f3e8ff] text-[#7b2fbf]">mesa · {t.peoplePerUnit} personas</span>
+                      )}
+                      {(t.consumptionAmount ?? 0) > 0 && (
+                        <span className="mt-1 block text-xs text-[var(--ink-muted)]">
+                          Consumo incluido: {formatMoney(t.consumptionAmount!, t.currency)}
+                          {t.kind === "TABLE" ? " por mesa" : ""}
+                        </span>
+                      )}
+                      {t.entryUntil && (
+                        <span className="mt-1 block text-xs text-[var(--warn)]">Válida para entrar hasta las {formatClock(t.entryUntil, tz)}</span>
+                      )}
                     </td>
                     <td className="py-2.5 pr-4 text-[var(--ink-muted)]">
                       {t.section ? `${t.section.name} · ${SEATING_LABEL[t.section.seatingMode]}` : "—"}
@@ -175,6 +204,7 @@ export default async function SessionPage({ params }: Props) {
                     </td>
                     <td className="py-2.5 pr-4 text-right font-mono">
                       {remaining.get(t.id) ?? 0} / {t.capacity}
+                      {t.kind === "TABLE" && <span className="block text-xs text-[var(--ink-dim)]">mesas</span>}
                     </td>
                     <td className="py-2.5 pr-4">
                       {t.qrMode === "DYNAMIC" ? (
@@ -358,6 +388,33 @@ export default async function SessionPage({ params }: Props) {
               <label className="flex items-center gap-2 self-center text-sm" title="El QR cambia cada 30 segundos y solo se lee con QR. Solo venta online (no boletería ni invitaciones).">
                 <input type="checkbox" name="qrDynamic" className="h-4 w-4 accent-[var(--accent)]" /> QR dinámico
               </label>
+            )}
+            {nightlife && (
+              <div className="flex basis-full flex-wrap items-end gap-3 rounded-md border border-dashed border-[#c04bff]/50 bg-[#f3e8ff]/40 p-3">
+                <p className="basis-full text-sm font-medium">Boliche (opcional)</p>
+                <label className="flex items-center gap-2 self-center text-sm">
+                  <input type="checkbox" name="table" className="h-4 w-4" /> Es una mesa o lounge
+                </label>
+                <label className="label">
+                  Personas por mesa
+                  <input name="peoplePerUnit" type="number" min={2} max={50} placeholder="ej. 6" className="field w-28" />
+                </label>
+                <label className="label">
+                  Consumo incluido (Bs)
+                  <input name="consumption" inputMode="decimal" placeholder="ej. 1000" className="field w-32" />
+                </label>
+                <label className="label">
+                  Válida para entrar hasta
+                  <input name="entryUntil" type="time" className="field w-32" />
+                </label>
+                <p className="basis-full text-xs text-[var(--ink-dim)]">
+                  <strong>Mesa VIP</strong>: marca &ldquo;mesa&rdquo;, 6 personas, precio Bs 1.200 y consumo Bs 1.000 (consumo
+                  mínimo); el cupo es la cantidad de mesas. Cada persona recibe su QR y el consumo se descuenta en Barra.{" "}
+                  <strong>Entrada + trago</strong>: una entrada con consumo incluido (ej. Bs 25).{" "}
+                  <strong>Free hasta la 01:00</strong>: precio 0 y hora 01:00: una por persona, y después de esa hora ya
+                  no entra.
+                </p>
+              </div>
             )}
             <div className="flex basis-full flex-wrap items-end gap-3 rounded-md border border-dashed border-[var(--border)] p-3">
               <label className="flex items-center gap-2 self-center text-sm">

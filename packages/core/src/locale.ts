@@ -29,6 +29,11 @@ export function formatTime(date: Date, timeZone: string, locale: string = LOCALE
   );
 }
 
+/** Hora en horas y minutos ("01:00"): para horarios que se anuncian (free hasta, apertura). */
+export function formatClock(date: Date, timeZone: string, locale: string = LOCALE): string {
+  return new Intl.DateTimeFormat(locale, { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
+}
+
 /** Desfase (ms) de una zona horaria respecto de UTC en un instante dado. */
 function timeZoneOffsetMs(instant: Date, timeZone: string): number {
   const parts = new Intl.DateTimeFormat("en-US", {

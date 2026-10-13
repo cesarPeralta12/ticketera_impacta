@@ -14,7 +14,12 @@ type NavGroup = { title?: string; items: NavItem[] };
 /** El menú depende de quién entra: IMPACTA (general o dentro de un organizador), un organizador o su personal. */
 async function navigation(staff: Staff): Promise<NavGroup[]> {
   // El control de acceso se hace con la app móvil de puerta: el panel no tiene pantalla de lectura.
-  const operate: NavItem[] = can(staff, ROLES.pos) ? [{ href: "/boleteria", label: "Boletería", icon: "ticket" }] : [];
+  const operate: NavItem[] = can(staff, ROLES.pos)
+    ? [
+        { href: "/boleteria", label: "Boletería", icon: "ticket" },
+        { href: "/barra", label: "Barra (consumos)", icon: "glass" },
+      ]
+    : [];
 
   if (isGlobalView(staff)) {
     const pending = await prisma.event.count({ where: { status: "PENDING_REVIEW" } });

@@ -6,6 +6,8 @@
  *  - el cupo de cada tipo de entrada (ej. Preventa: 500), y
  *  - el aforo de la sección física, compartido entre tipos (ej. Cancha: 2.000 entre
  *    Preventa y General).
+ * Una mesa se cuenta como una unidad en su cupo (10 mesas) pero ocupa en la sección los lugares de
+ * todas sus personas (una mesa de 6 son 6 personas del aforo).
  */
 
 export type InventoryLine = {
@@ -15,7 +17,11 @@ export type InventoryLine = {
   used: number;
   sectionId: string | null;
   sectionCapacity: number | null;
+  /** Personas por unidad (mesa de 6 → 6). Sin dato: 1. */
+  peoplePerUnit?: number;
 };
+
+const people = (line: InventoryLine) => Math.max(1, line.peoplePerUnit ?? 1);
 
 export type RequestedLine = { ticketTypeId: string; quantity: number };
 
@@ -24,7 +30,7 @@ export type Shortage = { ticketTypeId: string; name: string; available: number }
 function sectionUsage(lines: InventoryLine[]): Map<string, number> {
   const usage = new Map<string, number>();
   for (const line of lines) {
-    if (line.sectionId) usage.set(line.sectionId, (usage.get(line.sectionId) ?? 0) + line.used);
+    if (line.sectionId) usage.set(line.sectionId, (usage.get(line.sectionId) ?? 0) + line.used * people(line));
   }
   return usage;
 }
@@ -36,7 +42,7 @@ export function remainingByType(lines: InventoryLine[]): Map<string, number> {
   for (const line of lines) {
     let left = line.capacity - line.used;
     if (line.sectionId && line.sectionCapacity !== null) {
-      left = Math.min(left, line.sectionCapacity - (usedBySection.get(line.sectionId) ?? 0));
+      left = Math.min(left, Math.floor((line.sectionCapacity - (usedBySection.get(line.sectionId) ?? 0)) / people(line)));
     }
     remaining.set(line.ticketTypeId, Math.max(0, left));
   }
@@ -48,17 +54,19 @@ export function remainingByType(lines: InventoryLine[]): Map<string, number> {
  * Preventa (300) + General (800) sobre una Cancha de 800 suman 800, no 1.100.
  */
 export function sellableCapacity(
-  types: { capacity: number; sectionId: string | null; section: { capacity: number } | null }[],
+  types: { capacity: number; sectionId: string | null; section: { capacity: number } | null; peoplePerUnit?: number }[],
 ): number {
   const bySection = new Map<string, { cap: number; sum: number }>();
   let unsectioned = 0;
   for (const t of types) {
+    // En personas: 10 mesas de 6 son 60 lugares.
+    const seats = t.capacity * Math.max(1, t.peoplePerUnit ?? 1);
     if (!t.sectionId || !t.section) {
-      unsectioned += t.capacity;
+      unsectioned += seats;
       continue;
     }
     const entry = bySection.get(t.sectionId) ?? { cap: t.section.capacity, sum: 0 };
-    entry.sum += t.capacity;
+    entry.sum += seats;
     bySection.set(t.sectionId, entry);
   }
   return unsectioned + [...bySection.values()].reduce((total, s) => total + Math.min(s.cap, s.sum), 0);
@@ -85,7 +93,7 @@ export function findShortage(lines: InventoryLine[], requestedLines: RequestedLi
       return { ticketTypeId: line.ticketTypeId, name: line.name, available: Math.max(0, line.capacity - line.used) };
     }
     if (line.sectionId) {
-      requestedBySection.set(line.sectionId, (requestedBySection.get(line.sectionId) ?? 0) + req.quantity);
+      requestedBySection.set(line.sectionId, (requestedBySection.get(line.sectionId) ?? 0) + req.quantity * people(line));
     }
   }
 
@@ -98,7 +106,7 @@ export function findShortage(lines: InventoryLine[], requestedLines: RequestedLi
       return {
         ticketTypeId: line.ticketTypeId,
         name: line.name,
-        available: Math.max(0, Math.min(line.capacity - line.used, line.sectionCapacity - used)),
+        available: Math.max(0, Math.min(line.capacity - line.used, Math.floor((line.sectionCapacity - used) / people(line)))),
       };
     }
   }
