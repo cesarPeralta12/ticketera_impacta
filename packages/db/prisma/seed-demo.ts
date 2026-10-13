@@ -412,7 +412,8 @@ async function seedSalesDemo(db: Db, orgId: string) {
     await prisma.eventSession.update({ where: { id: session!.id }, data: { queueEnabled: false } });
     for (const o of orders) {
       const customer = await prisma.customer.findUnique({ where: { email: o.email } });
-      if (!session || !o.type || !customer) continue;
+      // Comprar exige cuenta con carnet y correo confirmado: una base anterior puede no tenerlos.
+      if (!session || !o.type || !customer?.documentId || !customer.emailVerified) continue;
       const order = await db.createPendingOrder(
         {
           sessionId: session.id,
