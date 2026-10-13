@@ -6,7 +6,7 @@ import { z } from "zod";
 import { MAX_ROWS, MAX_SEATS_PER_ROW, computeSeatPositions, parseZoneLayout, type SectionShape, type ZoneShape } from "@ticketera/core";
 import { Prisma, prisma } from "@ticketera/db";
 import { formObject, intField, zodErrors, type FormState } from "@/lib/forms";
-import { ROLES, requireStaff } from "@/lib/session";
+import { requireEditor } from "@/lib/session";
 import { TIMEZONES } from "@/lib/timezones";
 import { logAudit } from "@/lib/audit";
 
@@ -26,7 +26,7 @@ const venueSchema = z.object({
 });
 
 export async function createVenueAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const parsed = venueSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
   // Todo recinto nace con una puerta: sin ella no se puede asignar un portero. Se renombra o se agregan más en el recinto.
@@ -62,7 +62,7 @@ function readZone(formData: FormData): { ok: true; zone: ZoneShape | null } | { 
 
 /** Crea una zona de entrada general (sin butacas), con su forma en el mapa si el editor la mandó. */
 export async function addGeneralSectionAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const parsed = gaSectionSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
   const venue = await ownedVenue(staff.organization.id, parsed.data.venueId);
@@ -100,7 +100,7 @@ const gaUpdateSchema = z.object({
  * se ve. El aforo no se toca aquí (las entradas ya vendidas dependen de él). Sin forma = se quita del mapa.
  */
 export async function updateGeneralSectionAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const parsed = gaUpdateSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
   const section = await prisma.section.findFirst({
@@ -160,7 +160,7 @@ function parseShape(raw: string): SectionShape | null {
 
 /** Crea una sección numerada con sus butacas (grilla o arco) en el mapa del recinto. */
 export async function addSeatSectionAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const venue = await ownedVenue(staff.organization.id, String(formData.get("venueId")));
   if (!venue) return { error: "Recinto no encontrado." };
 
@@ -204,7 +204,7 @@ async function sectionSales(sectionId: string) {
  * o reservas que apuntan a sus butacas.
  */
 export async function deleteSectionAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const section = await prisma.section.findFirst({
     where: { id: String(formData.get("sectionId")), venue: { organizationId: staff.organization.id } },
   });
@@ -226,7 +226,7 @@ export async function deleteSectionAction(_prev: FormState, formData: FormData):
  * solo si no tiene ventas, porque cambiarla vuelve a crear las butacas.
  */
 export async function updateSeatSectionAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const section = await prisma.section.findFirst({
     where: { id: String(formData.get("sectionId")), venue: { organizationId: staff.organization.id } },
   });
@@ -276,7 +276,7 @@ export async function updateSeatSectionAction(_prev: FormState, formData: FormDa
 }
 
 export async function addAccessPointAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const venue = await ownedVenue(staff.organization.id, String(formData.get("venueId")));
   const name = String(formData.get("name") ?? "").trim();
   if (!venue) return { error: "Recinto no encontrado." };
@@ -296,7 +296,7 @@ export async function addAccessPointAction(_prev: FormState, formData: FormData)
  * sin internet, dos puertas no pueden aceptar la misma entrada: cada una tiene sus secciones.
  */
 export async function updateAccessPointSectionsAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const gate = await prisma.accessPoint.findFirst({
     where: { id: String(formData.get("accessPointId")), venue: { organizationId: staff.organization.id } },
   });
@@ -318,7 +318,7 @@ export async function updateAccessPointSectionsAction(_prev: FormState, formData
 }
 
 export async function deleteAccessPointAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const gate = await prisma.accessPoint.findFirst({
     where: { id: String(formData.get("accessPointId")), venue: { organizationId: staff.organization.id } },
     include: { _count: { select: { scans: true } } },

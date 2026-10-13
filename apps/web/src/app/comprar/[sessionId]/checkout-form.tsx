@@ -36,7 +36,13 @@ export type GeneralType = {
   entryUntil: string | null;
 };
 
-export type SeatedType = PickerSection & { maxPerOrder: number };
+export type SeatedType = PickerSection & {
+  maxPerOrder: number;
+  /** Boliche: cada butaca de la sección es una mesa para estas personas (cada una recibe su QR). */
+  table?: { people: number } | null;
+  /** Consumo incluido por mesa (texto ya formateado). */
+  consumption?: string | null;
+};
 
 export function CheckoutForm({
   sessionId,
@@ -95,7 +101,9 @@ export function CheckoutForm({
   const generalCount = Object.values(quantities).reduce((a, b) => a + b, 0);
   const totalTickets = seatCount + generalCount;
   // Una mesa de 6 son 6 QR (uno por persona).
-  const tableQrs = general.reduce((sum, t) => sum + (t.table ? t.table.people * (quantities[t.id] ?? 0) : 0), 0);
+  const tableQrs =
+    general.reduce((sum, t) => sum + (t.table ? t.table.people * (quantities[t.id] ?? 0) : 0), 0) +
+    seated.reduce((sum, t) => sum + (t.table ? t.table.people * (seats[t.ticketTypeId]?.length ?? 0) : 0), 0);
   const total =
     general.reduce((sum, t) => sum + t.unitAmount * (quantities[t.id] ?? 0), 0) +
     seated.reduce((sum, t) => sum + t.unitAmount * (seats[t.ticketTypeId]?.length ?? 0), 0);
@@ -142,7 +150,7 @@ export function CheckoutForm({
     if (current.includes(seatId)) {
       setPicked({ ...seats, [ticketTypeId]: current.filter((id) => id !== seatId) });
     } else if (current.length >= type.maxPerOrder) {
-      setNotice(`Máximo ${type.maxPerOrder} butacas en ${type.name} por compra.`);
+      setNotice(`Máximo ${type.maxPerOrder} ${type.table ? "mesas" : "butacas"} en ${type.name} por compra.`);
     } else if (totalTickets >= MAX_TICKETS_PER_ORDER) {
       setNotice(`Máximo ${MAX_TICKETS_PER_ORDER} entradas por compra.`);
     } else {
@@ -167,7 +175,9 @@ export function CheckoutForm({
 
       {(seated.length > 0 || zones.length > 0) && (
         <section className="card space-y-4 p-4 sm:p-6">
-          <h2 className="font-display text-xl">{seated.length > 0 ? "1. Elige tus butacas" : "Mapa del recinto"}</h2>
+          <h2 className="font-display text-xl">
+            {seated.length > 0 ? (seated.every((t) => t.table) ? "1. Elige tu mesa en el mapa" : "1. Elige tus butacas") : "Mapa del recinto"}
+          </h2>
           <SeatPicker sections={seated} selected={selected} onToggle={toggleSeat} zones={zones} zoneCounts={zoneCounts} onZoneClick={goToZone} />
           <ul className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-[var(--ink-muted)]">
             {seated.map((t) => (
@@ -175,7 +185,15 @@ export function CheckoutForm({
                 <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color }} />
                 {t.name}
                 {t.presale && <span className="font-semibold text-[var(--accent-2)]">(preventa)</span>}
-                {t.discountPercent ? <span className="font-semibold text-[var(--accent-2)]"> (-{t.discountPercent}% preventa)</span> : null}:{" "}
+                {t.discountPercent ? <span className="font-semibold text-[var(--accent-2)]"> (-{t.discountPercent}% preventa)</span> : null}
+                {t.table && (
+                  <span className="text-[#d9a6ff]">
+                    {" "}
+                    · mesa para {t.table.people}
+                    {t.consumption ? `, incluye ${t.consumption} de consumo` : ""}
+                  </span>
+                )}
+                :{" "}
                 <span className="text-[var(--ink)]">{formatMoney(t.unitAmount, t.currency)}</span>
                 {(seats[t.ticketTypeId]?.length ?? 0) > 0 && (
                   <span className="text-[var(--accent)]">× {seats[t.ticketTypeId]!.length}</span>

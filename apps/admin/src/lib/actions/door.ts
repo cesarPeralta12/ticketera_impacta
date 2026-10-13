@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma, revokeDevice } from "@ticketera/db";
 import { logAudit } from "@/lib/audit";
 import type { FormState } from "@/lib/forms";
-import { ROLES, requireStaff } from "@/lib/session";
+import { ROLES, requireEditor } from "@/lib/session";
 
 /** Portero de esta organización (solo el rol OPERATOR usa asignaciones). */
 async function findOperator(userId: string, organizationId: string) {
@@ -16,7 +16,7 @@ async function findOperator(userId: string, organizationId: string) {
 
 /** Asigna una función (y opcionalmente una puerta) a un portero: es lo que verá y podrá descargar en la app. */
 export async function assignDoorAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.users);
+  const staff = await requireEditor(ROLES.users);
   const operator = await findOperator(String(formData.get("userId")), staff.organization.id);
   if (!operator) return { error: "Portero no encontrado." };
 
@@ -41,7 +41,7 @@ export async function assignDoorAction(_prev: FormState, formData: FormData): Pr
 }
 
 export async function unassignDoorAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.users);
+  const staff = await requireEditor(ROLES.users);
   const assignment = await prisma.doorAssignment.findFirst({
     where: { id: String(formData.get("assignmentId")), session: { event: { organizationId: staff.organization.id } } },
   });
@@ -53,7 +53,7 @@ export async function unassignDoorAction(_prev: FormState, formData: FormData): 
 
 /** Cierra la sesión de un teléfono: pierde el acceso en su siguiente llamada (por ejemplo, si lo perdieron). */
 export async function revokeDeviceAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.users);
+  const staff = await requireEditor(ROLES.users);
   const deviceTokenId = String(formData.get("deviceTokenId"));
   const device = await prisma.deviceToken.findFirst({
     where: { id: deviceTokenId, revokedAt: null, user: { memberships: { some: { organizationId: staff.organization.id } } } },

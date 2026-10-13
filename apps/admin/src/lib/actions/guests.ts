@@ -6,7 +6,7 @@ import { parseGuestList } from "@ticketera/core";
 import { DomainError, cancelGuestTicket, issueGuestTickets, prisma } from "@ticketera/db";
 import { readSheet } from "read-excel-file/universal";
 import { formObject, intField, zodErrors, type FormState } from "@/lib/forms";
-import { ROLES, can, requireStaff, visibleEvent, type Staff } from "@/lib/session";
+import { ROLES, can, requireEditor, visibleEvent, type Staff } from "@/lib/session";
 import { logAudit } from "@/lib/audit";
 
 /** IMPACTA en cualquier evento; el cliente solo en sus eventos con lista de invitados y con su espacio abierto. */
@@ -51,7 +51,7 @@ const guestTypeSchema = z.object({
  * salen de los tipos existentes y ocupan su cupo.
  */
 export async function createGuestTypeAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff([...ROLES.manage, ...ROLES.client]);
+  const staff = await requireEditor([...ROLES.manage, ...ROLES.client]);
   const parsed = guestTypeSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
   const data = parsed.data;
@@ -91,7 +91,7 @@ export async function createGuestTypeAction(_prev: FormState, formData: FormData
 
 /** Carga invitados pegados desde Excel o desde un archivo .xlsx/CSV: cada uno recibe su QR. */
 export async function addGuestsAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff([...ROLES.manage, ...ROLES.client]);
+  const staff = await requireEditor([...ROLES.manage, ...ROLES.client]);
   const type = await prisma.ticketType.findUnique({
     where: { id: String(formData.get("ticketTypeId") ?? "") },
     include: { session: true },
@@ -137,7 +137,7 @@ export async function addGuestsAction(_prev: FormState, formData: FormData): Pro
 }
 
 export async function cancelGuestAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff([...ROLES.manage, ...ROLES.client]);
+  const staff = await requireEditor([...ROLES.manage, ...ROLES.client]);
   const ticket = await prisma.ticket.findUnique({
     where: { id: String(formData.get("ticketId")) },
     include: { session: true },

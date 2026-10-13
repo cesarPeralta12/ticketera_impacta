@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { findShortage, remainingByType, sellableCapacity, type InventoryLine } from "./inventory";
 import { utcToZonedInput, zonedDateTimeToUtc } from "./locale";
-import { consumptionLeft, entryDeadline, localWeekday, peopleIn, weeklyNights } from "./nightlife";
+import { consumptionLeft, entryDeadline, localWeekday, peopleIn, tableLabel, weeklyNights } from "./nightlife";
 
 const TZ = "America/La_Paz";
 const at = (local: string) => zonedDateTimeToUtc(local, TZ);
@@ -89,5 +89,18 @@ describe("mesas y consumo", () => {
 
   it("el aforo vendible de mesas se cuenta en personas", () => {
     expect(sellableCapacity([{ capacity: 10, sectionId: null, section: null, peoplePerUnit: 6 }])).toBe(60);
+  });
+});
+
+describe("mesas elegidas en el mapa", () => {
+  it("se llaman por su lugar en el mapa", () => {
+    expect(tableLabel("VIP", null, "A-3")).toBe("VIP · Mesa A-3");
+    expect(tableLabel("Mesa VIP", 4)).toBe("Mesa VIP N° 4");
+    expect(tableLabel("General", null)).toBeNull();
+  });
+
+  it("el aforo de una sección numerada de mesas se cuenta en personas", () => {
+    // 24 mesas de 2 en una sección numerada: 48 personas.
+    expect(sellableCapacity([{ capacity: 24, sectionId: "lounge", section: { capacity: 24, seatingMode: "RESERVED" }, peoplePerUnit: 2 }])).toBe(48);
   });
 });

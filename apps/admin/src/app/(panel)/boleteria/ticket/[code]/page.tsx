@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { code128Svg, entranceText, formatCode, formatClock, formatDateTime, formatMoney } from "@ticketera/core";
+import { code128Svg, entranceText, formatCode, formatClock, formatDateTime, formatMoney, tableLabel } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, getOrderByCode, prisma } from "@ticketera/db";
 import { PrintButton } from "@/components/print-button";
 import { ticketQrSvg } from "@/lib/qr";
@@ -115,9 +115,9 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
                 {t.seat.section.name} · {t.seat.label}
               </p>
             )}
-            {t.credit?.tableNumber && (
+            {t.ticketType.kind === "TABLE" && t.credit && (
               <p className="text-sm font-bold">
-                {t.ticketType.name} N° {t.credit.tableNumber} · {t.ticketType.peoplePerUnit} personas
+                {tableLabel(t.ticketType.name, t.credit.tableNumber, t.credit.seat?.label)} · {t.ticketType.peoplePerUnit} personas
               </p>
             )}
             {t.credit && t.credit.amount > 0 && (

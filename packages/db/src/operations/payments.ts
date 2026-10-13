@@ -220,7 +220,23 @@ async function issueTickets(tx: Tx, order: PaidOrder) {
         },
       });
 
-    if (type.kind === "TABLE") {
+    if (type.kind === "TABLE" && item.seatId) {
+      // Mesa elegida en el mapa: el saldo guarda su lugar. Solo la primera entrada lleva la butaca (una butaca
+      // tiene una sola entrada vigente: es la barrera contra la doble venta); las demás comparten la mesa.
+      const table = await tx.consumptionCredit.create({
+        data: {
+          sessionId: type.sessionId,
+          orderId: order.id,
+          ticketTypeId: item.ticketTypeId,
+          seatId: item.seatId,
+          amount: type.consumptionAmount ?? 0,
+          currency: type.currency,
+        },
+      });
+      for (let person = 0; person < peopleIn(type); person++) {
+        rows.push({ ...ticket(table.id), seatId: person === 0 ? item.seatId : null });
+      }
+    } else if (type.kind === "TABLE") {
       const last = await tx.consumptionCredit.aggregate({ where: { ticketTypeId: item.ticketTypeId }, _max: { tableNumber: true } });
       let next = (last._max.tableNumber ?? 0) + 1;
       for (let unit = 0; unit < item.quantity; unit++) {

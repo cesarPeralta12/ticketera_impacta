@@ -12,8 +12,8 @@ export const ROLE_LABEL = {
   OWNER: "Dueño",
   ADMIN: "Administrador",
   OPERATOR: "Operador de puerta",
-  CASHIER: "Cajero (boletería)",
-  CLIENT: "Cliente / organizador",
+  CASHIER: "Cajero (boletería y barra)",
+  CLIENT: "Cliente (solo lectura)",
 } as const;
 
 export const MODE_LABEL = { TICKETING: "Venta de entradas", GUEST_LIST: "Lista de invitados" } as const;

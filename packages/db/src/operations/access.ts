@@ -92,7 +92,7 @@ export async function scanTicket(input: {
           ticketType: true,
           seat: { include: { section: true } },
           session: { include: { event: true } },
-          credit: { select: { tableNumber: true } },
+          credit: { select: { tableNumber: true, seat: { select: { label: true } } } },
         },
       })
     : null;
@@ -216,7 +216,7 @@ export async function scanTicket(input: {
           holderName: ticket.holderName,
           ticketType: ticket.ticketType.name,
           event: ticket.session.event.title,
-          seat: ticket.seat?.label ?? tableLabel(ticket.ticketType.name, ticket.credit?.tableNumber),
+          seat: tableLabel(ticket.ticketType.name, ticket.credit?.tableNumber, ticket.credit?.seat?.label) ?? ticket.seat?.label ?? null,
           section: ticket.seat?.section.name ?? null,
         }
       : null,
@@ -235,7 +235,7 @@ async function replayOutcome(scan: { result: ScanResult; ticketId: string | null
           ticketType: true,
           seat: { include: { section: true } },
           session: { include: { event: true } },
-          credit: { select: { tableNumber: true } },
+          credit: { select: { tableNumber: true, seat: { select: { label: true } } } },
         },
       })
     : null;
@@ -247,7 +247,7 @@ async function replayOutcome(scan: { result: ScanResult; ticketId: string | null
           holderName: ticket.holderName,
           ticketType: ticket.ticketType.name,
           event: ticket.session.event.title,
-          seat: ticket.seat?.label ?? tableLabel(ticket.ticketType.name, ticket.credit?.tableNumber),
+          seat: tableLabel(ticket.ticketType.name, ticket.credit?.tableNumber, ticket.credit?.seat?.label) ?? ticket.seat?.label ?? null,
           section: ticket.seat?.section.name ?? null,
         }
       : null,

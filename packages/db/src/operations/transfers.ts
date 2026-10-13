@@ -18,7 +18,7 @@ const eventInclude = {
   ticketType: { select: { name: true, accessMethods: true, qrMode: true, sectionId: true, kind: true, entryUntil: true } },
   seat: { include: { section: { select: { name: true } } } },
   // Boliche: la mesa de la entrada y su saldo de consumo.
-  credit: { select: { tableNumber: true, amount: true, spent: true, currency: true } },
+  credit: { select: { tableNumber: true, amount: true, spent: true, currency: true, seat: { select: { label: true } } } },
 } as const;
 
 /** Datos del evento y de la entrada que se muestran en las pantallas y correos de una transferencia. */
@@ -33,7 +33,7 @@ function describe(ticket: {
     entryUntil?: Date | null;
   };
   seat: { label: string; section: { name: string } } | null;
-  credit?: { tableNumber: number | null; amount: number; spent: number; currency: string } | null;
+  credit?: { tableNumber: number | null; amount: number; spent: number; currency: string; seat?: { label: string } | null } | null;
   session: {
     startsAt: Date;
     event: { title: string };
@@ -46,11 +46,19 @@ function describe(ticket: {
     accessMethods: ticket.ticketType.accessMethods,
     /** DYNAMIC: no lleva QR fijo; se abre en el sitio, donde el QR cambia cada 30 segundos. */
     qrMode: ticket.ticketType.qrMode,
-    seat: ticket.seat ? `${ticket.seat.section.name} · ${ticket.seat.label}` : tableLabel(ticket.ticketType.name, ticket.credit?.tableNumber),
+    seat:
+      tableLabel(ticket.ticketType.name, ticket.credit?.tableNumber, ticket.credit?.seat?.label) ??
+      (ticket.seat ? `${ticket.seat.section.name} · ${ticket.seat.label}` : null),
     /** Boliche: consumo incluido en barra (compartido si es de una mesa). */
     consumption:
       ticket.credit && ticket.credit.amount > 0
-        ? { ...ticket.credit, left: consumptionLeft(ticket.credit), shared: ticket.ticketType.kind === "TABLE" }
+        ? {
+            amount: ticket.credit.amount,
+            spent: ticket.credit.spent,
+            currency: ticket.credit.currency,
+            left: consumptionLeft(ticket.credit),
+            shared: ticket.ticketType.kind === "TABLE",
+          }
         : null,
     /** "Free hasta la 01:00": válida para entrar solo hasta esta hora. */
     entryUntil: ticket.ticketType.entryUntil ?? null,

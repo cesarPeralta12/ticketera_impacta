@@ -11,7 +11,7 @@ const QUICK = ["25", "50", "100", "200"];
  * Terminal de barra: se lee el QR (lector USB o código escrito) de cualquier persona de la mesa, se ve su
  * saldo y se descuenta lo que piden.
  */
-export function BarTerminal({ sessionId, timeZone }: { sessionId: string; timeZone: string }) {
+export function BarTerminal({ sessionId, timeZone, readOnly = false }: { sessionId: string; timeZone: string; readOnly?: boolean }) {
   const router = useRouter();
   const [code, setCode] = useState("");
   const [current, setCurrent] = useState<{ raw: string; view: ConsumptionView } | null>(null);
@@ -121,7 +121,9 @@ export function BarTerminal({ sessionId, timeZone }: { sessionId: string; timeZo
             </div>
           )}
 
-          {v.amount === 0 ? (
+          {readOnly ? (
+            <p className="text-sm text-[var(--ink-muted)]">Cuenta de solo lectura: el consumo lo descuenta el cajero de la barra.</p>
+          ) : v.amount === 0 ? (
             <p className="text-sm text-[var(--ink-muted)]">Esta mesa no tiene consumo incluido: lo que pidan se cobra aparte.</p>
           ) : v.left === 0 ? (
             <p className="text-sm font-medium text-[var(--danger)]">Saldo agotado: lo que pidan ahora se cobra aparte.</p>

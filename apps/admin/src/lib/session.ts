@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { clientAccessOpen, prisma, type StaffRole } from "@ticketera/db";
+import { EventCategory, clientAccessOpen, prisma, type StaffRole } from "@ticketera/db";
 import { auth } from "./auth";
 
 /** Quién puede hacer qué en el panel (dentro de su organización). */
@@ -83,6 +83,12 @@ export async function currentStaff() {
     viewingAs,
     /** Solo para el rol CLIENT. */
     client: viewingAs ? null : membership.client,
+    /**
+     * Solo lectura: las cuentas de los organizadores y de los clientes ven todo lo suyo (eventos, ventas,
+     * ingresos, reportes) pero no cambian nada; crear y modificar es solo de IMPACTA (también cuando entra en
+     * un organizador). El personal de operación (cajero y portero) sigue vendiendo, cobrando y leyendo QR.
+     */
+    readOnly: !platform && (membership.role === "OWNER" || membership.role === "ADMIN" || membership.role === "CLIENT"),
   };
 }
 
@@ -101,6 +107,35 @@ export async function requireStaff(allowed: StaffRole[] = ROLES.manage): Promise
   if (!staff) redirect("/login");
   if (!allowed.includes(staff.role)) redirect(HOME_BY_ROLE[staff.role]);
   return staff;
+}
+
+export const READ_ONLY_MESSAGE = "Tu cuenta es de solo lectura: los cambios los hace Impacta.";
+
+/** Una cuenta de solo lectura intentó cambiar algo (la interfaz no lo ofrece: llegó por otro lado). */
+export class ReadOnlyError extends Error {
+  constructor() {
+    super(READ_ONLY_MESSAGE);
+  }
+}
+
+/**
+ * Para toda server action que crea o cambia algo: además del rol, exige que la cuenta pueda editar
+ * (IMPACTA). Una cuenta de solo lectura no pasa aunque invoque la acción directamente.
+ */
+export async function requireEditor(allowed: StaffRole[] = ROLES.manage): Promise<Staff> {
+  const staff = await requireStaff(allowed);
+  if (staff.readOnly) throw new ReadOnlyError();
+  return staff;
+}
+
+/** El organizador en el que se trabaja es un boliche (noches, mesas, barra). */
+export const isNightlife = (staff: Staff) => staff.organization.kind === "NIGHTLIFE";
+
+/** Categorías de evento según el organizador: un boliche solo hace noches; uno de eventos, todo menos boliche. */
+export function allowedCategories(staff: Staff): EventCategory[] {
+  const all = Object.values(EventCategory);
+  if (staff.organization.isPlatform) return all;
+  return isNightlife(staff) ? ["BOLICHE"] : all.filter((c) => c !== "BOLICHE");
 }
 
 /** Solo administradores de IMPACTA: organizadores, aprobaciones, cuentas. */

@@ -323,7 +323,7 @@ export async function getOrderByCode(code: string) {
         include: {
           ticketType: true,
           seat: { include: { section: true } },
-          credit: { select: { tableNumber: true, amount: true, spent: true, currency: true } },
+          credit: { select: { tableNumber: true, amount: true, spent: true, currency: true, seat: { select: { label: true } } } },
         },
         orderBy: { issuedAt: "asc" },
       },

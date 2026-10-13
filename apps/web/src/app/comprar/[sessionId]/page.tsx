@@ -99,6 +99,8 @@ export default async function BuyPage({ params }: Props) {
       currency: t.currency,
       presale: t.presale,
       maxPerOrder: Math.min(t.maxPerOrder, MAX_TICKETS_PER_ORDER),
+      table: t.kind === "TABLE" ? { people: peopleIn(t) } : null,
+      consumption: t.consumptionAmount && t.consumptionAmount > 0 ? formatMoney(t.consumptionAmount, t.currency) : null,
       seats: t.section!.seats
         // Orden de lectura natural (fila A: 1, 2, … 10), no alfabético ("1", "10", "2").
         .toSorted((a, b) => a.row.localeCompare(b.row) || Number(a.number) - Number(b.number) || a.number.localeCompare(b.number))

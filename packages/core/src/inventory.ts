@@ -54,7 +54,12 @@ export function remainingByType(lines: InventoryLine[]): Map<string, number> {
  * Preventa (300) + General (800) sobre una Cancha de 800 suman 800, no 1.100.
  */
 export function sellableCapacity(
-  types: { capacity: number; sectionId: string | null; section: { capacity: number } | null; peoplePerUnit?: number }[],
+  types: {
+    capacity: number;
+    sectionId: string | null;
+    section: { capacity: number; seatingMode?: string } | null;
+    peoplePerUnit?: number;
+  }[],
 ): number {
   const bySection = new Map<string, { cap: number; sum: number }>();
   let unsectioned = 0;
@@ -65,7 +70,9 @@ export function sellableCapacity(
       unsectioned += seats;
       continue;
     }
-    const entry = bySection.get(t.sectionId) ?? { cap: t.section.capacity, sum: 0 };
+    // En una sección numerada cuyas "butacas" son mesas, el aforo en personas es mesas × personas.
+    const cap = t.section.seatingMode === "RESERVED" ? t.section.capacity * Math.max(1, t.peoplePerUnit ?? 1) : t.section.capacity;
+    const entry = bySection.get(t.sectionId) ?? { cap, sum: 0 };
     entry.sum += seats;
     bySection.set(t.sectionId, entry);
   }

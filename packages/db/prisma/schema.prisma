@@ -33,6 +33,8 @@ model Organization {
   currency        String             @db.Char(3)
   /// La dueña de la plataforma: sus administradores ven y gestionan a todos los organizadores.
   isPlatform      Boolean            @default(false)
+  /// Organizador de eventos o boliche: un boliche trabaja con noches, mesas, barra y free por horario.
+  kind            OrganizationKind   @default(EVENTS)
   status          OrganizationStatus @default(ACTIVE)
   taxId           String?
   contactEmail    String?
@@ -310,9 +312,10 @@ model Seat {
   x         Float?
   y         Float?
 
-  section    Section     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  section    Section             @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   orderItems OrderItem[]
   tickets    Ticket[]
+  credits    ConsumptionCredit[]
 
   @@unique([sectionId, row, number])
 }
@@ -860,8 +863,11 @@ model ConsumptionCredit {
   sessionId    String
   orderId      String
   ticketTypeId String
-  /// Número de mesa dentro de su tipo (Mesa 1, Mesa 2…). Vacío en una entrada con consumo.
+  /// Número de mesa dentro de su tipo (Mesa 1, Mesa 2…), en una zona sin butacas. Vacío en una entrada con
+  /// consumo y en una mesa elegida en el mapa (esa usa seatId).
   tableNumber  Int?
+  /// Mesa elegida en el mapa: la "butaca" de una sección numerada que es una mesa.
+  seatId       String?
   /// Consumo incluido (centavos) y lo ya consumido.
   amount       Int
   spent        Int      @default(0)
@@ -871,6 +877,7 @@ model ConsumptionCredit {
   session     EventSession            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   order       Order                   @relation(fields: [orderId], references: [id])
   ticketType  TicketType              @relation(fields: [ticketTypeId], references: [id])
+  seat        Seat?                   @relation(fields: [seatId], references: [id], onDelete: SetNull)
   tickets     Ticket[]
   redemptions ConsumptionRedemption[]
 
@@ -892,4 +899,9 @@ model ConsumptionRedemption {
   staff  StaffUser         @relation(fields: [staffId], references: [id])
 
   @@index([creditId, createdAt])
+}
+
+enum OrganizationKind {
+  EVENTS
+  NIGHTLIFE
 }

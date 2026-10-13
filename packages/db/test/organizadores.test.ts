@@ -38,6 +38,21 @@ async function newOrganizer() {
 }
 
 describe("alta de organizadores", () => {
+  it("Impacta crea usuarios de eventos (por defecto) o de boliche", async () => {
+    const events = await newOrganizer();
+    expect(events.organization.kind).toBe("EVENTS");
+    const actor = await impactaAdmin();
+    const suffix = randomCode(6).toLowerCase();
+    const club = await createOrganizer({
+      name: `Boliche ${suffix}`,
+      kind: "NIGHTLIFE",
+      admin: { name: "Dueño del boliche", email: `boliche-${suffix}@prueba.test`, password: PASSWORD },
+      actorId: actor.id,
+    });
+    expect(club.organization.kind).toBe("NIGHTLIFE");
+    expect(club.admin.mustChangePassword).toBe(true);
+  });
+
   it("un organizador nuevo empieza vacío y con una cuenta de administrador con contraseña temporal", async () => {
     const { organization, admin } = await newOrganizer();
     expect(organization.isPlatform).toBe(false);

@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef, useTransition, type FormEvent, type ReactNode } from "react";
 import type { FormState } from "@/lib/forms";
+import { useReadOnly } from "./read-only";
 
 /**
  * Formulario del panel conectado a una server action. Muestra el error general y los de
@@ -25,6 +26,8 @@ export function ActionForm({
   confirm?: string;
 }) {
   const [state, formAction, pending] = useActionState(action, undefined);
+  // Cuenta de solo lectura: el formulario se ve pero no se puede usar.
+  const readOnly = useReadOnly();
   const [, startTransition] = useTransition();
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -34,6 +37,7 @@ export function ActionForm({
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (readOnly) return;
     if (confirm && !window.confirm(confirm)) return;
     const data = new FormData(event.currentTarget);
     startTransition(() => formAction(data));
@@ -41,8 +45,8 @@ export function ActionForm({
 
   const fieldErrors = Object.values(state?.fieldErrors ?? {});
   return (
-    <form ref={formRef} onSubmit={onSubmit} className={className} aria-busy={pending}>
-      <fieldset disabled={pending} className="contents">
+    <form ref={formRef} onSubmit={onSubmit} className={className} aria-busy={pending} title={readOnly ? "Solo lectura: los cambios los hace Impacta." : undefined}>
+      <fieldset disabled={pending || readOnly} className="contents">
         {children}
       </fieldset>
       {(state?.error || fieldErrors.length > 0) && !state?.ok && (

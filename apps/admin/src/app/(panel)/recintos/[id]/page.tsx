@@ -11,7 +11,7 @@ import {
   deleteSectionAction,
   updateAccessPointSectionsAction,
 } from "@/lib/actions/venues";
-import { positioned } from "@/components/seat-map-preview";
+import { SeatMapPreview, positioned } from "@/components/seat-map-preview";
 import { SEATING_LABEL } from "@/lib/labels";
 import { ROLES, requireStaff } from "@/lib/session";
 import { SeatDesigner, type DesignerSection } from "./seat-designer";
@@ -107,19 +107,46 @@ export default async function VenuePage({ params }: Props) {
         )}
       </section>
 
-      <section className="space-y-3">
-        <h2 className="eyebrow">Zonas de entrada general (sin butacas)</h2>
-        <p className="text-sm text-[var(--ink-muted)]">
-          Cada zona se dibuja en el mapa con la forma que elijas (rectángulo, óvalo, trapecio o arco) y su aforo. El comprador la ve en el mismo
-          mapa de las butacas y elige cuántas entradas quiere de la lista de abajo.
-        </p>
-        <ZoneDesigner venueId={venue.id} zones={zones} seats={backgroundSeats} />
-      </section>
+      {staff.readOnly ? (
+        // Solo lectura: el mapa tal como lo armó Impacta, sin los editores.
+        <section className="card space-y-3 p-6">
+          <h2 className="eyebrow">Mapa del recinto</h2>
+          <SeatMapPreview
+            sections={[
+              ...zones.flatMap((z) => (z.layout ? [{ id: z.id, name: z.name, color: z.color, seats: [], zone: z.layout, detail: `Aforo ${z.capacity}` }] : [])),
+              ...seated.map((sec) => ({ id: sec.id, name: sec.name, color: sec.color, seats: sec.seats })),
+            ]}
+          />
+          <ul className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-[var(--ink-muted)]">
+            {zones.map((z) => (
+              <li key={z.id}>
+                {z.name}: aforo {z.capacity}
+              </li>
+            ))}
+            {seated.map((sec) => (
+              <li key={sec.id}>
+                {sec.name}: {sec.seats.length} butacas
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : (
+        <>
+        <section className="space-y-3">
+          <h2 className="eyebrow">Zonas de entrada general (sin butacas)</h2>
+          <p className="text-sm text-[var(--ink-muted)]">
+            Cada zona se dibuja en el mapa con la forma que elijas (rectángulo, óvalo, trapecio o arco) y su aforo. El comprador la ve en el mismo
+            mapa de las butacas y elige cuántas entradas quiere de la lista de abajo.
+          </p>
+          <ZoneDesigner venueId={venue.id} zones={zones} seats={backgroundSeats} />
+        </section>
 
-      <section className="space-y-3">
-        <h2 className="eyebrow">Mapa de butacas numeradas</h2>
-        <SeatDesigner venueId={venue.id} existingSections={seated} zones={zones.flatMap((z) => (z.layout ? [{ id: z.id, name: z.name, color: z.color, layout: z.layout }] : []))} />
-      </section>
+        <section className="space-y-3">
+          <h2 className="eyebrow">Mapa de butacas numeradas</h2>
+          <SeatDesigner venueId={venue.id} existingSections={seated} zones={zones.flatMap((z) => (z.layout ? [{ id: z.id, name: z.name, color: z.color, layout: z.layout }] : []))} />
+        </section>
+        </>
+      )}
 
       <section className="card p-6">
         <h2 className="eyebrow mb-2">Puertas de acceso</h2>

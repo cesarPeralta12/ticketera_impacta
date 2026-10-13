@@ -268,3 +268,94 @@ describe("repetir noches", () => {
     expect(freeCopy.entryUntil!.getTime() - oneWeek.startsAt.getTime()).toBe(type("Free").entryUntil!.getTime() - session.startsAt.getTime());
   });
 });
+
+describe("mesas elegidas en el mapa", () => {
+  /** Boliche con un "lounge" de 4 mesas dibujadas como butacas, cada una para 2 personas. */
+  async function lounge() {
+    const suffix = unique();
+    const org = await prisma.organization.create({ data: { name: `Lounge ${suffix}`, slug: `lounge-${suffix}`, currency: "BOB", kind: "NIGHTLIFE" } });
+    const venue = await prisma.venue.create({ data: { organizationId: org.id, name: "Lounge", timezone: TZ, accessPoints: { create: [{ name: "Puerta" }] } } });
+    const section = await prisma.section.create({
+      data: {
+        venueId: venue.id,
+        name: "lounge",
+        seatingMode: "RESERVED",
+        capacity: 4,
+        seats: { createMany: { data: Array.from({ length: 4 }, (_, i) => ({ row: "A", number: String(i + 1), label: `A-${i + 1}` })) } },
+      },
+      include: { seats: { orderBy: { number: "asc" } } },
+    });
+    const event = await prisma.event.create({
+      data: {
+        organizationId: org.id,
+        slug: `lounge-${suffix}`,
+        title: `Lounge ${suffix}`,
+        category: "BOLICHE",
+        status: "PUBLISHED",
+        sessions: {
+          create: {
+            venueId: venue.id,
+            startsAt: new Date(Date.now() + 7 * 86_400_000),
+            ticketTypes: {
+              create: {
+                name: "VIP",
+                sectionId: section.id,
+                unitAmount: 50_000,
+                currency: "BOB",
+                capacity: 4,
+                maxPerOrder: 4,
+                kind: "TABLE",
+                peoplePerUnit: 2,
+                consumptionAmount: 40_000,
+              },
+            },
+          },
+        },
+      },
+      include: { sessions: { include: { ticketTypes: true } } },
+    });
+    return { session: event.sessions[0]!, type: event.sessions[0]!.ticketTypes[0]!, seats: section.seats };
+  }
+
+  it("cada mesa elegida trae un QR por persona, su saldo y queda tomada en el mapa", async () => {
+    const { session, type, seats } = await lounge();
+    const customer = await person();
+    const order = await createPendingOrder(
+      { sessionId: session.id, items: [{ ticketTypeId: type.id, quantity: 2, seatIds: [seats[0]!.id, seats[2]!.id] }], buyer: { name: customer.name, email: customer.email, document: customer.documentId! } },
+      { customerId: customer.id },
+    );
+    const payment = await startPayment(order.code, "directo");
+    await applyPaymentUpdate({
+      paymentId: payment.id,
+      provider: "directo",
+      providerPaymentId: `directo_${payment.id}`,
+      status: "APPROVED",
+      providerStatus: "pase_directo",
+      amount: payment.amount,
+      currency: payment.currency,
+    });
+
+    const tickets = await prisma.ticket.findMany({ where: { orderId: order.id }, include: { credit: { include: { seat: true } } } });
+    expect(tickets).toHaveLength(4);
+    const credits = [...new Map(tickets.map((t) => [t.creditId, t.credit!])).values()];
+    expect(credits.map((c) => c.seat?.label).sort()).toEqual(["A-1", "A-3"]);
+    expect(credits.every((c) => c.amount === 40_000 && c.tableNumber === null)).toBe(true);
+    // Una sola entrada por butaca (la barrera contra la doble venta); las demás comparten la mesa.
+    expect(tickets.filter((t) => t.seatId).length).toBe(2);
+
+    // Esas mesas ya no se pueden elegir.
+    const other = await person();
+    await expect(
+      createPendingOrder(
+        { sessionId: session.id, items: [{ ticketTypeId: type.id, quantity: 1, seatIds: [seats[0]!.id] }], buyer: { name: other.name, email: other.email, document: other.documentId! } },
+        { customerId: other.id },
+      ),
+    ).rejects.toMatchObject({ code: "SEAT_TAKEN" });
+
+    const second = tickets.find((t) => !t.seatId && t.credit?.seat?.label === "A-3")!;
+    const outcome = await scanTicket({ sessionId: session.id, raw: second.code });
+    expect(outcome).toMatchObject({ result: "ACCEPTED", ticket: { seat: "VIP · Mesa A-3" } });
+    const seen = await getConsumption(second.code, session.id);
+    expect(seen.ok && seen.credit.seat?.label).toBe("A-3");
+  });
+});

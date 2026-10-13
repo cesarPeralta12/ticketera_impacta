@@ -6,7 +6,7 @@ import { z } from "zod";
 import { MAX_DISCOUNT_PERCENT, entryDeadline, formatDateTime, isTimeOfDay, normalizeImageUrl, slugify, windowsOverlap, zonedDateTimeToUtc } from "@ticketera/core";
 import { DomainError, EventCategory, EventMode, createEventWithinLimit, prisma, publicationProblem, setTicketTypeQrMode, submitEventForReview } from "@ticketera/db";
 import { formObject, intField, moneyField, zodErrors, type FormState } from "@/lib/forms";
-import { ROLES, requireStaff } from "@/lib/session";
+import { allowedCategories, requireEditor } from "@/lib/session";
 import { logAudit } from "@/lib/audit";
 
 async function audit(actorId: string, action: string, entity: string, entityId: string, data?: object) {
@@ -54,9 +54,10 @@ async function ownedEvent(organizationId: string, eventId: string) {
 }
 
 export async function createEventAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const parsed = eventSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
+  if (!allowedCategories(staff).includes(parsed.data.category)) return { fieldErrors: { category: "Categoría no disponible para este organizador." } };
   const client = await checkClient(staff.organization.id, parsed.data.clientId);
   if (!client.ok) return { fieldErrors: { clientId: "Cliente no encontrado." } };
 
@@ -81,11 +82,12 @@ export async function createEventAction(_prev: FormState, formData: FormData): P
 }
 
 export async function updateEventAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const event = await ownedEvent(staff.organization.id, String(formData.get("eventId")));
   if (!event) return { error: "Evento no encontrado." };
   const parsed = eventSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
+  if (!allowedCategories(staff).includes(parsed.data.category)) return { fieldErrors: { category: "Categoría no disponible para este organizador." } };
   const client = await checkClient(staff.organization.id, parsed.data.clientId);
   if (!client.ok) return { fieldErrors: { clientId: "Cliente no encontrado." } };
   if (parsed.data.mode !== event.mode) {
@@ -117,7 +119,7 @@ export async function updateEventAction(_prev: FormState, formData: FormData): P
  * organizador no publica: lo envía a revisión y sale en la web cuando IMPACTA lo aprueba.
  */
 export async function publishEventAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const event = await ownedEvent(staff.organization.id, String(formData.get("eventId")));
   if (!event) return { error: "Evento no encontrado." };
 
@@ -145,7 +147,7 @@ export async function publishEventAction(_prev: FormState, formData: FormData): 
 
 /** Pasar a borrador: deja de venderse (o sale de la revisión, si estaba esperando). */
 export async function unpublishEventAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const event = await ownedEvent(staff.organization.id, String(formData.get("eventId")));
   if (!event) return { error: "Evento no encontrado." };
   await prisma.event.update({ where: { id: event.id }, data: { status: "DRAFT" } });
@@ -162,7 +164,7 @@ const sessionSchema = z.object({
 });
 
 export async function createSessionAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const parsed = sessionSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
   const { eventId, venueId, startsAt, doorsOpenAt } = parsed.data;
@@ -202,7 +204,7 @@ export async function createSessionAction(_prev: FormState, formData: FormData):
 
 /** Solo se puede borrar una función sin ventas; con ventas habría que cancelarla y reembolsar. */
 export async function deleteSessionAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const session = await prisma.eventSession.findFirst({
     where: { id: String(formData.get("sessionId")), event: { organizationId: staff.organization.id } },
     include: { ticketTypes: { include: { _count: { select: { orderItems: true } } } } },
@@ -311,7 +313,7 @@ const seatedOverlapError = (sectionName: string) =>
   `"${sectionName}" es de butacas numeradas: solo puede tener un precio a la vez. Pon fecha de fin a la preventa y la general empieza cuando termina (casilla "no vender las otras").`;
 
 export async function addTicketTypeAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const parsed = ticketTypeSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
   const data = parsed.data;
@@ -330,9 +332,6 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
   const table = Boolean(data.table);
   const peoplePerUnit = table ? data.peoplePerUnit : 1;
   if (table && !peoplePerUnit) return { fieldErrors: { peoplePerUnit: "Indica cuántas personas entran con cada mesa." } };
-  if (table && section.seatingMode === "RESERVED") {
-    return { fieldErrors: { sectionId: "Las mesas van en una zona general (sin butacas numeradas)." } };
-  }
   const entryUntil = data.entryUntil ? entryDeadline(session.startsAt, data.entryUntil, session.venue.timezone) : null;
   const qrMode = data.qrDynamic ? ("DYNAMIC" as const) : ("STATIC" as const);
   if (qrMode === "DYNAMIC" && session.event.mode !== "TICKETING") {
@@ -427,7 +426,7 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
 
 /** Cambia cómo se lee una entrada en puerta (QR, código de barras, NFC). Vale también para las ya vendidas. */
 export async function updateAccessMethodsAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const type = await prisma.ticketType.findFirst({
     where: { id: String(formData.get("ticketTypeId")), session: { event: { organizationId: staff.organization.id } } },
     include: { session: true },
@@ -443,7 +442,7 @@ export async function updateAccessMethodsAction(_prev: FormState, formData: Form
 
 /** Activa o desactiva el QR dinámico de un tipo de entrada (solo mientras no tenga ventas). */
 export async function setQrModeAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const mode = formData.get("mode") === "DYNAMIC" ? "DYNAMIC" : "STATIC";
   const typeId = String(formData.get("ticketTypeId"));
   const result = await setTicketTypeQrMode(typeId, staff.organization.id, mode);
@@ -474,7 +473,7 @@ const saleDatesSchema = z.object({
 
 /** Cambiar desde/hasta cuándo se vende un tipo (extender o cortar una preventa). */
 export async function updateTicketTypeSalesAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const parsed = saleDatesSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
   const type = await prisma.ticketType.findFirst({
@@ -516,7 +515,7 @@ export async function updateTicketTypeSalesAction(_prev: FormState, formData: Fo
 }
 
 export async function deleteTicketTypeAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const type = await prisma.ticketType.findFirst({
     where: { id: String(formData.get("ticketTypeId")), session: { event: { organizationId: staff.organization.id } } },
     include: { session: true, _count: { select: { orderItems: true } } },
@@ -541,7 +540,7 @@ const queueSchema = z
   });
 
 export async function updateQueueSettingsAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const parsed = queueSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
   const session = await prisma.eventSession.findFirst({

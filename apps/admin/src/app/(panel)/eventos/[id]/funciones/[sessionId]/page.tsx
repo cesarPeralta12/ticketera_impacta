@@ -407,13 +407,25 @@ export default async function SessionPage({ params }: Props) {
                   Válida para entrar hasta
                   <input name="entryUntil" type="time" className="field w-32" />
                 </label>
-                <p className="basis-full text-xs text-[var(--ink-dim)]">
-                  <strong>Mesa VIP</strong>: marca &ldquo;mesa&rdquo;, 6 personas, precio Bs 1.200 y consumo Bs 1.000 (consumo
-                  mínimo); el cupo es la cantidad de mesas. Cada persona recibe su QR y el consumo se descuenta en Barra.{" "}
-                  <strong>Entrada + trago</strong>: una entrada con consumo incluido (ej. Bs 25).{" "}
-                  <strong>Free hasta la 01:00</strong>: precio 0 y hora 01:00: una por persona, y después de esa hora ya
-                  no entra.
-                </p>
+                <div className="basis-full space-y-1 text-xs text-[var(--ink-dim)]">
+                  <p>
+                    <strong>Mesa o lounge</strong> (ej. Mesa VIP para 6 a Bs 1.200 con Bs 1.000 de consumo): marca
+                    &ldquo;Es una mesa&rdquo;, <strong>Personas por mesa</strong> = 6, <strong>Consumo incluido</strong> =
+                    1000 y el <strong>Precio</strong> de la mesa. En <strong>Sección</strong>:
+                  </p>
+                  <p>
+                    · una <strong>sección con butacas</strong> dibujada en el mapa (ej. &ldquo;lounge — 24 butacas&rdquo;):
+                    cada butaca es una mesa y el comprador <strong>elige la suya en el mapa</strong>; el cupo son las
+                    butacas. · una <strong>zona sin butacas</strong> (ej. &ldquo;Zona VIP&rdquo;): pon en{" "}
+                    <strong>Cupo</strong> cuántas mesas hay y cada una recibe su número (N° 1, N° 2…). En los dos casos,
+                    cada persona recibe su QR y el consumo se descuenta en Barra.
+                  </p>
+                  <p>
+                    <strong>Entrada + trago</strong>: no marques &ldquo;mesa&rdquo;; solo pon el consumo (ej. 25).{" "}
+                    <strong>Free hasta la 01:00</strong>: precio 0 y &ldquo;Válida para entrar hasta&rdquo; 01:00 (una por
+                    persona; después de esa hora ya no entra).
+                  </p>
+                </div>
               </div>
             )}
             <div className="flex basis-full flex-wrap items-end gap-3 rounded-md border border-dashed border-[var(--border)] p-3">

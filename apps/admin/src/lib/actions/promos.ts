@@ -6,7 +6,7 @@ import { z } from "zod";
 import { DEFAULT_TIMEZONE, generatePromoCode, normalizePromoCode, zonedDateTimeToUtc } from "@ticketera/core";
 import { DomainError, createPromoCode, setPromoActive, updatePromoCode } from "@ticketera/db";
 import { formObject, intField, moneyField, zodErrors, type FormState } from "@/lib/forms";
-import { ROLES, requireStaff } from "@/lib/session";
+import { requireEditor } from "@/lib/session";
 
 const optionalInt = (label: string, min: number, max: number) => intField(min, max, label).optional();
 
@@ -47,7 +47,7 @@ function fail(error: unknown): FormState {
 }
 
 export async function createPromoAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const parsed = createSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
   const data = parsed.data;
@@ -96,7 +96,7 @@ export async function createPromoAction(_prev: FormState, formData: FormData): P
 }
 
 export async function updatePromoAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const parsed = baseSchema.extend({ promoId: z.string() }).safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
   const { promoId, ...data } = parsed.data;
@@ -127,7 +127,7 @@ export async function updatePromoAction(_prev: FormState, formData: FormData): P
 }
 
 export async function togglePromoAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const promoId = String(formData.get("promoId") ?? "");
   try {
     await setPromoActive(staff.organization.id, promoId, formData.get("active") === "true", staff.id);

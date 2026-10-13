@@ -351,7 +351,7 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
       ticketType: { select: { name: true, sectionId: true, accessMethods: true, qrMode: true } },
       seat: { select: { label: true } },
       order: { select: { buyerName: true, buyerDocument: true } },
-      credit: { select: { tableNumber: true } },
+      credit: { select: { tableNumber: true, seat: { select: { label: true } } } },
     },
   });
   const secret = tickets.some((t) => t.ticketType.qrMode === "DYNAMIC") ? requireEnv("TICKET_QR_SECRET") : "";
@@ -394,7 +394,7 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
           document: t.holderDocument ?? t.order.buyerDocument,
           type: t.ticketType.name,
           // En un boliche, la mesa de la persona va donde iría la butaca.
-          seat: t.seat?.label ?? tableLabel(t.ticketType.name, t.credit?.tableNumber),
+          seat: tableLabel(t.ticketType.name, t.credit?.tableNumber, t.credit?.seat?.label) ?? t.seat?.label ?? null,
           methods: t.ticketType.accessMethods,
           // QR dinámico: el teléfono recalcula la prueba con esta llave (solo de las entradas de su puerta).
           dynamic,

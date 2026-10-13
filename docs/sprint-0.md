@@ -82,6 +82,18 @@ cola, boletería, puerta, reportes y transferencias funcionan igual):
 Pendiente si se aprueba: reservar una mesa específica en el mapa, cobro de consumo por QR desde el celular de
 la barra (hoy lector USB o código escrito) y reportes de consumo por noche en el reporte del evento.
 
+## Organizadores de solo lectura y boliches como organizador (2026-10-14, rama `feature/boliches`)
+
+- **Dos tipos de usuario** que crea Impacta en *Organizadores*: de **eventos** o de **boliche**. El de boliche
+  tiene su panel de noches, mesas, barra, RRPP, ventas e ingresos; el de eventos no ve la barra. Un boliche
+  solo crea eventos de categoría Boliche; uno de eventos, todas menos esa.
+- **Solo lectura**: las cuentas de organizadores, boliches y clientes ven todo lo suyo en vivo pero no crean ni
+  cambian nada (formularios deshabilitados y, en el servidor, `requireEditor` en toda acción que modifica). Solo
+  Impacta crea y edita, también dentro de un organizador ("Entrar"). El cajero (boletería y barra) y el portero
+  siguen operando. El cliente ya no carga invitados: lo hace Impacta.
+- Lounge 360 y Forum Club pasan a ser organizadores tipo boliche, cada uno con organizador (solo lectura),
+  cajero y portero.
+
 ## Integración con el prototipo del compañero (2026-10-01)
 
 **Se trajo:**

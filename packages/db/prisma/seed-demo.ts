@@ -447,8 +447,15 @@ function nextWeekday(weekday: number, time: string): Date {
   return zonedDateTimeToUtc(`${day.toISOString().slice(0, 10)}T${time}`, DEFAULT_TIMEZONE);
 }
 
+/**
+ * Cuentas de cada boliche (solo desarrollo local; con SEED_PASSWORD, todas usan esa):
+ *   Organizador (solo lectura)  lounge360@boliche.test / forum@boliche.test   Boliche2026!
+ *   Cajero (boletería y barra)  barra@lounge360.test   / barra@forum.test      Barra2026!
+ *   Portero (app de puerta)     puerta@lounge360.test  / puerta@forum.test     Puerta2026!
+ */
 const CLUBS = [
   {
+    org: { slug: "lounge-360", name: "Lounge 360", taxId: "5678901234", email: "lounge360@boliche.test", admin: "Andrés Paz (Lounge 360)", key: "lounge360" },
     title: "Lounge 360 · Viernes y Sábados",
     description:
       "La noche de Equipetrol: DJ residentes de house y reggaetón, terraza y zona VIP. Reserva tu mesa con consumo incluido o entra free antes de la 1.",
@@ -468,6 +475,7 @@ const CLUBS = [
     promo: { code: "RRPP-VALE", promoter: "Valeria Rojas (RRPP)" },
   },
   {
+    org: { slug: "forum-club", name: "Forum Club", taxId: "6789012345", email: "forum@boliche.test", admin: "Lucía Mendoza (Forum)", key: "forum" },
     title: "Forum · Jueves a Sábado",
     description: "Clásico de Sopocachi: electrónica y crossover hasta el amanecer. Mesas Box para 8 con consumo incluido.",
     imageUrl: "https://images.unsplash.com/photo-1574391884720-bbc3740c59d1?w=1200&q=80",
@@ -485,23 +493,58 @@ const CLUBS = [
 ];
 
 /**
- * Boliches de ejemplo: dos discotecas en dos ciudades con noches que se repiten cada semana, free por
- * horario, entrada + trago y mesas con consumo incluido, un código RRPP cada una, y unas compras en la
- * primera noche (una mesa con un consumo ya cobrado en barra) para mostrar la Barra.
+ * Boliches de ejemplo: cada uno es su propio organizador (tipo boliche) con su cuenta de solo lectura, un
+ * cajero para boletería y barra y un portero. Noches que se repiten cada semana, free por horario, entrada +
+ * trago y mesas con consumo, un código RRPP, y unas compras en la primera noche (una mesa con un consumo ya
+ * cobrado en barra). Si el boliche ya existía dentro de Impacta (semilla anterior), se pasa a su organizador.
  */
 async function seedNightlife(db: Db, orgId: string) {
   const { prisma } = db;
   const log: string[] = [];
   const owner = await prisma.membership.findFirst({ where: { organizationId: orgId, role: "OWNER" } });
-  const porter = await prisma.staffUser.findUnique({ where: { email: "puerta@impacta.test" } });
 
   for (const c of CLUBS) {
+    // ── El boliche como organizador, con sus cuentas ──
+    let org = await prisma.organization.findUnique({ where: { slug: c.org.slug } });
+    if (!org) {
+      org = await prisma.organization.create({
+        data: { name: c.org.name, slug: c.org.slug, kind: "NIGHTLIFE", currency: DEFAULT_CURRENCY, taxId: c.org.taxId, contactEmail: c.org.email },
+      });
+      log.push(`boliche ${c.org.name} (organizador)`);
+    } else if (org.kind !== "NIGHTLIFE") {
+      org = await prisma.organization.update({ where: { id: org.id }, data: { kind: "NIGHTLIFE" } });
+    }
+    const accounts = [
+      { email: c.org.email, name: c.org.admin, password: seedPassword("Boliche2026!"), role: "ADMIN" as const },
+      { email: `barra@${c.org.key}.test`, name: `Barra ${c.org.name}`, password: seedPassword("Barra2026!"), role: "CASHIER" as const },
+      { email: `puerta@${c.org.key}.test`, name: `Puerta ${c.org.name}`, password: seedPassword("Puerta2026!"), role: "OPERATOR" as const },
+    ];
+    for (const a of accounts) if (await ensureStaff(db, org.id, a)) log.push(`${c.org.name}: cuenta ${a.email}`);
+    const cashier = await prisma.staffUser.findUniqueOrThrow({ where: { email: `barra@${c.org.key}.test` } });
+    const porter = await prisma.staffUser.findUniqueOrThrow({ where: { email: `puerta@${c.org.key}.test` } });
+
     const slug = slugify(c.title);
-    if (await prisma.event.findUnique({ where: { slug } })) continue;
+    const existing = await prisma.event.findUnique({ where: { slug }, include: { sessions: { select: { id: true, venueId: true } } } });
+    if (existing) {
+      if (existing.organizationId !== org.id) {
+        // Semilla anterior: el boliche estaba dentro de Impacta. Pasa a su organizador con todo lo suyo.
+        const venueIds = [...new Set(existing.sessions.map((s) => s.venueId))];
+        await prisma.$transaction([
+          prisma.event.update({ where: { id: existing.id }, data: { organizationId: org.id } }),
+          prisma.venue.updateMany({ where: { id: { in: venueIds } }, data: { organizationId: org.id } }),
+          prisma.promoCode.updateMany({ where: { eventId: existing.id }, data: { organizationId: org.id } }),
+          // Los porteros de Impacta dejan de ver las noches del boliche.
+          prisma.doorAssignment.deleteMany({ where: { sessionId: { in: existing.sessions.map((s) => s.id) }, userId: { not: porter.id } } }),
+        ]);
+        log.push(`${c.title}: pasó al organizador ${c.org.name}`);
+      }
+      await assignPorter(db, existing.id, porter.id);
+      continue;
+    }
 
     const venue = await prisma.venue.create({
       data: {
-        organizationId: orgId,
+        organizationId: org.id,
         name: c.venue.name,
         city: c.venue.city,
         address: c.venue.address,
@@ -524,7 +567,7 @@ async function seedNightlife(db: Db, orgId: string) {
 
     const event = await prisma.event.create({
       data: {
-        organizationId: orgId,
+        organizationId: org.id,
         slug,
         title: c.title,
         description: c.description,
@@ -584,7 +627,6 @@ async function seedNightlife(db: Db, orgId: string) {
                 })),
               ],
             },
-            ...(porter ? { doorAssignments: { create: { userId: porter.id } } } : {}),
           },
         },
       },
@@ -594,7 +636,7 @@ async function seedNightlife(db: Db, orgId: string) {
 
     await prisma.promoCode.create({
       data: {
-        organizationId: orgId,
+        organizationId: org.id,
         eventId: event.id,
         code: c.promo.code,
         description: `Lista de ${c.promo.promoter}`,
@@ -612,8 +654,9 @@ async function seedNightlife(db: Db, orgId: string) {
         weeks: c.repeat.weeks,
         staffId: owner.userId,
       });
-      log.push(`boliche ${c.venue.name} (${c.venue.city}): ${created + 1} noches, código ${c.promo.code}`);
+      log.push(`${c.title}: ${created + 1} noches, código ${c.promo.code}`);
     }
+    await assignPorter(db, event.id, porter.id);
 
     // Compras de la primera noche: una mesa (con un consumo ya cobrado), una free y dos entradas + trago.
     const typeId = (name: string) => night.ticketTypes.find((t) => t.name === name)!.id;
@@ -649,10 +692,25 @@ async function seedNightlife(db: Db, orgId: string) {
         firstTable = (await prisma.ticket.findFirst({ where: { orderId: order.id }, select: { code: true } }))?.code ?? null;
       }
     }
-    if (firstTable && owner) {
-      await db.redeemConsumption({ raw: firstTable, sessionId: night.id, amount: 25_000, staffId: owner.userId, note: "1 botella de ron + mezcladores" });
+    if (firstTable) {
+      await db.redeemConsumption({ raw: firstTable, sessionId: night.id, amount: 25_000, staffId: cashier.id, note: "1 botella de ron + mezcladores" });
       log.push(`${c.venue.name}: mesa vendida con Bs 250 ya consumidos en barra`);
     }
   }
   return log;
+}
+
+/** El portero del boliche ve todas sus noches en la app (por la puerta principal). */
+async function assignPorter(db: Db, eventId: string, porterId: string) {
+  const nights = await db.prisma.eventSession.findMany({
+    where: { eventId, cancelledAt: null },
+    select: { id: true, venue: { select: { accessPoints: { select: { id: true }, orderBy: { name: "asc" }, take: 1 } } } },
+  });
+  for (const n of nights) {
+    await db.prisma.doorAssignment.upsert({
+      where: { userId_sessionId: { userId: porterId, sessionId: n.id } },
+      create: { userId: porterId, sessionId: n.id, accessPointId: n.venue.accessPoints[0]?.id ?? null },
+      update: {},
+    });
+  }
 }

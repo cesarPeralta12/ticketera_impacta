@@ -20,6 +20,7 @@ async function ticketCodeFrom(raw: string): Promise<string | null> {
 
 const creditInclude = {
   ticketType: { select: { name: true, kind: true, peoplePerUnit: true } },
+  seat: { select: { label: true } },
   order: { select: { code: true, buyerName: true } },
   tickets: { select: { code: true, status: true, holderName: true }, orderBy: { issuedAt: "asc" } },
   redemptions: { orderBy: { createdAt: "desc" }, take: 20, include: { staff: { select: { name: true } } } },
@@ -102,7 +103,7 @@ export async function nightConsumption(sessionId: string) {
       where: { credit: { sessionId } },
       orderBy: { createdAt: "desc" },
       take: 15,
-      include: { staff: { select: { name: true } }, credit: { include: { ticketType: { select: { name: true } } } } },
+      include: { staff: { select: { name: true } }, credit: { include: { ticketType: { select: { name: true } }, seat: { select: { label: true } } } } },
     }),
   ]);
   const names = new Map(

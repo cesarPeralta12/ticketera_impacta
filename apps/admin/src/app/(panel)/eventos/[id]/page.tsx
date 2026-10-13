@@ -14,7 +14,7 @@ import {
   updateEventAction,
 } from "@/lib/actions/events";
 import { EVENT_STATUS, MODE_LABEL } from "@/lib/labels";
-import { ROLES, requireStaff } from "@/lib/session";
+import { ROLES, allowedCategories, requireStaff } from "@/lib/session";
 import { EventFields } from "../event-fields";
 
 export const metadata: Metadata = { title: "Evento" };
@@ -33,7 +33,7 @@ export default async function EventDetailPage({ params }: Props) {
         orderBy: { startsAt: "asc" },
         include: {
           venue: true,
-          ticketTypes: { select: { capacity: true, sectionId: true, section: { select: { capacity: true } } } },
+          ticketTypes: { select: { capacity: true, sectionId: true, peoplePerUnit: true, section: { select: { capacity: true, seatingMode: true } } } },
           _count: { select: { tickets: { where: { status: { in: ["VALID", "USED"] } } } } },
         },
       },
@@ -328,7 +328,7 @@ export default async function EventDetailPage({ params }: Props) {
         <summary className="cursor-pointer text-sm font-medium">Editar datos del evento</summary>
         <ActionForm action={updateEventAction} successMessage="Cambios guardados." className="mt-5 flex flex-col gap-5">
           <input type="hidden" name="eventId" value={event.id} />
-          <EventFields defaults={event} clients={clientMode ? clients : null} />
+          <EventFields defaults={event} clients={clientMode ? clients : null} categories={allowedCategories(staff)} />
           <button type="submit" className="btn btn-primary w-fit">
             Guardar cambios
           </button>

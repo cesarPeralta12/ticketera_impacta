@@ -87,6 +87,10 @@ export default async function PosSessionPage({ params }: Props) {
       </div>
       {general.length === 0 && seated.length === 0 ? (
         <p className="card p-5 text-sm text-[var(--ink-muted)]">Esta función no tiene entradas cargadas.</p>
+      ) : staff.readOnly ? (
+        <p className="card p-5 text-sm text-[var(--ink-muted)]">
+          Cuenta de solo lectura: ves lo que queda a la venta, pero las ventas en boletería las hace el cajero.
+        </p>
       ) : (
         <PosForm sessionId={session.id} general={general} seated={seated} />
       )}

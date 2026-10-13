@@ -184,7 +184,7 @@ type TicketForList = {
   seat: { label: string; section: { name: string } } | null;
   /** Boliche: mesa y saldo de consumo. */
   creditId: string | null;
-  credit: { tableNumber: number | null; amount: number; spent: number; currency: string } | null;
+  credit: { tableNumber: number | null; amount: number; spent: number; currency: string; seat: { label: string } | null } | null;
   expiredAt: Date | null;
 };
 
@@ -240,14 +240,14 @@ async function TicketList({
           </p>
           {ticket.holderName && <p className="text-sm font-semibold">{ticket.holderName}</p>}
           <p className="font-display text-xl">{ticket.ticketType.name}</p>
-          {ticket.seat && (
+          {ticket.seat && ticket.ticketType.kind !== "TABLE" && (
             <p className="text-sm font-semibold">
               {ticket.seat.section.name} · {ticket.seat.label}
             </p>
           )}
-          {ticket.credit?.tableNumber && (
+          {ticket.ticketType.kind === "TABLE" && ticket.credit && (
             <p className="text-sm font-semibold">
-              {tableLabel(ticket.ticketType.name, ticket.credit.tableNumber)}
+              {tableLabel(ticket.ticketType.name, ticket.credit.tableNumber, ticket.credit.seat?.label)}
               {ticket.person && ` · persona ${ticket.person} de ${ticket.ticketType.peoplePerUnit}`}
             </p>
           )}

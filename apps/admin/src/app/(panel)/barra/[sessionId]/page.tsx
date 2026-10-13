@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { formatDateTime, formatMoney, formatTime } from "@ticketera/core";
+import { formatDateTime, formatMoney, formatTime, tableLabel } from "@ticketera/core";
 import { nightConsumption, prisma } from "@ticketera/db";
 import { ROLES, requireStaff } from "@/lib/session";
 import { BarTerminal } from "./bar-terminal";
@@ -36,7 +36,7 @@ export default async function BarNightPage({ params }: Props) {
         </p>
       </div>
 
-      <BarTerminal sessionId={night.id} timeZone={tz} />
+      <BarTerminal sessionId={night.id} timeZone={tz} readOnly={staff.readOnly} />
 
       <section className="card p-6">
         <h2 className="eyebrow mb-3">Consumo de la noche</h2>
@@ -89,8 +89,8 @@ export default async function BarNightPage({ params }: Props) {
             {summary.recent.map((r) => (
               <li key={r.id} className="flex flex-wrap justify-between gap-2 py-2">
                 <span>
-                  {formatTime(r.createdAt, tz)} · {r.credit.ticketType.name}
-                  {r.credit.tableNumber ? ` N° ${r.credit.tableNumber}` : ""} · {r.staff.name}
+                  {formatTime(r.createdAt, tz)} ·{" "}
+                  {tableLabel(r.credit.ticketType.name, r.credit.tableNumber, r.credit.seat?.label) ?? r.credit.ticketType.name} · {r.staff.name}
                   {r.note && <span className="text-[var(--ink-dim)]"> · {r.note}</span>}
                 </span>
                 <span className="font-mono">−{formatMoney(r.amount, currency)}</span>

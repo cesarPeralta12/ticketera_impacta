@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { MAX_REPEAT_WEEKS, peopleIn, tableLabel } from "@ticketera/core";
 import { DomainError, getConsumption, prisma, redeemConsumption, repeatWeeklyNights } from "@ticketera/db";
 import { intField, moneyField, type FormState } from "@/lib/forms";
-import { ROLES, requireStaff, type Staff } from "@/lib/session";
+import { READ_ONLY_MESSAGE, ROLES, requireEditor, requireStaff, type Staff } from "@/lib/session";
 
 /** Noche de la organización: la Barra y "Repetir noches" solo tocan las propias. */
 async function ownNight(staff: Staff, sessionId: string) {
@@ -35,7 +35,7 @@ async function view(sessionId: string, raw: string): Promise<ConsumptionResult> 
   return {
     ok: true,
     view: {
-      label: tableLabel(credit.ticketType.name, credit.tableNumber) ?? credit.ticketType.name,
+      label: tableLabel(credit.ticketType.name, credit.tableNumber, credit.seat?.label) ?? credit.ticketType.name,
       kind: credit.ticketType.kind,
       people: peopleIn(credit.ticketType),
       buyer: credit.order.buyerName,
@@ -66,6 +66,7 @@ export async function lookupConsumptionAction(sessionId: string, raw: string): P
 /** Barra: cobra un consumo contra el saldo y devuelve el saldo nuevo. */
 export async function redeemConsumptionAction(sessionId: string, raw: string, amountText: string, note: string): Promise<ConsumptionResult> {
   const staff = await requireStaff(ROLES.pos);
+  if (staff.readOnly) return { ok: false, error: READ_ONLY_MESSAGE };
   const night = await ownNight(staff, sessionId);
   if (!night) return { ok: false, error: "Noche no encontrada." };
   const amount = moneyField.safeParse(amountText.trim());
@@ -83,7 +84,7 @@ export async function redeemConsumptionAction(sessionId: string, raw: string, am
 
 /** "Repetir noches": copia esta noche a los días elegidos de las próximas semanas. */
 export async function repeatNightsAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.manage);
+  const staff = await requireEditor();
   const night = await ownNight(staff, String(formData.get("sessionId") ?? ""));
   if (!night) return { error: "Noche no encontrada." };
   const weekdays = [...new Set(formData.getAll("weekday").map(Number))].filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);

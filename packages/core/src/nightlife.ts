@@ -74,7 +74,11 @@ export function peopleIn(type: { kind?: string; peoplePerUnit?: number | null })
   return type.kind === "TABLE" ? Math.max(1, type.peoplePerUnit ?? 1) : 1;
 }
 
-/** "Mesa VIP N° 4": la mesa de una entrada, o null si no es de una mesa. */
-export function tableLabel(typeName: string, tableNumber: number | null | undefined): string | null {
+/**
+ * La mesa de una entrada, o null si no es de una mesa: "Mesa VIP N° 4" (zona sin butacas, número asignado) o
+ * "VIP · Mesa A-3" (elegida en el mapa).
+ */
+export function tableLabel(typeName: string, tableNumber: number | null | undefined, seatLabel?: string | null): string | null {
+  if (seatLabel) return `${typeName} · Mesa ${seatLabel}`;
   return tableNumber ? `${typeName} N° ${tableNumber}` : null;
 }

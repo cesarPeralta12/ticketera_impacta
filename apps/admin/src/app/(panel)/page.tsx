@@ -28,7 +28,7 @@ export default async function DashboardPage() {
       include: {
         event: { select: { id: true, title: true, status: true } },
         venue: { select: { name: true, timezone: true } },
-        ticketTypes: { select: { capacity: true, sectionId: true, section: { select: { capacity: true } } } },
+        ticketTypes: { select: { capacity: true, sectionId: true, peoplePerUnit: true, section: { select: { capacity: true, seatingMode: true } } } },
         _count: { select: { tickets: { where: { status: { in: ["VALID", "USED"] } } } } },
       },
     }),
