@@ -66,6 +66,7 @@ export async function listPublishedEvents(category?: EventCategory, search?: str
               discountStartsAt: true,
               discountEndsAt: true,
               sectionId: true,
+              entryUntil: true,
               section: { select: { id: true, capacity: true } },
             },
           },
@@ -83,6 +84,8 @@ export async function listPublishedEvents(category?: EventCategory, search?: str
       const prices = event.sessions
         .flatMap((s) => s.ticketTypes)
         .filter((t) => saleState(t, now) !== "closed")
+        // Una "free hasta la 01:00" se anuncia aparte: el "desde" es la entrada más barata con precio.
+        .filter((t) => !(t.entryUntil && currentPrice(t, now).unitAmount === 0))
         .map((t) => ({ ...t, ...currentPrice(t, now) }));
       const cheapest = prices.reduce<(typeof prices)[number] | null>((min, t) => (min === null || t.unitAmount < min.unitAmount ? t : min), null);
 

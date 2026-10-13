@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import QRCode from "qrcode";
-import { code128Svg, entranceText, formatCode, formatDateTime, formatMoney, signTicketPayload, type GateInfo } from "@ticketera/core";
+import { code128Svg, consumptionLeft, entranceText, formatCode, formatDateTime, formatMoney, formatClock, signTicketPayload, tableLabel, type GateInfo } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, expireStaleOrders, getOrderByCode, requireEnv } from "@ticketera/db";
 import { payOrderAction } from "./actions";
 import { auth } from "@/lib/auth";
@@ -119,6 +119,7 @@ export default async function OrderPage({ params }: Props) {
             guest={guest}
             ownerId={order.customerId}
             gates={(session?.venue.accessPoints ?? []).map((g) => ({ name: g.name, sectionIds: g.sections.map((s) => s.id) }))}
+            timeZone={session?.venue.timezone ?? "America/La_Paz"}
           />
           {isOwner && order.channel === "ONLINE" && (
             <p className="text-sm text-[var(--ink-muted)]">
@@ -171,8 +172,20 @@ type TicketForList = {
   status: string;
   customerId: string | null;
   holderName: string | null;
-  ticketType: { name: string; accessMethods: ("QR" | "BARCODE" | "NFC")[]; qrMode: "STATIC" | "DYNAMIC"; sectionId: string | null };
+  ticketType: {
+    name: string;
+    accessMethods: ("QR" | "BARCODE" | "NFC")[];
+    qrMode: "STATIC" | "DYNAMIC";
+    sectionId: string | null;
+    kind: "ENTRY" | "TABLE";
+    peoplePerUnit: number;
+    entryUntil: Date | null;
+  };
   seat: { label: string; section: { name: string } } | null;
+  /** Boliche: mesa y saldo de consumo. */
+  creditId: string | null;
+  credit: { tableNumber: number | null; amount: number; spent: number; currency: string; seat: { label: string } | null } | null;
+  expiredAt: Date | null;
 };
 
 async function TicketList({
@@ -180,16 +193,27 @@ async function TicketList({
   guest,
   ownerId,
   gates,
+  timeZone,
 }: {
   tickets: TicketForList[];
   guest: boolean;
   ownerId: string | null;
   gates: GateInfo[];
+  timeZone: string;
 }) {
+  // Persona N de M dentro de cada mesa.
+  const seen = new Map<string, number>();
+  const personOf = (ticket: TicketForList) => {
+    if (!ticket.creditId || ticket.ticketType.kind !== "TABLE") return null;
+    const n = (seen.get(ticket.creditId) ?? 0) + 1;
+    seen.set(ticket.creditId, n);
+    return n;
+  };
   const secret = requireEnv("TICKET_QR_SECRET");
   const rendered = await Promise.all(
     tickets.map(async (ticket) => ({
       ...ticket,
+      person: personOf(ticket),
       // Si la entrada se transfirió a otra cuenta, su QR ya no se muestra aquí (lo ve su nueva dueña en "Mis entradas").
       transferred: Boolean(ownerId && ticket.customerId && ticket.customerId !== ownerId),
       // Cada tipo de entrada define cómo se lee en puerta: se muestra solo lo que el lector admite.
@@ -216,9 +240,24 @@ async function TicketList({
           </p>
           {ticket.holderName && <p className="text-sm font-semibold">{ticket.holderName}</p>}
           <p className="font-display text-xl">{ticket.ticketType.name}</p>
-          {ticket.seat && (
+          {ticket.seat && ticket.ticketType.kind !== "TABLE" && (
             <p className="text-sm font-semibold">
               {ticket.seat.section.name} · {ticket.seat.label}
+            </p>
+          )}
+          {ticket.ticketType.kind === "TABLE" && ticket.credit && (
+            <p className="text-sm font-semibold">
+              {tableLabel(ticket.ticketType.name, ticket.credit.tableNumber, ticket.credit.seat?.label)}
+              {ticket.person && ` · persona ${ticket.person} de ${ticket.ticketType.peoplePerUnit}`}
+            </p>
+          )}
+          {ticket.ticketType.entryUntil && ticket.status === "VALID" && (
+            <p className="mt-1 text-sm font-bold text-[#b35c00]">Válida para entrar hasta las {formatClock(ticket.ticketType.entryUntil, timeZone)}</p>
+          )}
+          {ticket.credit && ticket.credit.amount > 0 && (!ticket.person || ticket.person === 1) && (
+            <p className="mx-auto mt-2 w-fit rounded-full bg-[#14181b] px-3 py-1 text-xs font-semibold text-[#f5b700]">
+              Consumo {ticket.ticketType.kind === "TABLE" ? "de la mesa" : "incluido"}: {formatMoney(consumptionLeft(ticket.credit), ticket.credit.currency)} de{" "}
+              {formatMoney(ticket.credit.amount, ticket.credit.currency)}
             </p>
           )}
           {!ticket.transferred && entranceText(gates, ticket.ticketType.sectionId) && (
@@ -254,7 +293,13 @@ async function TicketList({
           )}
           <p className="font-mono text-sm tracking-wider">{formatCode(ticket.code)}</p>
           {ticket.status === "USED" && <p className="mt-1 text-xs font-semibold text-[#6b687a]">Ya utilizada</p>}
-          {ticket.status === "CANCELLED" && <p className="mt-1 text-xs font-semibold text-[#c2183e]">Anulada</p>}
+          {ticket.status === "CANCELLED" && (
+            <p className="mt-1 text-xs font-semibold text-[#c2183e]">
+              {ticket.expiredAt && ticket.ticketType.entryUntil
+                ? `Venció: era válida para entrar hasta las ${formatClock(ticket.ticketType.entryUntil, timeZone)}`
+                : "Anulada"}
+            </p>
+          )}
         </li>
       ))}
     </ul>

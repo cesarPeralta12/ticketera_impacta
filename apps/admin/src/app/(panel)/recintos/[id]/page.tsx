@@ -8,7 +8,7 @@ import { ActionForm } from "@/components/action-form";
 import {
   deleteSectionAction,
 } from "@/lib/actions/venues";
-import { positioned } from "@/components/seat-map-preview";
+import { SeatMapPreview, positioned } from "@/components/seat-map-preview";
 import { SEATING_LABEL } from "@/lib/labels";
 import { ROLES, requireStaff } from "@/lib/session";
 import type { DesignerGate } from "./gate-designer";
@@ -126,20 +126,48 @@ export default async function VenuePage({ params }: Props) {
         )}
       </section>
 
-      <section className="space-y-3">
-        <h2 className="eyebrow">Mapa del recinto</h2>
-        <MapEditor
-          venueId={venue.id}
-          seated={seated}
-          zones={zones}
-          resolvedZones={resolvedZones}
-          gates={gates}
-          gateMarkers={gateMarkers}
-          seats={backgroundSeats}
-          sections={sections.map((x) => ({ id: x.id, name: x.name, color: x.color }))}
-        />
-      </section>
-
+      {staff.readOnly ? (
+        // Solo lectura: el mapa tal como lo armó Impacta, sin los editores.
+        <section className="card space-y-3 p-6">
+          <h2 className="eyebrow">Mapa del recinto</h2>
+          <SeatMapPreview
+            gates={gateMarkers}
+            sections={[
+              ...resolvedZones.map((z) => ({ id: z.id, name: z.name, color: z.color, seats: [], zone: z.shape, detail: `Aforo ${zones.find((c) => c.id === z.id)?.capacity ?? ""}` })),
+              ...seated.map((sec) => ({ id: sec.id, name: sec.name, color: sec.color, seats: sec.seats })),
+            ]}
+          />
+          <ul className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-[var(--ink-muted)]">
+            {zones.map((z) => (
+              <li key={z.id}>
+                {z.name}: aforo {z.capacity}
+              </li>
+            ))}
+            {seated.map((sec) => (
+              <li key={sec.id}>
+                {sec.name}: {sec.seats.length} butacas
+              </li>
+            ))}
+            {gates.map((g) => (
+              <li key={g.id}>Puerta: {g.name}</li>
+            ))}
+          </ul>
+        </section>
+      ) : (
+        <section className="space-y-3">
+          <h2 className="eyebrow">Mapa del recinto</h2>
+          <MapEditor
+            venueId={venue.id}
+            seated={seated}
+            zones={zones}
+            resolvedZones={resolvedZones}
+            gates={gates}
+            gateMarkers={gateMarkers}
+            seats={backgroundSeats}
+            sections={sections.map((x) => ({ id: x.id, name: x.name, color: x.color }))}
+          />
+        </section>
+      )}
     </div>
   );
 }

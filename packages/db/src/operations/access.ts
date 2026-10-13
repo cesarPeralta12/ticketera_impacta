@@ -3,11 +3,13 @@ import {
   parseDynamicPayload,
   parseManualWithOtp,
   parseTicketPayload,
+  tableLabel,
   verifyDynamicOtp,
   verifyDynamicPayload,
 } from "@ticketera/core";
 import { prisma } from "../client";
 import type { AccessMethod, ScanResult } from "../generated/prisma/client";
+import { expireTimedTickets } from "./nightlife";
 import { isUniqueViolation, requireEnv } from "./shared";
 
 /** Métodos de lectura que reporta la app; MANUAL (código escrito) siempre se admite. */
@@ -71,6 +73,7 @@ export async function scanTicket(input: {
     if (done) return replayOutcome(done);
   }
   const scannedAt = input.scannedAt ?? new Date();
+  await expireTimedTickets(input.sessionId);
   const secret = requireEnv("TICKET_QR_SECRET");
   const raw = input.raw.trim();
   // Tres formas de leer una entrada: QR dinámico (TK2), código + OTP escrito a mano, o código estático (TK1 / solo código).
@@ -85,7 +88,12 @@ export async function scanTicket(input: {
   const ticket = code
     ? await prisma.ticket.findUnique({
         where: { code },
-        include: { ticketType: true, seat: { include: { section: true } }, session: { include: { event: true } } },
+        include: {
+          ticketType: true,
+          seat: { include: { section: true } },
+          session: { include: { event: true } },
+          credit: { select: { tableNumber: true, seat: { select: { label: true } } } },
+        },
       })
     : null;
 
@@ -125,6 +133,13 @@ export async function scanTicket(input: {
     else if (qrFailure) result = qrFailure;
     else if (input.method && input.method !== "MANUAL" && !ticket.ticketType.accessMethods.includes(input.method)) {
       result = "METHOD_NOT_ALLOWED";
+    } else if (
+      // "Free hasta la 01:00": después de esa hora ya no entra (si ya había entrado, sigue siendo "ya utilizada").
+      ticket.ticketType.entryUntil &&
+      scannedAt > ticket.ticketType.entryUntil &&
+      (ticket.status === "VALID" || ticket.expiredAt !== null)
+    ) {
+      result = "OUT_OF_HOURS";
     } else {
       const gate = input.accessPointId
         ? await prisma.accessPoint.findUnique({
@@ -144,9 +159,11 @@ export async function scanTicket(input: {
             ).map((g) => g.name)
           : [];
       } else {
+        // Una lectura sin conexión hecha a tiempo vale aunque la entrada haya vencido mientras se sincronizaba.
+        const inTime = ticket.ticketType.entryUntil !== null && scannedAt <= ticket.ticketType.entryUntil;
         const { count } = await prisma.ticket.updateMany({
-          where: { id: ticket.id, status: "VALID" },
-          data: { status: "USED", usedAt: scannedAt },
+          where: { id: ticket.id, OR: [{ status: "VALID" }, ...(inTime ? [{ status: "CANCELLED" as const, expiredAt: { not: null } }] : [])] },
+          data: { status: "USED", usedAt: scannedAt, ...(inTime ? { cancelledAt: null, expiredAt: null } : {}) },
         });
         if (count === 1) result = "ACCEPTED";
         else {
@@ -199,7 +216,7 @@ export async function scanTicket(input: {
           holderName: ticket.holderName,
           ticketType: ticket.ticketType.name,
           event: ticket.session.event.title,
-          seat: ticket.seat?.label ?? null,
+          seat: tableLabel(ticket.ticketType.name, ticket.credit?.tableNumber, ticket.credit?.seat?.label) ?? ticket.seat?.label ?? null,
           section: ticket.seat?.section.name ?? null,
         }
       : null,
@@ -214,7 +231,12 @@ async function replayOutcome(scan: { result: ScanResult; ticketId: string | null
   const ticket = scan.ticketId
     ? await prisma.ticket.findUnique({
         where: { id: scan.ticketId },
-        include: { ticketType: true, seat: { include: { section: true } }, session: { include: { event: true } } },
+        include: {
+          ticketType: true,
+          seat: { include: { section: true } },
+          session: { include: { event: true } },
+          credit: { select: { tableNumber: true, seat: { select: { label: true } } } },
+        },
       })
     : null;
   return {
@@ -225,7 +247,7 @@ async function replayOutcome(scan: { result: ScanResult; ticketId: string | null
           holderName: ticket.holderName,
           ticketType: ticket.ticketType.name,
           event: ticket.session.event.title,
-          seat: ticket.seat?.label ?? null,
+          seat: tableLabel(ticket.ticketType.name, ticket.credit?.tableNumber, ticket.credit?.seat?.label) ?? ticket.seat?.label ?? null,
           section: ticket.seat?.section.name ?? null,
         }
       : null,

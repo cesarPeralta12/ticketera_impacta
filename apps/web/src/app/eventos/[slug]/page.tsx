@@ -2,10 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { CATEGORY_COLOR, CATEGORY_LABEL, formatDate, formatDateTime, formatMoney, currentPrice, saleState } from "@ticketera/core";
+import { CATEGORY_COLOR, CATEGORY_LABEL, formatClock, formatDate, formatDateTime, formatMoney, currentPrice, saleState } from "@ticketera/core";
 import { getSessionAvailability } from "@ticketera/db";
+import { ClubOfferView } from "@/components/club-offer";
 import { EventImage } from "@/components/event-image";
 import { getPublishedEvent } from "@/lib/events";
+import { clubOffer } from "@/lib/nightlife";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -34,6 +36,9 @@ export default async function EventPage({ params }: Props) {
         const priced = open.length ? open : s.ticketTypes.filter((t) => saleState(t, now) !== "closed");
         const effective = priced.map((t) => ({ type: t, price: currentPrice(t, now) }));
         const minPrice = effective.reduce<number | null>((m, x) => (m === null || x.price.unitAmount < m ? x.price.unitAmount : m), null);
+        // Boliche: la free se anuncia aparte ("Free hasta 01:00") y el "desde" es la entrada más barata con precio.
+        const free = open.find((t) => currentPrice(t, now).unitAmount === 0 && t.entryUntil && t.entryUntil > now);
+        const paid = effective.filter((x) => x.price.unitAmount > 0).map((x) => x.price.unitAmount);
         const presale = open.find((t) => t.presale && t.salesEndAt);
         // Descuento de preventa vigente: el mayor porcentaje y hasta cuándo.
         const discount = effective
@@ -42,7 +47,8 @@ export default async function EventPage({ params }: Props) {
         return {
           ...s,
           left,
-          minPrice,
+          minPrice: free && paid.length ? Math.min(...paid) : minPrice,
+          freeUntil: free?.entryUntil ?? null,
           presaleUntil: presale?.salesEndAt ?? null,
           discount: discount ? { percent: discount.discountPercent!, until: discount.discountEndsAt! } : null,
         };
@@ -50,6 +56,10 @@ export default async function EventPage({ params }: Props) {
   );
   const color = CATEGORY_COLOR[event.category] ?? CATEGORY_COLOR.OTRO;
   const venue = sessions[0]?.venue ?? event.sessions[0]?.venue;
+  // Boliche: cada función es una noche; se muestra lo que ofrece la próxima (mesas, free, entrada + trago).
+  const club = event.category === "BOLICHE";
+  const nextNight = club ? sessions.find((s) => s.left > 0) ?? sessions[0] : undefined;
+  const offer = nextNight ? clubOffer(nextNight.ticketTypes, await getSessionAvailability(nextNight.id, now), now) : null;
 
   return (
     <main className="pb-16">
@@ -88,12 +98,22 @@ export default async function EventPage({ params }: Props) {
           <p className="whitespace-pre-wrap leading-relaxed text-[var(--ink-muted)]">
             {event.description ?? "Pronto más información."}
           </p>
+          {offer && nextNight && (
+            <div className="mt-8 space-y-3">
+              <h2 className="font-display text-2xl">Mesas, free y entradas</h2>
+              <ClubOfferView offer={offer} currency={nextNight.ticketTypes[0]!.currency} timeZone={nextNight.venue.timezone} detailed />
+              <p className="text-xs text-[var(--ink-dim)]">
+                Precios de la próxima noche. Cada persona entra con su QR (la mesa trae uno por persona) y el consumo
+                incluido se descuenta en la barra mostrando cualquiera de los QR.
+              </p>
+            </div>
+          )}
         </div>
 
         <div>
-          <h2 className="mb-3 font-display text-2xl">Funciones</h2>
+          <h2 className="mb-3 font-display text-2xl">{club ? "Noches" : "Funciones"}</h2>
           {sessions.length === 0 ? (
-            <p className="text-[var(--ink-muted)]">No hay funciones disponibles.</p>
+            <p className="text-[var(--ink-muted)]">{club ? "No hay noches disponibles." : "No hay funciones disponibles."}</p>
           ) : (
             <ul className="flex flex-col gap-3">
               {sessions.map((s) => {
@@ -112,6 +132,9 @@ export default async function EventPage({ params }: Props) {
                         {time} hs · {s.venue.name}
                       </p>
                       <p className="mt-1 text-xs">
+                        {s.freeUntil && (
+                          <span className="mr-2 font-semibold text-[#35C48F]">Free hasta {formatClock(s.freeUntil, s.venue.timezone)} ·</span>
+                        )}
                         {s.minPrice !== null && (
                           <span className="text-[var(--ink-muted)]">Desde {formatMoney(s.minPrice, s.ticketTypes[0]!.currency)}</span>
                         )}

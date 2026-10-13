@@ -53,6 +53,8 @@ const organizerSchema = z.object({
   adminPassword: z
     .string({ error: "Ingresa una contraseña temporal." })
     .min(MIN_PASSWORD_LENGTH, `La contraseña temporal necesita al menos ${MIN_PASSWORD_LENGTH} caracteres.`),
+  /** Usuario de eventos o de boliche. */
+  kind: z.enum(["EVENTS", "NIGHTLIFE"]).default("EVENTS"),
 });
 
 /** Alta de un organizador con su cuenta de administrador (contraseña temporal). */
@@ -64,6 +66,7 @@ export async function createOrganizerAction(_prev: FormState, formData: FormData
   try {
     await createOrganizer({
       name: data.name,
+      kind: data.kind,
       taxId: data.taxId,
       contactEmail: data.contactEmail,
       admin: { name: data.adminName, email: data.adminEmail, password: data.adminPassword },
@@ -74,7 +77,10 @@ export async function createOrganizerAction(_prev: FormState, formData: FormData
     throw error;
   }
   revalidatePath("/organizadores");
-  return { ok: true };
+  return {
+    ok: true,
+    message: `${data.kind === "NIGHTLIFE" ? "Boliche" : "Organizador"} creado. Ya puede entrar al panel con ${data.adminEmail} y la contraseña temporal (solo lectura).`,
+  };
 }
 
 export async function setOrganizerStatusAction(_prev: FormState, formData: FormData): Promise<FormState> {

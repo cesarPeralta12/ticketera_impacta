@@ -9,7 +9,11 @@ import { seedArchitectureDemo } from "./seed-demo";
 config({ path: path.resolve(import.meta.dirname, "../../../.env"), quiet: true });
 
 async function main() {
-  if (process.env.NODE_ENV === "production") throw new Error("Datos de demostración: no se cargan en producción.");
+  // En un servidor, solo con permiso explícito y contraseña propia (las de prueba están publicadas en el README).
+  // No borra nada: solo agrega lo que falta.
+  if (process.env.NODE_ENV === "production" && (process.env.SEED_ALLOW !== "si" || !process.env.SEED_PASSWORD)) {
+    throw new Error("Datos de demostración en un servidor: solo con SEED_ALLOW=si y SEED_PASSWORD=<tu contraseña> (no borra nada).");
+  }
   const db = await import("../src/index");
   const org = await db.prisma.organization.findUnique({ where: { slug: "impacta" } });
   if (!org) throw new Error('No existe la organización "impacta": corre primero la semilla (npm run db:seed).');

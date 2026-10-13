@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { CATEGORY_LABEL, DEFAULT_TIMEZONE, formatDateTime, sellableCapacity, utcToZonedInput } from "@ticketera/core";
+import { CATEGORY_LABEL, DEFAULT_TIMEZONE, MAX_REPEAT_WEEKS, WEEKDAY_SHORT, formatDateTime, sellableCapacity, utcToZonedInput } from "@ticketera/core";
 import { clientAccessOpen, defaultClientAccessUntil, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { updateClientAccessAction } from "@/lib/actions/clients";
+import { repeatNightsAction } from "@/lib/actions/nightlife";
 import {
   createSessionAction,
   publishEventAction,
@@ -13,7 +14,7 @@ import {
   updateEventAction,
 } from "@/lib/actions/events";
 import { EVENT_STATUS, MODE_LABEL } from "@/lib/labels";
-import { ROLES, requireStaff } from "@/lib/session";
+import { ROLES, allowedCategories, requireStaff } from "@/lib/session";
 import { EventFields } from "../event-fields";
 
 export const metadata: Metadata = { title: "Evento" };
@@ -32,7 +33,7 @@ export default async function EventDetailPage({ params }: Props) {
         orderBy: { startsAt: "asc" },
         include: {
           venue: true,
-          ticketTypes: { select: { capacity: true, sectionId: true, section: { select: { capacity: true } } } },
+          ticketTypes: { select: { capacity: true, sectionId: true, peoplePerUnit: true, section: { select: { capacity: true, seatingMode: true } } } },
           _count: { select: { tickets: { where: { status: { in: ["VALID", "USED"] } } } } },
         },
       },
@@ -157,7 +158,7 @@ export default async function EventDetailPage({ params }: Props) {
       </section>
 
       <section className="card p-6">
-        <h2 className="eyebrow mb-4">Funciones</h2>
+        <h2 className="eyebrow mb-4">{event.category === "BOLICHE" ? "Noches" : "Funciones"}</h2>
         {event.sessions.length === 0 ? (
           <p className="mb-4 text-sm text-[var(--ink-muted)]">
             Agrega al menos una función (fecha, hora y recinto) y cárgale entradas.
@@ -231,6 +232,52 @@ export default async function EventDetailPage({ params }: Props) {
         )}
       </section>
 
+      {event.category === "BOLICHE" && (
+        <section className="card p-6">
+          <h2 className="eyebrow mb-1">Repetir noches</h2>
+          <p className="mb-4 text-sm text-[var(--ink-muted)]">
+            Arma una noche (precios, mesas, free y consumo) y cópiala a los días que abre el boliche: se crean todas las
+            noches de las próximas semanas con lo mismo, cada una con su propio cupo. No repite noches que ya existen.
+          </p>
+          {event.sessions.some((s) => s.ticketTypes.length > 0) ? (
+            <ActionForm action={repeatNightsAction} className="flex flex-wrap items-end gap-3">
+              <label className="label">
+                Copiar la noche
+                <select name="sessionId" required className="field">
+                  {event.sessions
+                    .filter((s) => s.ticketTypes.length > 0)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {formatDateTime(s.startsAt, s.venue.timezone)}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <fieldset className="label">
+                Días que abre
+                <span className="flex h-[38px] flex-wrap items-center gap-3">
+                  {[4, 5, 6, 0, 1, 2, 3].map((d) => (
+                    <label key={d} className="flex items-center gap-1 text-sm">
+                      <input type="checkbox" name="weekday" value={d} defaultChecked={d === 5 || d === 6} className="h-4 w-4" />
+                      {WEEKDAY_SHORT[d]}
+                    </label>
+                  ))}
+                </span>
+              </fieldset>
+              <label className="label">
+                Semanas
+                <input name="weeks" type="number" min={1} max={MAX_REPEAT_WEEKS} defaultValue={4} className="field w-24" />
+              </label>
+              <button type="submit" className="btn btn-dark">
+                Crear noches
+              </button>
+            </ActionForm>
+          ) : (
+            <p className="text-sm text-[var(--warn)]">Primero agrega una noche y cárgale los precios: esa noche se copia.</p>
+          )}
+        </section>
+      )}
+
       {clientMode && (
         <section className="card p-6">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -281,7 +328,7 @@ export default async function EventDetailPage({ params }: Props) {
         <summary className="cursor-pointer text-sm font-medium">Editar datos del evento</summary>
         <ActionForm action={updateEventAction} successMessage="Cambios guardados." className="mt-5 flex flex-col gap-5">
           <input type="hidden" name="eventId" value={event.id} />
-          <EventFields defaults={event} clients={clientMode ? clients : null} />
+          <EventFields defaults={event} clients={clientMode ? clients : null} categories={allowedCategories(staff)} />
           <button type="submit" className="btn btn-primary w-fit">
             Guardar cambios
           </button>

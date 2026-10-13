@@ -9,21 +9,31 @@
  * Mientras la oferta esté pendiente, la entrada sigue siendo del titular y puede usarla: si ingresa antes
  * de que la acepten, la oferta ya no se puede aceptar.
  */
-import { entranceText, isValidDocument, MAX_TRANSFER_REQUESTS_PER_HOUR, normalizeDocument, offerExpiry, randomCode, transferBlockReason, transferDeadline } from "@ticketera/core";
+import { consumptionLeft, entranceText, isValidDocument, MAX_TRANSFER_REQUESTS_PER_HOUR, normalizeDocument, offerExpiry, randomCode, tableLabel, transferBlockReason, transferDeadline } from "@ticketera/core";
 import { prisma } from "../client";
 import { DomainError, audit } from "./shared";
 
 const eventInclude = {
   session: { include: { event: { select: { title: true, transfersEnabled: true } }, venue: { select: { name: true, timezone: true, accessPoints: { select: { name: true, sections: { select: { id: true } } } } } } } },
-  ticketType: { select: { name: true, accessMethods: true, qrMode: true, sectionId: true } },
+  ticketType: { select: { name: true, accessMethods: true, qrMode: true, sectionId: true, kind: true, entryUntil: true } },
   seat: { include: { section: { select: { name: true } } } },
+  // Boliche: la mesa de la entrada y su saldo de consumo.
+  credit: { select: { tableNumber: true, amount: true, spent: true, currency: true, seat: { select: { label: true } } } },
 } as const;
 
 /** Datos del evento y de la entrada que se muestran en las pantallas y correos de una transferencia. */
 function describe(ticket: {
   code: string;
-  ticketType: { name: string; accessMethods: ("QR" | "BARCODE" | "NFC")[]; qrMode: "STATIC" | "DYNAMIC"; sectionId: string | null };
+  ticketType: {
+    name: string;
+    accessMethods: ("QR" | "BARCODE" | "NFC")[];
+    qrMode: "STATIC" | "DYNAMIC";
+    sectionId: string | null;
+    kind?: "ENTRY" | "TABLE";
+    entryUntil?: Date | null;
+  };
   seat: { label: string; section: { name: string } } | null;
+  credit?: { tableNumber: number | null; amount: number; spent: number; currency: string; seat?: { label: string } | null } | null;
   session: {
     startsAt: Date;
     event: { title: string };
@@ -36,7 +46,22 @@ function describe(ticket: {
     accessMethods: ticket.ticketType.accessMethods,
     /** DYNAMIC: no lleva QR fijo; se abre en el sitio, donde el QR cambia cada 30 segundos. */
     qrMode: ticket.ticketType.qrMode,
-    seat: ticket.seat ? `${ticket.seat.section.name} · ${ticket.seat.label}` : null,
+    seat:
+      tableLabel(ticket.ticketType.name, ticket.credit?.tableNumber, ticket.credit?.seat?.label) ??
+      (ticket.seat ? `${ticket.seat.section.name} · ${ticket.seat.label}` : null),
+    /** Boliche: consumo incluido en barra (compartido si es de una mesa). */
+    consumption:
+      ticket.credit && ticket.credit.amount > 0
+        ? {
+            amount: ticket.credit.amount,
+            spent: ticket.credit.spent,
+            currency: ticket.credit.currency,
+            left: consumptionLeft(ticket.credit),
+            shared: ticket.ticketType.kind === "TABLE",
+          }
+        : null,
+    /** "Free hasta la 01:00": válida para entrar solo hasta esta hora. */
+    entryUntil: ticket.ticketType.entryUntil ?? null,
     eventTitle: ticket.session.event.title,
     startsAt: ticket.session.startsAt,
     venueName: ticket.session.venue.name,

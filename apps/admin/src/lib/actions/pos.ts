@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { DOCUMENT_ERROR, checkoutSchema } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, DomainError, POS_METHODS, prisma, sellAtBoxOffice, type PosMethod } from "@ticketera/db";
-import { ROLES, requireStaff } from "@/lib/session";
+import { ROLES, requireEditor } from "@/lib/session";
 
 export type PosState = {
   error?: string;
@@ -13,7 +13,7 @@ export type PosState = {
 
 /** Cobro en caja: emite las entradas al instante y lleva al ticket para imprimir. */
 export async function sellAction(_prev: PosState, formData: FormData): Promise<PosState> {
-  const staff = await requireStaff(ROLES.pos);
+  const staff = await requireEditor(ROLES.pos);
   const sessionId = String(formData.get("sessionId") ?? "");
   const method = String(formData.get("method") ?? "") as PosMethod;
   if (!POS_METHODS.includes(method)) return { error: "Elige cómo pagó el cliente." };

@@ -1,4 +1,4 @@
-import type { InventoryLine } from "@ticketera/core";
+import { peopleIn, type InventoryLine } from "@ticketera/core";
 import { Prisma, type PrismaClient } from "../generated/prisma/client";
 
 export type Tx = Prisma.TransactionClient;
@@ -116,7 +116,15 @@ export async function loadInventory(
 ): Promise<InventoryLine[]> {
   const types = await db.ticketType.findMany({
     where: { sessionId },
-    select: { id: true, name: true, capacity: true, sectionId: true, section: { select: { capacity: true } } },
+    select: {
+      id: true,
+      name: true,
+      capacity: true,
+      sectionId: true,
+      kind: true,
+      peoplePerUnit: true,
+      section: { select: { capacity: true, seatingMode: true } },
+    },
   });
   const sums = await db.orderItem.groupBy({
     by: ["ticketTypeId"],
@@ -140,6 +148,8 @@ export async function loadInventory(
     used: used.get(t.id) ?? 0,
     sectionId: t.sectionId,
     sectionCapacity: t.section?.capacity ?? null,
+    // En una zona sin butacas la mesa ocupa los lugares de sus personas; en el mapa, su lugar (la mesa).
+    peoplePerUnit: t.section?.seatingMode === "RESERVED" ? 1 : peopleIn(t),
   }));
 }
 

@@ -110,9 +110,9 @@ export default async function UsersPage() {
             Rol
             <select name="role" defaultValue="OPERATOR" className="field">
               <option value="OPERATOR">{ROLE_LABEL.OPERATOR}</option>
-              <option value="CASHIER">{ROLE_LABEL.CASHIER}</option>
+              <option value="CASHIER">{organizer ? "Cajero (boletería y barra)" : ROLE_LABEL.CASHIER}</option>
               {!organizer && <option value="CLIENT">{ROLE_LABEL.CLIENT}</option>}
-              <option value="ADMIN">{organizer ? "Administrador del organizador" : ROLE_LABEL.ADMIN}</option>
+              <option value="ADMIN">{organizer ? "Organizador (solo lectura)" : ROLE_LABEL.ADMIN}</option>
               {!organizer && staff.role === "OWNER" && <option value="OWNER">{ROLE_LABEL.OWNER}</option>}
             </select>
           </label>

@@ -9,10 +9,13 @@ import { requirePlatform } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Organizadores" };
 
+type Kind = "EVENTS" | "NIGHTLIFE";
+const KIND_FROM_PARAM: Record<string, Kind> = { eventos: "EVENTS", boliche: "NIGHTLIFE" };
+
 /** Organizadores con sus cifras: eventos por estado, entradas vendidas y lo recaudado. */
-async function organizersWithStats() {
+async function organizersWithStats(kind?: Kind) {
   const organizations = await prisma.organization.findMany({
-    where: { isPlatform: false },
+    where: { isPlatform: false, ...(kind ? { kind } : {}) },
     orderBy: { createdAt: "desc" },
     include: { _count: { select: { members: true, venues: true } } },
   });
@@ -42,22 +45,42 @@ async function organizersWithStats() {
   );
 }
 
-export default async function OrganizersPage() {
+type Props = { searchParams: Promise<{ tipo?: string }> };
+
+export default async function OrganizersPage({ searchParams }: Props) {
   await connection();
   await requirePlatform();
-  const organizers = await organizersWithStats();
+  const kind = KIND_FROM_PARAM[(await searchParams).tipo ?? ""];
+  const organizers = await organizersWithStats(kind);
+  const chip = (active: boolean) =>
+    `rounded-full border px-3 py-1 text-sm ${active ? "border-[var(--accent)] bg-[var(--accent-soft)] font-medium text-[var(--accent)]" : "border-[var(--border)] text-[var(--ink-muted)] hover:text-[var(--ink)]"}`;
+  // Primero el formulario del tipo que se está mirando.
+  const forms: Kind[] = kind === "NIGHTLIFE" ? ["NIGHTLIFE", "EVENTS"] : ["EVENTS", "NIGHTLIFE"];
 
   return (
     <div className="space-y-6">
       <div>
         <p className="eyebrow">{organizers.length} organizador(es)</p>
-        <h1 className="text-2xl font-semibold tracking-tight">Organizadores</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{kind === "NIGHTLIFE" ? "Boliches" : kind === "EVENTS" ? "Organizadores de eventos" : "Organizadores"}</h1>
         <p className="text-sm text-[var(--ink-muted)]">
-          Productoras a las que Impacta les da el servicio. Cada una tiene su propio panel: arma sus recintos y eventos,
-          vende, controla su puerta y ve sus reportes, sin ver nada de las demás. Sus eventos salen en la web cuando
-          Impacta los aprueba.
+          Clientes a los que Impacta les da el servicio: organizadores de eventos y boliches. Cada uno tiene su panel de{" "}
+          <strong>solo lectura</strong>: ve en vivo sus eventos (o noches), ventas, compradores, ingresos y reportes, sin
+          ver nada de los demás. Todo lo que se crea o cambia lo hace Impacta: entra con &ldquo;Entrar&rdquo; y trabaja
+          dentro de su panel.
         </p>
       </div>
+
+      <nav className="flex flex-wrap gap-2" aria-label="Tipo de organizador">
+        <Link href="/organizadores" className={chip(!kind)}>
+          Todos
+        </Link>
+        <Link href="/organizadores?tipo=eventos" className={chip(kind === "EVENTS")}>
+          Eventos
+        </Link>
+        <Link href="/organizadores?tipo=boliche" className={chip(kind === "NIGHTLIFE")}>
+          Boliches
+        </Link>
+      </nav>
 
       <div className="card overflow-x-auto">
         <table className="w-full text-left text-sm">
@@ -75,7 +98,8 @@ export default async function OrganizersPage() {
             {organizers.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-5 py-6 text-center text-[var(--ink-muted)]">
-                  Todavía no hay organizadores. Crea el primero aquí abajo.
+                  {kind === "NIGHTLIFE" ? "Todavía no hay boliches." : "Todavía no hay organizadores."} Crea el primero aquí
+                  abajo.
                 </td>
               </tr>
             )}
@@ -85,6 +109,11 @@ export default async function OrganizersPage() {
                   <Link href={`/organizadores/${o.id}`} className="font-medium hover:text-[var(--accent)]">
                     {o.name}
                   </Link>
+                  <span
+                    className={`badge ml-2 ${o.kind === "NIGHTLIFE" ? "bg-[#f3e8ff] text-[#7b2fbf]" : "bg-[#e8eefc] text-[#3b5bb5]"}`}
+                  >
+                    {o.kind === "NIGHTLIFE" ? "boliche" : "eventos"}
+                  </span>
                   <p className="text-xs text-[var(--ink-dim)]">
                     {[o.taxId && `NIT ${o.taxId}`, o.contactEmail].filter(Boolean).join(" · ") || "Sin datos de contacto"}
                   </p>
@@ -134,56 +163,58 @@ export default async function OrganizersPage() {
         </table>
       </div>
 
-      <section className="card p-6">
-        <h2 className="eyebrow mb-1">Nuevo organizador</h2>
-        <p className="mb-4 text-sm text-[var(--ink-muted)]">
-          Se crea vacío, con una cuenta de administrador. Envíale su email y la contraseña temporal: al entrar por
-          primera vez el sistema le pide que cree la suya.
-        </p>
-        <ActionForm
-          action={createOrganizerAction}
-          resetOnSuccess
-          successMessage="Organizador creado. Ya puede entrar al panel con su email y la contraseña temporal."
-          className="grid gap-4 md:grid-cols-3"
-        >
-          <label className="label">
-            Nombre o razón social
-            <input name="name" required className="field" placeholder="Producciones Andinas S.R.L." />
-          </label>
-          <label className="label">
-            NIT (opcional)
-            <input name="taxId" className="field" />
-          </label>
-          <label className="label">
-            Email de contacto (opcional)
-            <input name="contactEmail" type="email" className="field" />
-          </label>
-          <label className="label">
-            Responsable (nombre)
-            <input name="adminName" required className="field" />
-          </label>
-          <label className="label">
-            Email de su cuenta
-            <input name="adminEmail" type="email" required autoComplete="off" className="field" />
-          </label>
-          <label className="label">
-            Contraseña temporal
-            <input
-              name="adminPassword"
-              type="text"
-              required
-              minLength={MIN_PASSWORD_LENGTH}
-              autoComplete="off"
-              className="field"
-            />
-          </label>
-          <div className="md:col-span-3">
-            <button type="submit" className="btn btn-primary">
-              Crear organizador
-            </button>
-          </div>
-        </ActionForm>
-      </section>
+      {forms.map((k) => (
+        <NewOrganizerForm key={k} kind={k} />
+      ))}
     </div>
+  );
+}
+
+/** Alta de un usuario de eventos o de boliche: organización nueva y vacía con su cuenta de solo lectura. */
+function NewOrganizerForm({ kind }: { kind: Kind }) {
+  const nightlife = kind === "NIGHTLIFE";
+  return (
+    <section className={`card p-6 ${nightlife ? "border-[#c04bff]/40" : ""}`}>
+      <h2 className="eyebrow mb-1">{nightlife ? "Nuevo usuario de boliche" : "Nuevo usuario de eventos"}</h2>
+      <p className="mb-4 text-sm text-[var(--ink-muted)]">
+        {nightlife
+          ? "Discoteca, boliche o lounge: su panel muestra noches, mesas, consumo en barra, free por horario, ventas e ingresos."
+          : "Productora de conciertos, teatro, festivales u otros eventos: su panel muestra sus eventos, ventas, compradores e ingresos."}{" "}
+        Se crea vacío, con una cuenta de solo lectura. Envíale su email y la contraseña temporal: al entrar por primera vez
+        el sistema le pide que cree la suya.
+      </p>
+      <ActionForm action={createOrganizerAction} resetOnSuccess className="grid gap-4 md:grid-cols-3">
+        <input type="hidden" name="kind" value={kind} />
+        <label className="label">
+          {nightlife ? "Nombre del boliche" : "Nombre o razón social"}
+          <input name="name" required className="field" placeholder={nightlife ? "Lounge 360" : "Producciones Andinas S.R.L."} />
+        </label>
+        <label className="label">
+          NIT (opcional)
+          <input name="taxId" className="field" />
+        </label>
+        <label className="label">
+          Email de contacto (opcional)
+          <input name="contactEmail" type="email" className="field" />
+        </label>
+        <label className="label">
+          Responsable (nombre)
+          <input name="adminName" required className="field" />
+        </label>
+        <label className="label">
+          Email de su cuenta
+          <input name="adminEmail" type="email" required autoComplete="off" className="field" />
+        </label>
+        <label className="label">
+          Contraseña temporal
+          <input name="adminPassword" type="text" required minLength={MIN_PASSWORD_LENGTH} autoComplete="off" className="field" />
+        </label>
+        <div className="md:col-span-3">
+          <button type="submit" className="btn btn-primary">
+            {nightlife ? "Crear usuario de boliche" : "Crear usuario de eventos"}
+          </button>
+        </div>
+      </ActionForm>
+    </section>
   );
 }

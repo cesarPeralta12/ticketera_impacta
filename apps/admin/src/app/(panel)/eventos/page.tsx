@@ -5,7 +5,7 @@ import { CATEGORY_LABEL, formatDateTime, sellableCapacity } from "@ticketera/cor
 import { prisma } from "@ticketera/db";
 import { EVENT_STATUS } from "@/lib/labels";
 import { enterOrganizationAction } from "@/lib/actions/platform";
-import { ROLES, isGlobalView, requireStaff } from "@/lib/session";
+import { ROLES, isGlobalView, isNightlife, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Eventos" };
 
@@ -22,7 +22,7 @@ export default async function EventsPage() {
         orderBy: { startsAt: "asc" },
         include: {
           venue: { select: { name: true, timezone: true } },
-          ticketTypes: { select: { capacity: true, sectionId: true, section: { select: { capacity: true } } } },
+          ticketTypes: { select: { capacity: true, sectionId: true, peoplePerUnit: true, section: { select: { capacity: true, seatingMode: true } } } },
           _count: { select: { tickets: { where: { status: { in: ["VALID", "USED"] } } } } },
         },
       },
@@ -50,11 +50,13 @@ export default async function EventsPage() {
       <div className="flex items-end justify-between gap-4">
         <div>
           <p className="eyebrow">{events.length} evento(s)</p>
-          <h1 className="text-2xl font-semibold tracking-tight">{isGlobalView(staff) ? "Eventos de Impacta" : "Eventos"}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{isGlobalView(staff) ? "Eventos de Impacta" : isNightlife(staff) ? "Noches" : "Eventos"}</h1>
         </div>
-        <Link href="/eventos/nuevo" className="btn btn-primary">
-          + Nuevo evento
-        </Link>
+        {!staff.readOnly && (
+          <Link href="/eventos/nuevo" className="btn btn-primary">
+            {isNightlife(staff) ? "+ Nuevo boliche" : "+ Nuevo evento"}
+          </Link>
+        )}
       </div>
 
       {events.length === 0 ? (

@@ -50,15 +50,22 @@ datos nuevos (cliente, cajero, puertas por sección, evento con invitados) **sin
 
 | Dónde | Email | Contraseña | Rol |
 |---|---|---|---|
-| Panel :3001 | `admin@impacta.test` | `Impacta2026!` | Dueño: todo el panel |
+| Panel :3001 | `admin@impacta.test` | `Impacta2026!` | Dueño de Impacta: crea y edita todo (también dentro de cada organizador) |
 | App móvil | `puerta@impacta.test` | `Puerta2026!` | Portero: solo la app móvil (no entra al panel) |
 | Panel :3001 | `caja@impacta.test` | `Caja2026!` | Cajero: solo boletería |
-| Panel :3001 | `cliente@impacta.test` | `Cliente2026!` | Cliente (Producciones Andinas): solo sus eventos |
-| Panel :3001 | `organizador@andeslive.test` | `Organizador2026!` | Organizador "Andes Live": su propio panel |
-| Panel :3001 | `organizador@cumbre.test` | `Organizador2026!` | Organizador "Cumbre Eventos": su propio panel |
+| Panel :3001 | `cliente@impacta.test` | `Cliente2026!` | Cliente (Producciones Andinas): sus eventos, solo lectura |
+| Panel :3001 | `organizador@andeslive.test` | `Organizador2026!` | Organizador de eventos "Andes Live": su panel, solo lectura |
+| Panel :3001 | `organizador@cumbre.test` | `Organizador2026!` | Organizador de eventos "Cumbre Eventos": su panel, solo lectura |
+| Panel :3001 | `lounge360@boliche.test` | `Boliche2026!` | Boliche "Lounge 360": noches, mesas, barra y ventas, solo lectura |
+| Panel :3001 | `forum@boliche.test` | `Boliche2026!` | Boliche "Forum Club": noches, mesas, barra y ventas, solo lectura |
+| Panel :3001 | `barra@lounge360.test` / `barra@forum.test` | `Barra2026!` | Cajero del boliche: boletería y barra (cobra consumos) |
+| App móvil | `puerta@lounge360.test` / `puerta@forum.test` | `Puerta2026!` | Portero del boliche: sus noches en la app |
 | Sitio :3000 | `comprador@impacta.test` | `Comprador2026!` | Comprador (comprar exige cuenta con carnet) |
 
 Cada rol entra directo a su pantalla y no puede abrir las de los demás. El portero no tiene sesión en el panel web.
+Las cuentas de organizadores, boliches y clientes son **de solo lectura**: ven todo lo suyo en vivo, pero crear y
+cambiar (eventos, noches, precios, recintos, promociones, cuentas) es solo de Impacta, que entra en su panel con
+"Entrar". El cajero y el portero siguen operando (vender, cobrar en barra, leer QR).
 
 ## Qué probar
 
@@ -77,18 +84,34 @@ Cada rol entra directo a su pantalla y no puede abrir las de los demás. El port
 8. **Boletería** (cuenta de cajero): vende → ticket para impresora térmica de 80 mm o A4. Comparte
    el cupo con la venta online y sigue vendiendo durante el evento. "Mi caja de hoy" = arqueo.
 9. **Lista de invitados**: *Lanzamiento Andino* no se vende ni aparece en el sitio. En la función →
-   Invitados: pega la lista desde Excel o sube un CSV; cada invitado tiene su QR (hoja para imprimir).
+   Invitados: pega la lista desde Excel o sube el archivo (.xlsx o CSV); cada invitado tiene su QR
+   (hoja para imprimir).
 10. **Cliente**: Clientes → asigna el evento a un cliente → en el evento, "Espacio del cliente" (se
     cierra solo). La cuenta del cliente ve solo sus eventos: reporte en vivo, CSV y sus invitados.
 11. **Reporte** (botón en cada evento): por canal, ingresados, ausentes, rechazos en puerta, boletería
     por cajero y medio, y CSV de asistentes.
 12. **Usuarios**: crea un operador; al desactivarlo pierde el acceso en la siguiente acción.
-13. **Organizadores** (como admin de Impacta): crea uno → entra con su cuenta (pide cambiar la
-    contraseña temporal) → su panel está vacío y no ve nada de Impacta ni de los otros. Arma su
-    recinto y su evento → "Enviar a revisión" → Impacta lo aprueba o lo devuelve en **Aprobaciones**.
+13. **Organizadores** (como admin de Impacta): *Organizadores* → "Nuevo usuario de eventos" o "Nuevo
+    usuario de boliche" → entra con esa cuenta (pide cambiar la contraseña temporal): su panel está vacío,
+    es de solo lectura y no ve nada de los demás. Impacta entra en él ("Entrar") y le arma recintos,
+    eventos o noches; el organizador los ve en vivo.
 14. **Preventa**: en la función, un tipo de entrada "Es preventa" con fecha de fin. La General de esa
     sección empieza sola cuando termina; la web muestra "Preventa hasta…" y la General "desde…".
 15. **Vista general de Impacta**: Resumen general, Ventas e Ingresos en puerta de todos los organizadores.
+16. **Compradores**: cada persona una sola vez, con sus compras, lo gastado y los eventos. Ventas y
+    Compradores se exportan a Excel. Impacta ve todos (y filtra por organizador); cada organizador, los suyos.
+17. **Mis eventos** (sitio, con `comprador@impacta.test`): sus compras y el historial de eventos
+    pasados (a qué hora ingresó, o "no asististe"). Las entradas con su QR están en *Mis entradas*.
+
+18. **Boliches** (sitio → *Boliches*): Lounge 360 (Santa Cruz) y Forum (La Paz), con noches cada semana.
+    Filtra por *Hoy / Este finde / Próximos 7 días* y por ciudad. En una noche: **Free hasta la 01:00**
+    (gratis, una por persona), **Entrada + trago** (consumo incluido) y **mesas o lounges** (Mesa VIP para 6
+    con Bs 1.000 de consumo): al pagar, la mesa recibe su número y un QR por persona. Código RRPP: `RRPP-VALE`.
+19. **Barra** (panel → *Barra (consumos)*, también con `caja@impacta.test`): elige la noche, escribe o lee el
+    QR de cualquier persona de la mesa y descuenta lo que piden; el saldo es compartido y no queda negativo.
+20. **Armar un boliche** (panel): evento con categoría *Boliche* → una noche → en sus precios, la caja
+    *Boliche* (mesa, personas, consumo incluido, válida hasta) → en el evento, **Repetir noches** (días que
+    abre y semanas). En la puerta, pasada la hora de la free ya no entra (también en la app móvil).
 
 ## Comandos
 
@@ -257,6 +280,13 @@ las contraseñas de prueba de arriba son públicas). Nunca en producción:
 
 ```bash
 SEED_ALLOW=si SEED_PASSWORD='una-contraseña-propia' npm run db:seed
+```
+
+Para **agregar** lo que falte de la demostración (boliches de ejemplo, organizadores y sus cuentas) a un servidor que
+ya tiene datos, **sin borrar nada** (todas las cuentas nuevas quedan con `SEED_PASSWORD`):
+
+```bash
+SEED_ALLOW=si SEED_PASSWORD='una-contraseña-propia' npm run db:demo -w @ticketera/db
 ```
 
 ## Problemas comunes

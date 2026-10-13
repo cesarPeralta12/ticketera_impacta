@@ -8,6 +8,7 @@ export * from "./operations/event-limit";
 export * from "./operations/email-tokens";
 export * from "./operations/live";
 export * from "./operations/mobile";
+export * from "./operations/nightlife";
 export * from "./operations/orders";
 export * from "./operations/organizations";
 export * from "./operations/payments";

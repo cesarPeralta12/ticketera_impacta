@@ -25,6 +25,8 @@ async function uniqueOrganizationSlug(name: string) {
  */
 export async function createOrganizer(input: {
   name: string;
+  /** Organizador de eventos (por defecto) o boliche. */
+  kind?: "EVENTS" | "NIGHTLIFE";
   taxId?: string;
   contactEmail?: string;
   admin: { name: string; email: string; password: string };
@@ -37,6 +39,7 @@ export async function createOrganizer(input: {
         data: {
           name: input.name.trim(),
           slug,
+          kind: input.kind ?? "EVENTS",
           currency: DEFAULT_CURRENCY,
           taxId: input.taxId?.trim() || null,
           contactEmail: input.contactEmail?.trim().toLowerCase() || null,
@@ -57,7 +60,7 @@ export async function createOrganizer(input: {
         action: "organizer.create",
         entity: "Organization",
         entityId: organization.id,
-        data: { adminId: admin.id },
+        data: { adminId: admin.id, kind: input.kind ?? "EVENTS" },
       });
       return { organization, admin };
     });

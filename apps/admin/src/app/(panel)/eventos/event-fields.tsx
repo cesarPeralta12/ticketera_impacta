@@ -7,6 +7,7 @@ import { ImageUrlField } from "./image-url-field";
 export function EventFields({
   defaults,
   clients,
+  categories = Object.values(EventCategory),
 }: {
   defaults?: {
     title: string;
@@ -19,6 +20,8 @@ export function EventFields({
   };
   /** Clientes de Impacta (null: no aplica, por ejemplo en el panel de un organizador). */
   clients: { id: string; name: string }[] | null;
+  /** Categorías que admite el organizador (un boliche, solo "Boliche"). */
+  categories?: EventCategory[];
 }) {
   return (
     <>
@@ -33,8 +36,8 @@ export function EventFields({
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="label">
           Categoría
-          <select name="category" defaultValue={defaults?.category ?? "CONCIERTO"} className="field">
-            {Object.values(EventCategory).map((c) => (
+          <select name="category" defaultValue={defaults?.category ?? categories[0]} className="field">
+            {categories.map((c) => (
               <option key={c} value={c}>
                 {CATEGORY_LABEL[c] === "Evento" ? "Otro" : CATEGORY_LABEL[c]}
               </option>

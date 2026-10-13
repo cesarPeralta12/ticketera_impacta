@@ -28,9 +28,21 @@ export type GeneralType = {
   presaleUntil: string | null;
   /** Todavía no empieza: desde cuándo se vende (texto ya formateado). */
   opensAt: string | null;
+  /** Boliche: mesa o lounge (el cupo y la cantidad son mesas; cada persona recibe su QR). */
+  table: { people: number } | null;
+  /** Consumo incluido en barra (texto ya formateado), por mesa o por entrada. */
+  consumption: string | null;
+  /** Válida para entrar solo hasta esta hora ("01:00"). */
+  entryUntil: string | null;
 };
 
-export type SeatedType = PickerSection & { maxPerOrder: number };
+export type SeatedType = PickerSection & {
+  maxPerOrder: number;
+  /** Boliche: cada butaca de la sección es una mesa para estas personas (cada una recibe su QR). */
+  table?: { people: number } | null;
+  /** Consumo incluido por mesa (texto ya formateado). */
+  consumption?: string | null;
+};
 
 export function CheckoutForm({
   sessionId,
@@ -91,6 +103,10 @@ export function CheckoutForm({
   const seatCount = Object.values(seats).reduce((sum, ids) => sum + ids.length, 0);
   const generalCount = Object.values(quantities).reduce((a, b) => a + b, 0);
   const totalTickets = seatCount + generalCount;
+  // Una mesa de 6 son 6 QR (uno por persona).
+  const tableQrs =
+    general.reduce((sum, t) => sum + (t.table ? t.table.people * (quantities[t.id] ?? 0) : 0), 0) +
+    seated.reduce((sum, t) => sum + (t.table ? t.table.people * (seats[t.ticketTypeId]?.length ?? 0) : 0), 0);
   const total =
     general.reduce((sum, t) => sum + t.unitAmount * (quantities[t.id] ?? 0), 0) +
     seated.reduce((sum, t) => sum + t.unitAmount * (seats[t.ticketTypeId]?.length ?? 0), 0);
@@ -137,7 +153,7 @@ export function CheckoutForm({
     if (current.includes(seatId)) {
       setPicked({ ...seats, [ticketTypeId]: current.filter((id) => id !== seatId) });
     } else if (current.length >= type.maxPerOrder) {
-      setNotice(`Máximo ${type.maxPerOrder} butacas en ${type.name} por compra.`);
+      setNotice(`Máximo ${type.maxPerOrder} ${type.table ? "mesas" : "butacas"} en ${type.name} por compra.`);
     } else if (totalTickets >= MAX_TICKETS_PER_ORDER) {
       setNotice(`Máximo ${MAX_TICKETS_PER_ORDER} entradas por compra.`);
     } else {
@@ -162,7 +178,9 @@ export function CheckoutForm({
 
       {(seated.length > 0 || zones.length > 0 || gates.length > 0) && (
         <section className="card space-y-4 p-4 sm:p-6">
-          <h2 className="font-display text-xl">{seated.length > 0 ? "1. Elige tus butacas" : "Mapa del recinto"}</h2>
+          <h2 className="font-display text-xl">
+            {seated.length > 0 ? (seated.every((t) => t.table) ? "1. Elige tu mesa en el mapa" : "1. Elige tus butacas") : "Mapa del recinto"}
+          </h2>
           <SeatPicker sections={seated} selected={selected} onToggle={toggleSeat} zones={zones} zoneCounts={zoneCounts} onZoneClick={goToZone} gates={gates} />
           <ul className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-[var(--ink-muted)]">
             {seated.map((t) => (
@@ -170,7 +188,15 @@ export function CheckoutForm({
                 <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color }} />
                 {t.name}
                 {t.presale && <span className="font-semibold text-[var(--accent-2)]">(preventa)</span>}
-                {t.discountPercent ? <span className="font-semibold text-[var(--accent-2)]"> (-{t.discountPercent}% preventa)</span> : null}:{" "}
+                {t.discountPercent ? <span className="font-semibold text-[var(--accent-2)]"> (-{t.discountPercent}% preventa)</span> : null}
+                {t.table && (
+                  <span className="text-[#d9a6ff]">
+                    {" "}
+                    · mesa para {t.table.people}
+                    {t.consumption ? `, incluye ${t.consumption} de consumo` : ""}
+                  </span>
+                )}
+                :{" "}
                 <span className="text-[var(--ink)]">{formatMoney(t.unitAmount, t.currency)}</span>
                 {(seats[t.ticketTypeId]?.length ?? 0) > 0 && (
                   <span className="text-[var(--accent)]">× {seats[t.ticketTypeId]!.length}</span>
@@ -203,8 +229,32 @@ export function CheckoutForm({
                         Preventa
                       </span>
                     )}
+                    {type.table && (
+                      <span className="ml-2 rounded-full bg-[#C04BFF]/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#d9a6ff]">
+                        Mesa · {type.table.people} personas
+                      </span>
+                    )}
+                    {type.entryUntil && type.unitAmount === 0 && (
+                      <span className="ml-2 rounded-full bg-[#35C48F]/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#35C48F]">
+                        Free
+                      </span>
+                    )}
                   </p>
                   {type.detail && <p className="text-xs text-[var(--ink-dim)]">{type.detail}</p>}
+                  {type.table && (
+                    <p className="text-xs text-[var(--ink-muted)]">Cada persona de la mesa recibe su QR para entrar (puedes pasárselo desde Mis entradas).</p>
+                  )}
+                  {type.consumption && (
+                    <p className="text-xs font-semibold text-[#F5B700]">
+                      Incluye {type.consumption} de consumo en barra{type.table ? " para la mesa" : ""}
+                    </p>
+                  )}
+                  {type.entryUntil && (
+                    <p className="text-xs font-semibold text-[#35C48F]">
+                      Válida para entrar hasta las {type.entryUntil}
+                      {type.unitAmount === 0 ? " · una por persona" : ""}
+                    </p>
+                  )}
                   {type.presaleUntil && <p className="text-xs text-[var(--accent-2)]">Hasta {type.presaleUntil}</p>}
                   <p className="font-display text-lg text-[var(--accent)]">
                     {type.listAmount !== null && (
@@ -214,8 +264,14 @@ export function CheckoutForm({
                   </p>
                   {type.discountLabel && <p className="text-xs font-semibold text-[var(--accent-2)]">Preventa: {type.discountLabel}</p>}
                   {!type.opensAt && type.left > 0 && (
-                    <p className={`text-xs ${type.left <= 20 ? "font-bold text-[var(--accent-2)]" : "text-[var(--ink-dim)]"}`}>
-                      {type.left <= 20 ? `¡Últimos ${type.left} lugares!` : `Quedan ${type.left}`}
+                    <p className={`text-xs ${type.left <= (type.table ? 3 : 20) ? "font-bold text-[var(--accent-2)]" : "text-[var(--ink-dim)]"}`}>
+                      {type.table
+                        ? type.left === 1
+                          ? "¡Última mesa!"
+                          : `Quedan ${type.left} mesas`
+                        : type.left <= 20
+                          ? `¡Últimos ${type.left} lugares!`
+                          : `Quedan ${type.left}`}
                     </p>
                   )}
                 </div>
@@ -324,6 +380,7 @@ export function CheckoutForm({
         <div>
           <p className="text-sm text-[var(--ink-muted)]">
             {totalTickets} {totalTickets === 1 ? "entrada" : "entradas"} · máximo {MAX_TICKETS_PER_ORDER}
+            {tableQrs > 0 && ` · las mesas traen ${tableQrs} QR`}
           </p>
           {promo && (
             <p className="text-xs text-[var(--green)]">

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /** Resultado estándar de las server actions de formularios del panel. */
-export type FormState = { error?: string; fieldErrors?: Record<string, string>; ok?: boolean } | undefined;
+export type FormState = { error?: string; fieldErrors?: Record<string, string>; ok?: boolean; message?: string } | undefined;
 
 /** Convierte los errores de zod en un mensaje por campo (el primero de cada uno). */
 export function zodErrors(error: z.ZodError): FormState {

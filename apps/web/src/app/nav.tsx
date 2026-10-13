@@ -15,6 +15,9 @@ export async function Nav() {
           <Link href="/" className="hidden text-[var(--ink-muted)] transition-colors hover:text-[var(--ink)] sm:inline">
             Eventos
           </Link>
+          <Link href="/boliches" className="font-semibold text-[#d9a6ff] transition-colors hover:text-[var(--ink)]">
+            Boliches
+          </Link>
           {session?.user ? (
             <>
               <Link href="/mis-entradas" className="text-[var(--ink-muted)] transition-colors hover:text-[var(--ink)]">

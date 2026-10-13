@@ -3,10 +3,11 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { prisma } from "@ticketera/db";
 import { NavLink, type NavIcon } from "@/components/nav-link";
+import { ReadOnlyProvider } from "@/components/read-only";
 import { exitOrganizationAction } from "@/lib/actions/platform";
 import { signOut } from "@/lib/auth";
 import { ROLE_LABEL } from "@/lib/labels";
-import { ROLES, can, isGlobalView, requireStaff, type Staff } from "@/lib/session";
+import { ROLES, can, isGlobalView, isNightlife, requireStaff, type Staff } from "@/lib/session";
 
 type NavItem = { href: string; label: string; icon: NavIcon; badge?: number };
 type NavGroup = { title?: string; items: NavItem[] };
@@ -14,7 +15,14 @@ type NavGroup = { title?: string; items: NavItem[] };
 /** El menú depende de quién entra: IMPACTA (general o dentro de un organizador), un organizador o su personal. */
 async function navigation(staff: Staff): Promise<NavGroup[]> {
   // El control de acceso se hace con la app móvil de puerta: el panel no tiene pantalla de lectura.
-  const operate: NavItem[] = can(staff, ROLES.pos) ? [{ href: "/boleteria", label: "Boletería", icon: "ticket" }] : [];
+  // La Barra es de los boliches (e IMPACTA, que puede operar uno).
+  const nightlife = isNightlife(staff);
+  const operate: NavItem[] = can(staff, ROLES.pos)
+    ? [
+        { href: "/boleteria", label: "Boletería", icon: "ticket" },
+        ...(nightlife || isGlobalView(staff) ? [{ href: "/barra", label: "Barra (consumos)", icon: "glass" as const }] : []),
+      ]
+    : [];
 
   if (isGlobalView(staff)) {
     const pending = await prisma.event.count({ where: { status: "PENDING_REVIEW" } });
@@ -24,8 +32,10 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
         items: [
           { href: "/", label: "Resumen general", icon: "home" },
           { href: "/organizadores", label: "Organizadores", icon: "briefcase" },
+          { href: "/organizadores?tipo=boliche", label: "Boliches", icon: "glass" },
           { href: "/aprobaciones", label: "Aprobaciones", icon: "check", badge: pending },
           { href: "/ordenes", label: "Ventas", icon: "receipt" },
+          { href: "/compradores", label: "Compradores", icon: "user" },
           { href: "/ingresos", label: "Ingresos en puerta", icon: "door" },
         ],
       },
@@ -54,11 +64,12 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
       {
         items: [
           { href: "/", label: "Resumen", icon: "home" },
-          { href: "/eventos", label: "Eventos", icon: "calendar" },
+          { href: "/eventos", label: nightlife ? "Noches" : "Eventos", icon: "calendar" },
           { href: "/recintos", label: "Recintos", icon: "map" },
           { href: "/ordenes", label: "Ventas", icon: "receipt" },
+          { href: "/compradores", label: "Compradores", icon: "user" },
           { href: "/ingresos", label: "Ingresos en puerta", icon: "door" },
-          { href: "/promociones", label: "Promociones", icon: "tag" },
+          { href: "/promociones", label: nightlife ? "Promociones y RRPP" : "Promociones", icon: "tag" },
           ...operate,
           { href: "/seguridad", label: "Seguridad", icon: "shield" },
           // Las cuentas de un organizador las crea IMPACTA (al entrar en él).
@@ -82,7 +93,13 @@ export default async function PanelLayout({ children }: { children: ReactNode })
   const staff = await requireStaff([...ROLES.manage, ...ROLES.pos, ...ROLES.client]);
   if (staff.mustChangePassword) redirect("/cuenta/contrasena");
   const groups = await navigation(staff);
-  const subtitle = staff.client ? staff.client.name : staff.organization.isPlatform ? "Plataforma" : "Organizador";
+  const subtitle = staff.client
+    ? staff.client.name
+    : staff.organization.isPlatform
+      ? "Plataforma"
+      : isNightlife(staff)
+        ? "Boliche"
+        : "Organizador de eventos";
 
   return (
     <div className="flex min-h-dvh flex-col md:flex-row print:block">
@@ -112,7 +129,7 @@ export default async function PanelLayout({ children }: { children: ReactNode })
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{staff.name}</p>
             <p className="text-xs text-[var(--side-dim)]">
-              {ROLE_LABEL[staff.role]}
+              {staff.readOnly ? "Solo lectura" : ROLE_LABEL[staff.role]}
               {staff.viewingAs ? " · Impacta" : ""}
             </p>
             <Link href="/cuenta/contrasena" className="mb-3 mt-1 hidden text-xs text-[var(--side-dim)] hover:text-[var(--side-ink)] md:block">
@@ -136,8 +153,8 @@ export default async function PanelLayout({ children }: { children: ReactNode })
         {staff.viewingAs && (
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#3b5bb5]/30 bg-[#e8eefc] px-4 py-2.5 text-sm text-[#2c4489] md:px-8 print:hidden">
             <p>
-              Estás dentro de <strong>{staff.viewingAs.name}</strong> como Impacta: ves y editas lo mismo que el
-              organizador.
+              Estás dentro de <strong>{staff.viewingAs.name}</strong> como Impacta: aquí creas y editas lo que el
+              organizador ve (su cuenta es de solo lectura).
             </p>
             <form action={exitOrganizationAction}>
               <input type="hidden" name="next" value="/organizadores" />
@@ -147,8 +164,16 @@ export default async function PanelLayout({ children }: { children: ReactNode })
             </form>
           </div>
         )}
+        {staff.readOnly && (
+          <div className="border-b border-[var(--border)] bg-[var(--surface-2)] px-4 py-2.5 text-sm text-[var(--ink-muted)] md:px-8 print:hidden">
+            <strong className="text-[var(--ink)]">Cuenta de solo lectura.</strong> Ves en vivo tus eventos, ventas,
+            compradores e ingresos; los cambios (eventos, precios, recintos, promociones, cuentas) los hace Impacta.
+          </div>
+        )}
         <div className="p-4 md:p-8 print:p-0">
-          <div className="mx-auto max-w-6xl">{children}</div>
+          <ReadOnlyProvider value={staff.readOnly}>
+            <div className="mx-auto max-w-6xl">{children}</div>
+          </ReadOnlyProvider>
         </div>
       </main>
     </div>

@@ -72,7 +72,7 @@ export function EventStub({ event, now, eager = false }: { event: EventCard; now
             {soon && <span className="font-bold text-[var(--green)]">{soon} · </span>}
             <span className="first-letter:uppercase">{weekdayTime(event.nextSession.startsAt, tz)}</span>
           </p>
-          {event.sessionCount > 1 && <p className="text-[11px] text-[var(--ink-dim)]">{event.sessionCount} funciones</p>}
+          {event.sessionCount > 1 && <p className="text-[11px] text-[var(--ink-dim)]">{event.sessionCount} {event.category === "BOLICHE" ? "noches" : "funciones"}</p>}
         </div>
         <div className="shrink-0 text-right leading-tight">
           <p className="text-[10px] uppercase tracking-wide text-[var(--ink-dim)]">{soldOut ? "Agotado" : "Desde"}</p>

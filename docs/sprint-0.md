@@ -20,7 +20,7 @@ Aplicado completo:
 - **Espacio temporal del cliente**: IMPACTA lo habilita por evento y se cierra solo (por defecto 24 h
   después de la última función). El cliente ve solo sus eventos: reporte en vivo, CSV y su lista de invitados.
 - **Modalidad 2: lista de invitados** (`GUEST_LIST`): sin venta y fuera del sitio público; invitados
-  desde Excel (pegar), CSV o a mano; QR único por invitado; anular; hoja de QRs para imprimir.
+  desde Excel (pegar o .xlsx), CSV o a mano; QR único por invitado; anular; hoja de QRs para imprimir.
   En eventos con venta, las cortesías salen del cupo de un tipo de entrada.
 - **Boletería (POS)** con rol cajero: efectivo/QR/tarjeta (declarado, sin banco), ticket térmico 80 mm o
   A4, vende durante el evento, arqueo "Mi caja de hoy".
@@ -28,7 +28,7 @@ Aplicado completo:
   barras y NFC según lo configurado en cada tipo de entrada; offline con SQLite y sincronización idempotente,
   puertas por sección; API con tokens por teléfono (`/api/v1`).
 - **Registro del dispositivo** en cada lectura; **reportes** de ausentes y rechazos.
-- "Mis entradas" → **"Mis eventos"** (el enlace viejo redirige).
+- **Mis entradas** (entradas con QR y transferencias) y **Mis eventos** (compras e historial).
 
 ## Organizadores y preventa (2026-10-08)
 
@@ -43,6 +43,56 @@ Aplicado completo:
 - **Preventa** por tipo de entrada: fecha de fin (y de inicio opcional); la General empieza sola al
   terminar; en butacas numeradas un solo precio a la vez. Web, boletería y mapa la muestran.
 - Se mantiene el modo "Clientes" (Impacta opera el evento y el cliente solo mira).
+
+## Lista de funciones del cliente (2026-10-09)
+
+Hecho:
+
+- **Compradores**: directorio sin repetidos (por email), con compras, entradas, total, canales y eventos;
+  búsqueda, orden y filtro por organizador. Impacta ve todos; cada organizador solo los suyos.
+- **Exportar a Excel** las ventas (con los filtros aplicados) y los compradores (CSV con `;`, BOM y
+  protección contra fórmulas, se abre directo en Excel).
+- **Invitados desde .xlsx**: se lee la primera hoja (nombre, email, documento); el .xls antiguo se rechaza
+  con instrucciones.
+- **Historial** en Mis eventos: cada función pasada dice a qué hora ingresaste, o "no asististe".
+  (Las entradas con su QR y la transferencia están en *Mis entradas*.)
+
+Se unió con la rama `feature/puerta-flutter` (2026-10-11): app móvil de puerta, promociones, QR
+dinámico, transferencias con aceptación, correo y seguridad vienen de ahí. Quedó su transferencia (más
+completa que la que se había hecho aquí) y se quitó la puerta del navegador, reemplazada por la app.
+
+Dejado para después (decisión del cliente): rol de promotor, pasarela de pago real y facturación electrónica.
+
+## Boliches (2026-10-13, rama `feature/boliches`, solo local para la demo)
+
+Los 5 puntos de "Fase 2" del informe del 09/10, sobre lo que ya existía (cada noche es una función: compra,
+cola, boletería, puerta, reportes y transferencias funcionan igual):
+
+- **Mesas y lounges**: tipo de entrada "mesa" para N personas; el cupo se cuenta en mesas y cada una ocupa en
+  la zona los lugares de todas sus personas. Al pagar recibe su número (Mesa VIP N° 4) y un QR por persona.
+- **Consumo mínimo / vales**: consumo incluido por mesa (compartido) o por entrada ("entrada + trago"). Se
+  descuenta en **Barra** (panel, también el cajero) leyendo cualquier QR; nunca queda negativo, ni con dos
+  barras cobrando a la vez. El comprador ve su saldo en Mis entradas.
+- **Noches que se repiten**: "Repetir noches" copia una noche (precios, mesas, horarios, porteros) a los días
+  elegidos de las próximas semanas. Sitio: apartado **/boliches** por ciudad y por hoy / este finde / 7 días.
+- **Free por horario**: "válida para entrar hasta" (ej. 01:00): una por persona, deja de venderse a esa hora
+  y en puerta sale "Fuera de horario". La app móvil la recibe anulada al sincronizar (sin cambiar la app).
+- **Promociones de boliche**: códigos RRPP con comisión (los de la rama del compañero) por boliche.
+
+Pendiente si se aprueba: reservar una mesa específica en el mapa, cobro de consumo por QR desde el celular de
+la barra (hoy lector USB o código escrito) y reportes de consumo por noche en el reporte del evento.
+
+## Organizadores de solo lectura y boliches como organizador (2026-10-14, rama `feature/boliches`)
+
+- **Dos tipos de usuario** que crea Impacta en *Organizadores*: de **eventos** o de **boliche**. El de boliche
+  tiene su panel de noches, mesas, barra, RRPP, ventas e ingresos; el de eventos no ve la barra. Un boliche
+  solo crea eventos de categoría Boliche; uno de eventos, todas menos esa.
+- **Solo lectura**: las cuentas de organizadores, boliches y clientes ven todo lo suyo en vivo pero no crean ni
+  cambian nada (formularios deshabilitados y, en el servidor, `requireEditor` en toda acción que modifica). Solo
+  Impacta crea y edita, también dentro de un organizador ("Entrar"). El cajero (boletería y barra) y el portero
+  siguen operando. El cliente ya no carga invitados: lo hace Impacta.
+- Lounge 360 y Forum Club pasan a ser organizadores tipo boliche, cada uno con organizador (solo lectura),
+  cajero y portero.
 
 ## Integración con el prototipo del compañero (2026-10-01)
 
@@ -93,7 +143,6 @@ Aplicado completo:
 - [ ] **Pruebas de carga** de la cola y la compra con volúmenes reales.
 - [ ] **Conciliación** de pagos con la pasarela real.
 - [ ] **https** en el entorno de pruebas: la cámara del celular no funciona por http en la red local.
-- [ ] **Excel nativo (.xlsx)** para invitados, si pegar o CSV no alcanza.
 - [ ] **Invitación por email** al crear un organizador o una cuenta (hoy se le pasa la contraseña temporal a mano).
 - [ ] **Comisión de Impacta** por organizador y liquidaciones (cuánto se le paga a cada uno).
 - [ ] **Editor de butacas**: editar/mover secciones existentes, zoom, deshacer (mejoras ya conversadas con el cliente; propuesta: Konva.js).

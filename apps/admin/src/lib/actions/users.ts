@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { MIN_PASSWORD_LENGTH, StaffRole, createStaffUser, prisma, revokeAllSessions } from "@ticketera/db";
 import { formObject, zodErrors, type FormState } from "@/lib/forms";
-import { ROLES, requirePlatform, requireStaff } from "@/lib/session";
+import { ROLES, requireEditor, requirePlatform } from "@/lib/session";
 import { logAudit } from "@/lib/audit";
 
 const staffSchema = z.object({
@@ -97,7 +97,7 @@ export async function toggleStaffActiveAction(_prev: FormState, formData: FormDa
  * sospecha de la cuenta. La persona tiene que volver a iniciar sesión.
  */
 export async function revokeUserSessionsAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requireStaff(ROLES.users);
+  const staff = await requireEditor(ROLES.users);
   const target = await prisma.staffUser.findFirst({
     where: { id: String(formData.get("userId")), memberships: { some: { organizationId: staff.organization.id } } },
     include: { memberships: { where: { organizationId: staff.organization.id } } },
