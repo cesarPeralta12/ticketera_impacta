@@ -1,9 +1,10 @@
 "use client";
 
 import type { KeyboardEvent } from "react";
-import { CANVAS_HEIGHT, CANVAS_WIDTH, formatMoney, zoneLabelPoint, zonePath, zoneSize, type ZoneShape } from "@ticketera/core";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, MAP_ITEM_COLOR, formatMoney, hasStage, zoneLabelPoint, zonePath, zoneSize, type MapItem, type ZoneShape } from "@ticketera/core";
 
-export type PickerSeat = { id: string; label: string; x: number; y: number; taken: boolean };
+/** `short`: el número que va dentro de un lounge en círculo. */
+export type PickerSeat = { id: string; label: string; x: number; y: number; taken: boolean; short?: string };
 export type PickerSection = {
   ticketTypeId: string;
   name: string;
@@ -15,6 +16,8 @@ export type PickerSection = {
   /** Descuento de preventa vigente (%): el unitAmount ya lo incluye. */
   discountPercent?: number | null;
   seats: PickerSeat[];
+  /** Lounges o mesas en círculo: cada "butaca" es una mesa y se dibuja más grande, con su número. */
+  round?: { radius: number } | null;
 };
 
 /** Zona de entrada general dibujada en el mapa: no se eligen butacas, la cantidad se elige en la lista. */
@@ -42,6 +45,7 @@ export function SeatPicker({
   zones = [],
   zoneCounts = {},
   onZoneClick,
+  items = [],
 }: {
   sections: PickerSection[];
   selected: Set<string>;
@@ -50,6 +54,8 @@ export function SeatPicker({
   /** Cuántas entradas lleva elegidas el comprador en cada zona (por sectionId). */
   zoneCounts?: Record<string, number>;
   onZoneClick?: (sectionId: string) => void;
+  /** Plano del boliche: escenario, barras, DJ, entrada, baños (no se venden). */
+  items?: MapItem[];
 }) {
   // Etiqueta sobre el centro de la sección (en un arco, las puntas suben más que el centro):
   // nombre, precio y butacas libres sobre el total.
@@ -88,10 +94,42 @@ export function SeatPicker({
             <stop offset="1" stopColor="#f5b700" stopOpacity="0" />
           </linearGradient>
         </defs>
-        <rect x={CANVAS_WIDTH / 2 - 160} y={18} width={320} height={16} rx={8} fill="url(#escenario)" />
-        <text x={CANVAS_WIDTH / 2} y={56} textAnchor="middle" fontSize="11" letterSpacing="4" fill="#6b687a">
-          ESCENARIO
-        </text>
+        {!hasStage(items) && (
+          <>
+            <rect x={CANVAS_WIDTH / 2 - 160} y={18} width={320} height={16} rx={8} fill="url(#escenario)" />
+            <text x={CANVAS_WIDTH / 2} y={56} textAnchor="middle" fontSize="11" letterSpacing="4" fill="#6b687a">
+              ESCENARIO
+            </text>
+          </>
+        )}
+        {items.map((item) => (
+          <g key={item.id} pointerEvents="none">
+            <rect
+              x={item.x}
+              y={item.y}
+              width={item.width}
+              height={item.height}
+              rx={8}
+              fill={item.kind === "LABEL" ? "transparent" : MAP_ITEM_COLOR[item.kind]}
+              fillOpacity={item.kind === "STAGE" ? 0.35 : 0.16}
+              stroke={MAP_ITEM_COLOR[item.kind]}
+              strokeOpacity={0.8}
+              strokeWidth={1.5}
+              strokeDasharray={item.kind === "LABEL" ? "6 4" : undefined}
+            />
+            <text
+              x={item.x + item.width / 2}
+              y={item.y + item.height / 2 + 5}
+              textAnchor="middle"
+              fontSize={Math.min(16, Math.max(10, item.height / 2.6))}
+              fontWeight="700"
+              letterSpacing="2"
+              fill={item.kind === "LABEL" ? "#c9c6d6" : MAP_ITEM_COLOR[item.kind]}
+            >
+              {item.label.toUpperCase()}
+            </text>
+          </g>
+        ))}
 
         {zones.map((z) => {
           const sold = z.left === 0;
@@ -156,16 +194,27 @@ export function SeatPicker({
         {sections.map((section) =>
           section.seats.map((seat) => {
             const isSelected = selected.has(seat.id);
+            const r = section.round ? section.round.radius : 7;
+            const number = section.round && seat.short ? (
+              <text x={seat.x} y={seat.y + 5} textAnchor="middle" fontSize="13" fontWeight="800" fill={isSelected ? "#0b0b10" : seat.taken ? "#6b687a" : "#f5f3ef"} pointerEvents="none">
+                {seat.short}
+              </text>
+            ) : null;
             if (seat.taken) {
-              return <circle key={seat.id} cx={seat.x} cy={seat.y} r={7} fill="#2a2a36" aria-hidden />;
+              return (
+                <g key={seat.id} aria-hidden>
+                  <circle cx={seat.x} cy={seat.y} r={r} fill="#2a2a36" />
+                  {number}
+                </g>
+              );
             }
             return (
+              <g key={seat.id}>
               <circle
-                key={seat.id}
                 cx={seat.x}
                 cy={seat.y}
-                r={isSelected ? 9 : 7}
-                fill={isSelected ? "#f5b700" : "transparent"}
+                r={isSelected ? r + 2 : r}
+                fill={isSelected ? "#f5b700" : section.round ? `${section.color}33` : "transparent"}
                 stroke={isSelected ? "#f5b700" : section.color}
                 strokeWidth={2}
                 role="checkbox"
@@ -178,6 +227,8 @@ export function SeatPicker({
               >
                 <title>{`${section.name} · ${seat.label}`}</title>
               </circle>
+              {number}
+              </g>
             );
           }),
         )}

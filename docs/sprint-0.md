@@ -94,6 +94,36 @@ la barra (hoy lector USB o código escrito) y reportes de consumo por noche en e
 - Lounge 360 y Forum Club pasan a ser organizadores tipo boliche, cada uno con organizador (solo lectura),
   cajero y portero.
 
+## Plano del boliche (2026-10-15)
+
+- En *Recintos*, los boliches tienen un **plano**: escenario, barra, DJ, entrada, baños y textos (no se venden;
+  se guardan en `Venue.mapItems`) y **lounges como círculos** que se ponen uno por uno donde están en el local.
+- Cada grupo de lounges es una sección numerada con `layout {type: "tables"}`: cada "butaca" es un lounge
+  ("Lounge 1", "Lounge 2"…). Se vende con un precio marcado como mesa: el comprador elige el lounge en el mapa y
+  recibe un QR por persona; el consumo es compartido.
+- El mismo plano se ve en la compra, la noche del panel, la boletería y *En vivo*. Un lounge vendido se puede
+  mover pero no quitar. Exportar/importar organizador copia el plano.
+
+## Plan de mejoras, bloque 1: arreglos rápidos (2026-10-15)
+
+Del documento "Impacta - Planificación completa" (partes 2 y 3), lo de poco riesgo:
+- **Horarios de la función**: se cargan día + horas (puertas, inicio, fin, llegada recomendada) y se resuelven
+  solos (fin de madrugada = día siguiente; puertas después del inicio = error claro). Hora de fin y ventana de
+  venta de la función ya existían en la base y ahora se cargan; la llegada es nueva (`EventSession.arrivalAt`).
+  Se pueden **editar** después de crear la función.
+- **Venta online de la función**: abre al publicar o en una fecha; cierra al empezar, unas horas antes o en una
+  fecha, que en boliches puede ser durante la noche (hasta que termina). El sitio sigue mostrando la noche
+  mientras se vende.
+- **Pantalla del evento** reordenada: funciones/noches primero, datos del evento a la vista y, al costado, la
+  **lista de lo que falta para publicar** con enlaces. "Repetir noches" solo aparece cuando hay una noche armada.
+- **Nueva noche / Duplicar función**: copia horarios, precios, mesas, free y porteros a otro día.
+- **Formulario de precios**: nombre, sección, precio y cupo a la vista; preventa, descuento, lectura en puerta y
+  máximo por compra en "Más opciones".
+- Textos por tipo ("Empieza la noche" en boliches, "noche" en vez de "función"), zona horaria a la vista
+  ("Hora de Bolivia (UTC-4)"), estados vacíos con un botón para empezar, el campo con error en rojo y con el
+  foco, y aviso del navegador al salir con cambios sin guardar.
+- La web muestra puertas, inicio y fin de cada noche, y la llegada en la compra.
+
 ## Integración con el prototipo del compañero (2026-10-01)
 
 **Se trajo:**

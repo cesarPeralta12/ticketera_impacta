@@ -1,5 +1,5 @@
 import { currentPrice, saleState, type CardSales } from "@ticketera/core";
-import { getSessionAvailability, prisma, type EventCategory } from "@ticketera/db";
+import { getSessionAvailability, onlineOnSaleWhere, prisma, type EventCategory } from "@ticketera/db";
 
 /** Lo que muestra la portada de cada evento: su próxima función, el precio desde y su estado de venta. */
 export type EventCard = {
@@ -49,7 +49,8 @@ export async function listPublishedEvents(category?: EventCategory, search?: str
     },
     include: {
       sessions: {
-        where: { cancelledAt: null, startsAt: { gte: now } },
+        // Las que todavía se venden online (un boliche puede seguir vendiendo durante la noche).
+        where: { cancelledAt: null, ...onlineOnSaleWhere(now) },
         orderBy: { startsAt: "asc" },
         include: {
           venue: { select: { name: true, city: true, timezone: true } },

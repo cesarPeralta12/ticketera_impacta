@@ -1,10 +1,14 @@
-import { CANVAS_HEIGHT, CANVAS_WIDTH, zoneLabelPoint, zonePath, type ZoneShape } from "@ticketera/core";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, zoneLabelPoint, zonePath, type MapItem, type ZoneShape } from "@ticketera/core";
+import { MapDecor } from "./map-decor";
 
 export type PreviewSection = {
   id: string;
   name: string;
   color: string;
-  seats: { x: number; y: number }[];
+  /** En lounges en círculo, `label` es el número que va dentro del círculo. */
+  seats: { x: number; y: number; label?: string }[];
+  /** Lounges o mesas en círculo (cada "butaca" es una mesa): círculos más grandes con su número. */
+  table?: { radius: number } | null;
   /** Zona de entrada general dibujada como forma (en vez de butacas). */
   zone?: ZoneShape | null;
   /** Texto bajo el nombre de la zona (por ejemplo "Quedan 120"). */
@@ -19,7 +23,7 @@ export function positioned(seats: { x: number | null; y: number | null }[]) {
 }
 
 /** Mapa de butacas de solo lectura (mismo lienzo que el editor y que el sitio público). */
-export function SeatMapPreview({ sections }: { sections: PreviewSection[] }) {
+export function SeatMapPreview({ sections, items }: { sections: PreviewSection[]; items?: MapItem[] }) {
   return (
     <svg
       viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
@@ -28,10 +32,7 @@ export function SeatMapPreview({ sections }: { sections: PreviewSection[] }) {
       role="img"
       aria-label="Mapa de butacas"
     >
-      <rect x={CANVAS_WIDTH / 2 - 160} y={16} width={320} height={20} rx={4} fill="#1a1a18" />
-      <text x={CANVAS_WIDTH / 2} y={30} textAnchor="middle" fontSize="10" letterSpacing="2" fill="#fff">
-        ESCENARIO
-      </text>
+      <MapDecor items={items} />
       {sections.map((s) => (
         <g key={s.id} opacity={s.muted ? 0.25 : 1}>
           {s.zone && (
@@ -47,9 +48,18 @@ export function SeatMapPreview({ sections }: { sections: PreviewSection[] }) {
               )}
             </>
           )}
-          {s.seats.map((seat, i) => (
-            <circle key={i} cx={seat.x} cy={seat.y} r={6} fill={s.color} />
-          ))}
+          {s.table
+            ? s.seats.map((seat, i) => (
+                <g key={i}>
+                  <circle cx={seat.x} cy={seat.y} r={s.table!.radius} fill={s.color} fillOpacity={0.4} stroke={s.color} strokeWidth={2} />
+                  {seat.label && (
+                    <text x={seat.x} y={seat.y + 5} textAnchor="middle" fontSize="13" fontWeight="800" fill="#1a1a18">
+                      {seat.label}
+                    </text>
+                  )}
+                </g>
+              ))
+            : s.seats.map((seat, i) => <circle key={i} cx={seat.x} cy={seat.y} r={6} fill={s.color} />)}
         </g>
       ))}
     </svg>

@@ -1,3 +1,5 @@
+import { isTablesLayout } from "@ticketera/core";
+
 /** Etiquetas de estado del panel. */
 export const EVENT_STATUS = {
   PUBLISHED: { text: "Publicado", className: "bg-[var(--accent-soft)] text-[var(--accent)]" },
@@ -7,6 +9,11 @@ export const EVENT_STATUS = {
 } as const;
 
 export const SEATING_LABEL = { GENERAL_ADMISSION: "Entrada general", RESERVED: "Butacas numeradas" } as const;
+
+/** Tipo de sección para mostrar: los lounges puestos en el plano del boliche son numerados pero no son butacas. */
+export function seatingLabel(section: { seatingMode: keyof typeof SEATING_LABEL; layout: unknown }): string {
+  return isTablesLayout(section.layout) ? "Lounges en el plano" : SEATING_LABEL[section.seatingMode];
+}
 
 export const ROLE_LABEL = {
   OWNER: "Dueño",

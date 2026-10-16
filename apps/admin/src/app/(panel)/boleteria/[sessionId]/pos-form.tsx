@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useState, useTransition, type FormEvent } from "react";
-import { MAX_TICKETS_PER_ORDER, formatMoney } from "@ticketera/core";
+import { MAX_TICKETS_PER_ORDER, formatMoney, type MapItem } from "@ticketera/core";
 import { SeatPicker, type PickerSection } from "@/components/seat-picker";
 import { sellAction, type PosState } from "@/lib/actions/pos";
 
@@ -30,10 +30,13 @@ export function PosForm({
   sessionId,
   general,
   seated,
+  items,
 }: {
   sessionId: string;
   general: PosGeneralType[];
   seated: PosSeatedType[];
+  /** Plano del boliche (escenario, barras…) para el mapa. */
+  items?: MapItem[];
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState<PosState, FormData>(sellAction, {});
@@ -135,8 +138,8 @@ export function PosForm({
 
       {seated.length > 0 && (
         <section className="card space-y-3 p-4">
-          <h2 className="eyebrow">Butacas numeradas</h2>
-          <SeatPicker sections={seated} selected={selected} onToggle={toggleSeat} />
+          <h2 className="eyebrow">{seated.every((t) => t.table) ? "Lounges y mesas" : seated.some((t) => t.table) ? "Butacas y lounges" : "Butacas numeradas"}</h2>
+          <SeatPicker sections={seated} selected={selected} onToggle={toggleSeat} items={items} />
           <ul className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-[var(--ink-muted)]">
             {seated.map((t) => (
               <li key={t.ticketTypeId} className="flex items-center gap-2">

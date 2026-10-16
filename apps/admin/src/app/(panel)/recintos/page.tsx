@@ -29,6 +29,16 @@ export default async function VenuesPage() {
         </p>
       </div>
 
+      {venues.length === 0 && (
+        <div className="card border-dashed p-8 text-center">
+          <p className="font-medium">Todavía no hay recintos.</p>
+          <p className="mx-auto mt-1 max-w-md text-sm text-[var(--ink-muted)]">
+            Un recinto es el lugar: su nombre, dirección y el mapa de secciones (pista, plateas, VIP, mesas). Créalo con el
+            formulario de abajo y después arma su mapa.
+          </p>
+        </div>
+      )}
+
       <ul className="grid gap-3 md:grid-cols-2">
         {venues.map((v) => {
           const capacity = v.sections.reduce((sum, s) => sum + s.capacity, 0);

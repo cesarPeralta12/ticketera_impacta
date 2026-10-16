@@ -94,7 +94,7 @@ describe("mesas y consumo", () => {
 
 describe("mesas elegidas en el mapa", () => {
   it("se llaman por su lugar en el mapa", () => {
-    expect(tableLabel("VIP", null, "A-3")).toBe("VIP · Mesa A-3");
+    expect(tableLabel("VIP", null, "Lounge 3")).toBe("VIP · Lounge 3");
     expect(tableLabel("Mesa VIP", 4)).toBe("Mesa VIP N° 4");
     expect(tableLabel("General", null)).toBeNull();
   });

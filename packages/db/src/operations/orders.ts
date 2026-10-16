@@ -1,4 +1,4 @@
-import { RESERVATION_MINUTES, checkoutSchema, currentPrice, findShortage, orderTotals, randomCode, remainingByType, type CheckoutInput } from "@ticketera/core";
+import { RESERVATION_MINUTES, checkoutSchema, currentPrice, findShortage, onlineSalesEnd, orderTotals, randomCode, remainingByType, type CheckoutInput } from "@ticketera/core";
 import { prisma } from "../client";
 import type { OrderChannel } from "../generated/prisma/client";
 import { completeTurn, hasActiveTurn } from "./queue";
@@ -53,12 +53,17 @@ export async function getTakenSeatIds(sessionId: string, now = new Date()) {
 export const BOX_OFFICE_HOURS_AFTER_START = 4;
 
 /**
- * Hasta cuándo se vende una función: online, hasta que empieza; en boletería, también
- * durante el evento (en puerta), hasta que termina.
+ * Hasta cuándo se vende una función: online, hasta que empieza (o hasta el cierre de venta que tenga, que en un
+ * boliche puede ser durante la noche); en boletería, también durante el evento (en puerta), hasta que termina.
  */
-export function salesCutoff(session: { startsAt: Date; endsAt: Date | null }, channel: OrderChannel) {
-  if (channel !== "POS") return session.startsAt;
+export function salesCutoff(session: { startsAt: Date; endsAt: Date | null; salesEndAt?: Date | null }, channel: OrderChannel) {
+  if (channel !== "POS") return onlineSalesEnd({ startsAt: session.startsAt, salesEndAt: session.salesEndAt ?? null });
   return session.endsAt ?? new Date(session.startsAt.getTime() + BOX_OFFICE_HOURS_AFTER_START * 60 * 60_000);
+}
+
+/** Filtro de Prisma: funciones que todavía se venden online (las que se listan en el sitio). */
+export function onlineOnSaleWhere(now: Date) {
+  return { OR: [{ salesEndAt: { gt: now } }, { salesEndAt: null, startsAt: { gt: now } }] };
 }
 
 /**

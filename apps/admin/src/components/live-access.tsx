@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CANVAS_HEIGHT, CANVAS_WIDTH, formatCode } from "@ticketera/core";
+import { MapDecor } from "./map-decor";
 import type { LiveAccess, LiveScan, LiveTicket } from "@ticketera/db";
 
 const RESULT_LABEL: Record<string, string> = {
@@ -36,7 +37,16 @@ export function LiveAccessBoard({ data }: { data: NonNullable<LiveAccess> }) {
   const [query, setQuery] = useState("");
   const [onlyEntered, setOnlyEntered] = useState(false);
 
-  const bySeat = useMemo(() => new Map(data.tickets.filter((t) => t.seatId).map((t) => [t.seatId!, t])), [data.tickets]);
+  // Un lounge tiene varias entradas sobre el mismo lugar: se muestra como "ya ingresó" si entró alguien.
+  const bySeat = useMemo(() => {
+    const map = new Map<string, LiveTicket>();
+    for (const t of data.tickets) {
+      if (!t.seatId) continue;
+      const current = map.get(t.seatId);
+      if (!current || (t.status === "USED" && current.status !== "USED") || (current.status === "CANCELLED" && t.status !== "CANCELLED")) map.set(t.seatId, t);
+    }
+    return map;
+  }, [data.tickets]);
   const selected = data.tickets.find((t) => t.id === selectedId) ?? null;
   const seated = data.sections.filter((s) => s.seatingMode === "RESERVED" && s.seats.length > 0);
   const zones = data.sections.filter((s) => s.seatingMode === "GENERAL_ADMISSION");
@@ -89,21 +99,19 @@ export function LiveAccessBoard({ data }: { data: NonNullable<LiveAccess> }) {
                 </ul>
               </div>
               <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full rounded-lg border border-[var(--border)]" style={{ background: "#fbfbf9" }} role="img" aria-label="Mapa de butacas en vivo">
-                <rect x={CANVAS_WIDTH / 2 - 160} y={16} width={320} height={20} rx={4} fill="#1a1a18" />
-                <text x={CANVAS_WIDTH / 2} y={30} textAnchor="middle" fontSize="10" letterSpacing="2" fill="#fff">
-                  ESCENARIO
-                </text>
+                <MapDecor items={data.mapItems} />
                 {seated.map((section) =>
                   section.seats.map((seat) => {
                     const ticket = bySeat.get(seat.id);
                     const fill = !ticket ? FREE : ticket.status === "USED" ? ENTERED : ticket.status === "CANCELLED" ? CANCELLED : SOLD;
                     const isSelected = ticket?.id === selectedId;
+                    const r = section.table ? section.table.radius : 6;
                     return (
+                      <g key={seat.id}>
                       <circle
-                        key={seat.id}
                         cx={seat.x}
                         cy={seat.y}
-                        r={isSelected ? 8 : 6}
+                        r={isSelected ? r + 2 : r}
                         fill={fill}
                         stroke={isSelected ? "#111" : section.color}
                         strokeWidth={isSelected ? 2.5 : 1}
@@ -112,6 +120,12 @@ export function LiveAccessBoard({ data }: { data: NonNullable<LiveAccess> }) {
                       >
                         <title>{ticket ? `${seat.label} · ${ticket.holder}${ticket.status === "USED" ? " · ya ingresó" : ""}` : `${seat.label} · sin vender`}</title>
                       </circle>
+                      {section.table && (
+                        <text x={seat.x} y={seat.y + 5} textAnchor="middle" fontSize="13" fontWeight="800" fill="#111" pointerEvents="none">
+                          {seat.short}
+                        </text>
+                      )}
+                      </g>
                     );
                   }),
                 )}

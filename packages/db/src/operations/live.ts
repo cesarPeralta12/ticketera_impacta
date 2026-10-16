@@ -1,3 +1,4 @@
+import { isTablesLayout, mapItemsOf } from "@ticketera/core";
 import { prisma } from "../client";
 
 export type LiveScan = { at: string; result: string; gate: string | null; operator: string | null; device: string | null; method: string | null };
@@ -23,8 +24,10 @@ export type LiveSection = {
   name: string;
   color: string;
   seatingMode: "GENERAL_ADMISSION" | "RESERVED";
-  /** Butacas con posición en el plano (solo secciones numeradas). */
-  seats: { id: string; x: number; y: number; label: string }[];
+  /** Butacas con posición en el plano (solo secciones numeradas). `short`: número de un lounge en círculo. */
+  seats: { id: string; x: number; y: number; label: string; short: string }[];
+  /** Lounges en círculo: cada "butaca" es una mesa. */
+  table: { radius: number } | null;
   issued: number;
   entered: number;
 };
@@ -44,8 +47,9 @@ export async function getLiveAccess(sessionId: string) {
         select: {
           name: true,
           timezone: true,
+          mapItems: true,
           accessPoints: { orderBy: { name: "asc" }, select: { id: true, name: true } },
-          sections: { orderBy: { sortOrder: "asc" }, include: { seats: { select: { id: true, x: true, y: true, label: true } } } },
+          sections: { orderBy: { sortOrder: "asc" }, include: { seats: { select: { id: true, x: true, y: true, label: true, number: true } } } },
         },
       },
     },
@@ -64,6 +68,8 @@ export async function getLiveAccess(sessionId: string) {
         holderDocument: true,
         seatId: true,
         seat: { select: { label: true, sectionId: true } },
+        // Lounge en círculo: todas sus personas se pintan sobre la mesa.
+        credit: { select: { seatId: true } },
         ticketType: { select: { name: true, sectionId: true } },
         order: { select: { buyerName: true, buyerDocument: true } },
       },
@@ -110,7 +116,7 @@ export async function getLiveAccess(sessionId: string) {
     status: t.status,
     sectionId: t.seat?.sectionId ?? t.ticketType.sectionId,
     type: t.ticketType.name,
-    seatId: t.seatId,
+    seatId: t.seatId ?? t.credit?.seatId ?? null,
     seatLabel: t.seat?.label ?? null,
     holder: t.holderName ?? t.order.buyerName,
     document: t.holderDocument ?? t.order.buyerDocument,
@@ -126,7 +132,11 @@ export async function getLiveAccess(sessionId: string) {
       name: s.name,
       color: s.color,
       seatingMode: s.seatingMode,
-      seats: s.seatingMode === "RESERVED" ? s.seats.flatMap((seat) => (seat.x !== null && seat.y !== null ? [{ id: seat.id, x: seat.x, y: seat.y, label: seat.label }] : [])) : [],
+      seats:
+        s.seatingMode === "RESERVED"
+          ? s.seats.flatMap((seat) => (seat.x !== null && seat.y !== null ? [{ id: seat.id, x: seat.x, y: seat.y, label: seat.label, short: seat.number }] : []))
+          : [],
+      table: isTablesLayout(s.layout) ? { radius: s.layout.radius } : null,
       issued: own.length,
       entered: own.filter((t) => t.status === "USED").length,
     };
@@ -170,6 +180,8 @@ export async function getLiveAccess(sessionId: string) {
     },
     gates: byGate,
     sections,
+    /** Plano del boliche (escenario, barras…). */
+    mapItems: mapItemsOf(session.venue.mapItems),
     tickets: liveTickets,
     rejected: rejected.slice(0, 100),
   };

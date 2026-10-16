@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useState, useTransition, type FormEvent } from "react";
-import { MAX_TICKETS_PER_ORDER, RESERVATION_MINUTES, formatMoney } from "@ticketera/core";
+import { MAX_TICKETS_PER_ORDER, RESERVATION_MINUTES, formatMoney, type MapItem } from "@ticketera/core";
 import { createOrderAction, previewPromoAction, type CheckoutState, type PromoPreview } from "./actions";
 import { SeatPicker, type PickerSection, type PickerZone } from "./seat-picker";
 
@@ -49,6 +49,7 @@ export function CheckoutForm({
   general,
   seated,
   zones = [],
+  items = [],
   buyer,
 }: {
   sessionId: string;
@@ -56,6 +57,8 @@ export function CheckoutForm({
   seated: SeatedType[];
   /** Zonas generales dibujadas en el mapa. */
   zones?: PickerZone[];
+  /** Plano del boliche (escenario, barras…). */
+  items?: MapItem[];
   buyer: { name: string; email: string; document: string };
 }) {
   const router = useRouter();
@@ -178,7 +181,7 @@ export function CheckoutForm({
           <h2 className="font-display text-xl">
             {seated.length > 0 ? (seated.every((t) => t.table) ? "1. Elige tu mesa en el mapa" : "1. Elige tus butacas") : "Mapa del recinto"}
           </h2>
-          <SeatPicker sections={seated} selected={selected} onToggle={toggleSeat} zones={zones} zoneCounts={zoneCounts} onZoneClick={goToZone} />
+          <SeatPicker sections={seated} selected={selected} onToggle={toggleSeat} zones={zones} zoneCounts={zoneCounts} onZoneClick={goToZone} items={items} />
           <ul className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-[var(--ink-muted)]">
             {seated.map((t) => (
               <li key={t.ticketTypeId} className="flex items-center gap-2">

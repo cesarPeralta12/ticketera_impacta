@@ -3,8 +3,31 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { MAX_DISCOUNT_PERCENT, entryDeadline, formatDateTime, isTimeOfDay, normalizeImageUrl, slugify, windowsOverlap, zonedDateTimeToUtc } from "@ticketera/core";
-import { DomainError, EventCategory, EventMode, createEventWithinLimit, prisma, publicationProblem, setTicketTypeQrMode, submitEventForReview } from "@ticketera/db";
+import {
+  MAX_DISCOUNT_PERCENT,
+  entryDeadline,
+  isTablesLayout,
+  isTimeOfDay,
+  normalizeImageUrl,
+  parseSalesWindow,
+  parseSessionTimes,
+  sessionNoun,
+  slugify,
+  utcToZonedInput,
+  windowsOverlap,
+  zonedDateTimeToUtc,
+} from "@ticketera/core";
+import {
+  DomainError,
+  EventCategory,
+  EventMode,
+  createEventWithinLimit,
+  duplicateSession,
+  prisma,
+  publicationProblem,
+  setTicketTypeQrMode,
+  submitEventForReview,
+} from "@ticketera/db";
 import { formObject, intField, moneyField, zodErrors, type FormState } from "@/lib/forms";
 import { allowedCategories, requireEditor } from "@/lib/session";
 import { logAudit } from "@/lib/audit";
@@ -156,50 +179,94 @@ export async function unpublishEventAction(_prev: FormState, formData: FormData)
   return { ok: true };
 }
 
-const sessionSchema = z.object({
-  eventId: z.string(),
-  venueId: z.string({ error: "Elige un recinto." }),
-  startsAt: z.string({ error: "Elige fecha y hora." }),
-  doorsOpenAt: z.string().optional(),
-});
+/** Horarios y venta online de una función, tal como vienen del formulario (ver SessionTimesFields). */
+function readSessionForm(form: Record<string, string | undefined>, timeZone: string) {
+  const times = parseSessionTimes({ date: form.date, start: form.start, doors: form.doors, arrival: form.arrival, end: form.end }, timeZone);
+  if (!times.ok) return { ok: false as const, state: { fieldErrors: { [times.field]: times.message } } satisfies FormState };
+  const sales = parseSalesWindow(
+    { open: form.open, openAt: form.openAt, close: form.close, closeHours: form.closeHours, closeAt: form.closeAt },
+    times.times,
+    timeZone,
+  );
+  if (!sales.ok) return { ok: false as const, state: { fieldErrors: { [sales.field]: sales.message } } satisfies FormState };
+  return { ok: true as const, data: { ...times.times, ...sales.window } };
+}
 
 export async function createSessionAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireEditor();
-  const parsed = sessionSchema.safeParse(formObject(formData));
-  if (!parsed.success) return zodErrors(parsed.error);
-  const { eventId, venueId, startsAt, doorsOpenAt } = parsed.data;
+  const form = formObject(formData);
+  if (!form.venueId) return { fieldErrors: { venueId: "Elige un recinto." } };
 
   const [event, venue] = await Promise.all([
-    ownedEvent(staff.organization.id, eventId),
-    prisma.venue.findFirst({ where: { id: venueId, organizationId: staff.organization.id } }),
+    ownedEvent(staff.organization.id, String(form.eventId)),
+    prisma.venue.findFirst({ where: { id: form.venueId, organizationId: staff.organization.id } }),
   ]);
   if (!event || !venue) return { error: "Evento o recinto no encontrado." };
 
   // La hora que escribe el organizador es la del recinto, no la del servidor.
-  let starts: Date;
-  let doors: Date | undefined;
-  try {
-    starts = zonedDateTimeToUtc(startsAt, venue.timezone);
-    doors = doorsOpenAt ? zonedDateTimeToUtc(doorsOpenAt, venue.timezone) : undefined;
-  } catch {
-    return { fieldErrors: { startsAt: "Fecha inválida." } };
-  }
-  if (starts <= new Date()) return { fieldErrors: { startsAt: "La función debe ser en el futuro." } };
-  if (doors && doors > starts) {
-    const fmt = (d: Date) => formatDateTime(d, venue.timezone);
-    return {
-      fieldErrors: {
-        doorsOpenAt: `La apertura de puertas (${fmt(doors)}) es después de la función (${fmt(starts)}). Debe ser antes, o déjala vacía.`,
-      },
-    };
-  }
+  const parsed = readSessionForm(form, venue.timezone);
+  if (!parsed.ok) return parsed.state;
+  const noun = sessionNoun(event.category);
+  if (parsed.data.startsAt <= new Date()) return { fieldErrors: { date: `${noun.The} debe ser en el futuro.` } };
 
-  const session = await prisma.eventSession.create({
-    data: { eventId, venueId, startsAt: starts, doorsOpenAt: doors },
-  });
+  const session = await prisma.eventSession.create({ data: { eventId: event.id, venueId: venue.id, ...parsed.data } });
   await audit(staff.id, "session.create", "EventSession", session.id);
-  revalidatePath(`/eventos/${eventId}`);
-  return { ok: true };
+  revalidatePath(`/eventos/${event.id}`);
+  return { ok: true, message: `${noun.One} agregada: cárgale los precios.` };
+}
+
+/**
+ * Cambia los horarios y la venta online de una función. Si cambia el inicio, las entradas con horario de
+ * ingreso ("free hasta la 01:00") conservan su hora del reloj, ahora en el día nuevo.
+ */
+export async function updateSessionAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const form = formObject(formData);
+  const session = await prisma.eventSession.findFirst({
+    where: { id: String(form.sessionId), event: { organizationId: staff.organization.id } },
+    include: { venue: { select: { timezone: true } }, event: { select: { category: true } }, ticketTypes: { where: { entryUntil: { not: null } } } },
+  });
+  if (!session || session.cancelledAt) return { error: "Función no encontrada." };
+  const tz = session.venue.timezone;
+  const parsed = readSessionForm(form, tz);
+  if (!parsed.ok) return parsed.state;
+  const moved = parsed.data.startsAt.getTime() !== session.startsAt.getTime();
+  if (moved && parsed.data.startsAt <= new Date()) return { fieldErrors: { date: "La nueva fecha ya pasó: elige una que venga." } };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.eventSession.update({ where: { id: session.id }, data: parsed.data });
+    if (moved) {
+      for (const t of session.ticketTypes) {
+        const clock = utcToZonedInput(t.entryUntil!, tz).slice(11, 16);
+        await tx.ticketType.update({ where: { id: t.id }, data: { entryUntil: entryDeadline(parsed.data.startsAt, clock, tz) } });
+      }
+    }
+  });
+  await audit(staff.id, "session.update", "EventSession", session.id, {
+    from: { startsAt: session.startsAt, endsAt: session.endsAt, doorsOpenAt: session.doorsOpenAt, salesEndAt: session.salesEndAt },
+    to: parsed.data,
+  });
+  revalidatePath(`/eventos/${session.eventId}`);
+  revalidatePath(`/eventos/${session.eventId}/funciones/${session.id}`);
+  return { ok: true, message: "Horarios guardados." };
+}
+
+/** "Nueva noche" / "Duplicar función": copia una función con sus precios a otro día y abre la copia. */
+export async function duplicateSessionAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const template = await prisma.eventSession.findFirst({
+    where: { id: String(formData.get("sessionId")), event: { organizationId: staff.organization.id } },
+  });
+  if (!template) return { fieldErrors: { sessionId: "Elige qué copiar." } };
+  let copy;
+  try {
+    copy = await duplicateSession({ templateSessionId: template.id, date: String(formData.get("date") ?? ""), staffId: staff.id });
+  } catch (error) {
+    if (error instanceof DomainError) return { fieldErrors: { date: error.message } };
+    throw error;
+  }
+  revalidatePath(`/eventos/${template.eventId}`);
+  redirect(`/eventos/${template.eventId}/funciones/${copy.id}`);
 }
 
 /** Solo se puede borrar una función sin ventas; con ventas habría que cancelarla y reembolsar. */
@@ -332,6 +399,9 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
   const table = Boolean(data.table);
   const peoplePerUnit = table ? data.peoplePerUnit : 1;
   if (table && !peoplePerUnit) return { fieldErrors: { peoplePerUnit: "Indica cuántas personas entran con cada mesa." } };
+  if (!table && isTablesLayout(section.layout)) {
+    return { fieldErrors: { table: `"${section.name}" son lounges: marca "Es una mesa o lounge" y cuántas personas entran en cada uno.` } };
+  }
   const entryUntil = data.entryUntil ? entryDeadline(session.startsAt, data.entryUntil, session.venue.timezone) : null;
   const qrMode = data.qrDynamic ? ("DYNAMIC" as const) : ("STATIC" as const);
   if (qrMode === "DYNAMIC" && session.event.mode !== "TICKETING") {

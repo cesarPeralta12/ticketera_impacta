@@ -2,7 +2,22 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { currentPrice, formatDateTime, formatMoney, formatClock, isZoneLayout, saleState, utcToZonedInput, type SaleState, type ZoneShape } from "@ticketera/core";
+import {
+  currentPrice,
+  formatClock,
+  formatDateTime,
+  formatMoney,
+  isTablesLayout,
+  isZoneLayout,
+  mapItemsOf,
+  saleState,
+  sessionNoun,
+  sessionTimesInput,
+  timeZoneLabel,
+  utcToZonedInput,
+  type SaleState,
+  type ZoneShape,
+} from "@ticketera/core";
 import { getSessionAvailability, getZoneAvailability, prisma } from "@ticketera/db";
 import { AccessMethodsField } from "@/components/access-methods-field";
 import { ActionForm } from "@/components/action-form";
@@ -12,11 +27,14 @@ import {
   updateTicketTypeSalesAction,
   deleteSessionAction,
   deleteTicketTypeAction,
+  duplicateSessionAction,
   setQrModeAction,
   updateAccessMethodsAction,
   updateQueueSettingsAction,
+  updateSessionAction,
 } from "@/lib/actions/events";
-import { SEATING_LABEL } from "@/lib/labels";
+import { SessionTimesFields } from "@/components/session-times-fields";
+import { seatingLabel } from "@/lib/labels";
 import { ROLES, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Función" };
@@ -38,16 +56,17 @@ export default async function SessionPage({ params }: Props) {
     where: { id: sessionId, eventId: id, event: { organizationId: staff.organization.id } },
     include: {
       event: true,
-      venue: { include: { sections: { orderBy: { sortOrder: "asc" }, include: { seats: { select: { x: true, y: true } } } } } },
+      venue: { include: { sections: { orderBy: { sortOrder: "asc" }, include: { seats: { select: { x: true, y: true, number: true } } } } } },
       ticketTypes: { orderBy: { sortOrder: "asc" }, include: { section: true, _count: { select: { orderItems: true } } } },
     },
   });
   if (!session) notFound();
 
-  const [remaining, zones, guests] = await Promise.all([
+  const [remaining, zones, guests, issued] = await Promise.all([
     getSessionAvailability(session.id),
     getZoneAvailability(session.id),
     prisma.ticket.count({ where: { sessionId: session.id, order: { channel: "GUEST" }, status: { in: ["VALID", "USED"] } } }),
+    prisma.ticket.count({ where: { sessionId: session.id, status: { in: ["VALID", "USED"] } } }),
   ]);
   const guestList = session.event.mode === "GUEST_LIST";
   const pricedSections = new Set(session.ticketTypes.map((t) => t.sectionId));
@@ -63,7 +82,9 @@ export default async function SessionPage({ params }: Props) {
   const tz = session.venue.timezone;
   const now = new Date();
   const nightlife = session.event.category === "BOLICHE";
+  const noun = sessionNoun(session.event.category);
   const hasConsumption = session.ticketTypes.some((t) => t.kind === "TABLE" || (t.consumptionAmount ?? 0) > 0);
+  const nextWeek = utcToZonedInput(new Date(session.startsAt.getTime() + 7 * 86_400_000), tz).slice(0, 10);
 
   return (
     <div className="space-y-8">
@@ -71,10 +92,12 @@ export default async function SessionPage({ params }: Props) {
         <Link href={`/eventos/${id}`} className="text-sm text-[var(--ink-dim)] hover:text-[var(--ink)]">
           ← {session.event.title}
         </Link>
-        <h1 className="mt-1 font-mono text-2xl font-medium tracking-tight">{formatDateTime(session.startsAt, tz)}</h1>
+        <p className="eyebrow mt-2">{noun.One}</p>
+        <h1 className="font-mono text-2xl font-medium tracking-tight">{formatDateTime(session.startsAt, tz)}</h1>
         <p className="text-sm text-[var(--ink-muted)]">
-          {session.venue.name} · hora de {tz}
-          {session.doorsOpenAt && ` · puertas ${formatDateTime(session.doorsOpenAt, tz)}`}
+          {session.venue.name}
+          {session.doorsOpenAt && ` · puertas ${formatClock(session.doorsOpenAt, tz)}`}
+          {session.endsAt && ` · termina ${formatDateTime(session.endsAt, tz)}`} · {timeZoneLabel(tz)}
         </p>
       </div>
 
@@ -149,10 +172,38 @@ export default async function SessionPage({ params }: Props) {
         </section>
       )}
 
+      <section id="horarios" className="card scroll-mt-6 p-6">
+        <h2 className="eyebrow mb-4">Horarios y venta</h2>
+        <ActionForm action={updateSessionAction} className="flex flex-col gap-4">
+          <input type="hidden" name="sessionId" value={session.id} />
+          <SessionTimesFields
+            category={session.event.category}
+            timeZone={tz}
+            defaults={{
+              ...sessionTimesInput(session, tz),
+              open: session.salesStartAt ? "date" : "publish",
+              openAt: session.salesStartAt ? utcToZonedInput(session.salesStartAt, tz) : undefined,
+              close: session.salesEndAt ? "date" : "start",
+              closeAt: session.salesEndAt ? utcToZonedInput(session.salesEndAt, tz) : undefined,
+            }}
+          />
+          {issued > 0 && (
+            <p className="text-xs text-[var(--warn)]">
+              Ya hay {issued} entrada(s) emitida(s): si cambias el día o la hora, avisa a los compradores.
+            </p>
+          )}
+          <button type="submit" className="btn btn-dark w-fit">
+            Guardar horarios
+          </button>
+        </ActionForm>
+      </section>
+
       <section className="card p-6">
-        <h2 className="eyebrow mb-4">Tipos de entrada</h2>
+        <h2 className="eyebrow mb-4">Precios (tipos de entrada)</h2>
         {session.ticketTypes.length === 0 ? (
-          <p className="mb-4 text-sm text-[var(--ink-muted)]">Agrega al menos un tipo de entrada para esta función.</p>
+          <p className="mb-4 text-sm text-[var(--ink-muted)]">
+            Todavía no hay precios. Agrega el primero abajo: sección, nombre, precio y cupo.
+          </p>
         ) : (
           <div className="mb-5 overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -188,7 +239,7 @@ export default async function SessionPage({ params }: Props) {
                       )}
                     </td>
                     <td className="py-2.5 pr-4 text-[var(--ink-muted)]">
-                      {t.section ? `${t.section.name} · ${SEATING_LABEL[t.section.seatingMode]}` : "—"}
+                      {t.section ? `${t.section.name} · ${seatingLabel(t.section)}` : "—"}
                     </td>
                     <td className="py-2.5 pr-4 text-right font-mono">
                       {formatMoney(currentPrice(t, now).unitAmount, t.currency)}
@@ -356,7 +407,7 @@ export default async function SessionPage({ params }: Props) {
               <select name="sectionId" required className="field">
                 {sectionOptions.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.name} — {s.seatingMode === "RESERVED" ? `${s.seats.length} butacas` : `aforo ${s.capacity}`}
+                    {s.name} — {s.seatingMode === "RESERVED" ? `${s.seats.length} ${isTablesLayout(s.layout) ? "lounges" : "butacas"}` : `aforo ${s.capacity}`}
                     {pricedSections.has(s.id) ? " (ya tiene precio)" : " (sin precio)"}
                   </option>
                 ))}
@@ -372,23 +423,9 @@ export default async function SessionPage({ params }: Props) {
             </label>
             <label className="label">
               Cupo
-              <input name="capacity" type="number" min={1} placeholder="solo general" className="field w-28" />
+              <input name="capacity" type="number" min={1} placeholder="ej. 200" className="field w-28" />
+              <span className="text-xs font-normal text-[var(--ink-dim)]">En butacas y lounges, el del mapa.</span>
             </label>
-            <label className="label">
-              Máx. por compra
-              <input name="maxPerOrder" type="number" min={1} max={10} defaultValue={10} className="field w-24" />
-            </label>
-            <div className="label">
-              Lectura en puerta
-              <div className="flex h-[38px] items-center">
-                <AccessMethodsField />
-              </div>
-            </div>
-            {session.event.mode === "TICKETING" && (
-              <label className="flex items-center gap-2 self-center text-sm" title="El QR cambia cada 30 segundos y solo se lee con QR. Solo venta online (no boletería ni invitaciones).">
-                <input type="checkbox" name="qrDynamic" className="h-4 w-4 accent-[var(--accent)]" /> QR dinámico
-              </label>
-            )}
             {nightlife && (
               <div className="flex basis-full flex-wrap items-end gap-3 rounded-md border border-dashed border-[#c04bff]/50 bg-[#f3e8ff]/40 p-3">
                 <p className="basis-full text-sm font-medium">Boliche (opcional)</p>
@@ -407,78 +444,90 @@ export default async function SessionPage({ params }: Props) {
                   Válida para entrar hasta
                   <input name="entryUntil" type="time" className="field w-32" />
                 </label>
-                <div className="basis-full space-y-1 text-xs text-[var(--ink-dim)]">
-                  <p>
-                    <strong>Mesa o lounge</strong> (ej. Mesa VIP para 6 a Bs 1.200 con Bs 1.000 de consumo): marca
-                    &ldquo;Es una mesa&rdquo;, <strong>Personas por mesa</strong> = 6, <strong>Consumo incluido</strong> =
-                    1000 y el <strong>Precio</strong> de la mesa. En <strong>Sección</strong>:
+                <ul className="basis-full space-y-0.5 text-xs text-[var(--ink-dim)]">
+                  <li>
+                    <strong>Mesa o lounge</strong>: marca la casilla, personas, consumo y el precio de la mesa. Con los
+                    lounges del plano, el comprador elige el suyo; en una zona sin mapa, pon en Cupo cuántas mesas hay.
+                  </li>
+                  <li>
+                    <strong>Entrada + trago</strong>: solo el consumo (ej. 25). <strong>Free hasta la 01:00</strong>: precio
+                    0 y &ldquo;Válida para entrar hasta&rdquo; 01:00.
+                  </li>
+                </ul>
+              </div>
+            )}
+            <details className="basis-full">
+              <summary className="cursor-pointer text-sm font-medium text-[var(--accent)]">
+                Más opciones: preventa, descuento, lectura en puerta, máximo por compra
+              </summary>
+              <div className="mt-3 flex flex-wrap items-end gap-3">
+                <label className="label">
+                  Máx. por compra
+                  <input name="maxPerOrder" type="number" min={1} max={10} defaultValue={10} className="field w-24" />
+                </label>
+                <div className="label">
+                  Lectura en puerta
+                  <div className="flex h-[38px] items-center">
+                    <AccessMethodsField />
+                  </div>
+                </div>
+                {session.event.mode === "TICKETING" && (
+                  <label className="flex items-center gap-2 self-center text-sm" title="El QR cambia cada 30 segundos y solo se lee con QR. Solo venta online (no boletería ni invitaciones).">
+                    <input type="checkbox" name="qrDynamic" className="h-4 w-4 accent-[var(--accent)]" /> QR dinámico
+                  </label>
+                )}
+                <div className="flex basis-full flex-wrap items-end gap-3 rounded-md border border-dashed border-[var(--border)] p-3">
+                  <label className="flex items-center gap-2 self-center text-sm">
+                    <input type="checkbox" name="presale" className="h-4 w-4" /> Es preventa
+                  </label>
+                  <label className="label">
+                    Venta desde (opcional)
+                    <input type="datetime-local" name="salesStartAt" className="field" />
+                  </label>
+                  <label className="label">
+                    Venta hasta {"(obligatorio en preventa)"}
+                    <input type="datetime-local" name="salesEndAt" className="field" />
+                  </label>
+                  <label className="flex items-center gap-2 self-center text-sm">
+                    <input type="checkbox" name="exclusive" defaultChecked className="h-4 w-4" /> Mientras dure la preventa, no
+                    vender las otras entradas de esta sección
+                  </label>
+                  <p className="basis-full text-xs text-[var(--ink-dim)]">
+                    Hora del recinto. Ejemplo: &ldquo;Preventa&rdquo; a Bs 70 hasta el 20/10 a las 23:59: ese momento la
+                    &ldquo;General&rdquo; de la misma sección empieza sola. En butacas numeradas siempre es así (un precio por
+                    butaca a la vez).
                   </p>
-                  <p>
-                    · una <strong>sección con butacas</strong> dibujada en el mapa (ej. &ldquo;lounge — 24 butacas&rdquo;):
-                    cada butaca es una mesa y el comprador <strong>elige la suya en el mapa</strong>; el cupo son las
-                    butacas. · una <strong>zona sin butacas</strong> (ej. &ldquo;Zona VIP&rdquo;): pon en{" "}
-                    <strong>Cupo</strong> cuántas mesas hay y cada una recibe su número (N° 1, N° 2…). En los dos casos,
-                    cada persona recibe su QR y el consumo se descuenta en Barra.
-                  </p>
-                  <p>
-                    <strong>Entrada + trago</strong>: no marques &ldquo;mesa&rdquo;; solo pon el consumo (ej. 25).{" "}
-                    <strong>Free hasta la 01:00</strong>: precio 0 y &ldquo;Válida para entrar hasta&rdquo; 01:00 (una por
-                    persona; después de esa hora ya no entra).
+                </div>
+                <div className="flex basis-full flex-wrap items-end gap-3 rounded-md border border-dashed border-[var(--border)] p-3">
+                  <p className="basis-full text-sm font-medium">Descuento de preventa (opcional)</p>
+                  <label className="label">
+                    Porcentaje (%)
+                    <input name="discountPercent" inputMode="numeric" placeholder="ej. 20" className="field w-28" />
+                  </label>
+                  <label className="label">
+                    Desde (opcional)
+                    <input type="datetime-local" name="discountStartsAt" className="field" />
+                  </label>
+                  <label className="label">
+                    Hasta
+                    <input type="datetime-local" name="discountEndsAt" className="field" />
+                  </label>
+                  <p className="basis-full text-xs text-[var(--ink-dim)]">
+                    Misma entrada, mismo cupo: hasta la fecha se cobra el precio con ese porcentaje menos y después vuelve al
+                    precio normal solo. La web muestra el precio normal tachado y el descuento.
                   </p>
                 </div>
               </div>
-            )}
-            <div className="flex basis-full flex-wrap items-end gap-3 rounded-md border border-dashed border-[var(--border)] p-3">
-              <label className="flex items-center gap-2 self-center text-sm">
-                <input type="checkbox" name="presale" className="h-4 w-4" /> Es preventa
-              </label>
-              <label className="label">
-                Venta desde (opcional)
-                <input type="datetime-local" name="salesStartAt" className="field" />
-              </label>
-              <label className="label">
-                Venta hasta {"(obligatorio en preventa)"}
-                <input type="datetime-local" name="salesEndAt" className="field" />
-              </label>
-              <label className="flex items-center gap-2 self-center text-sm">
-                <input type="checkbox" name="exclusive" defaultChecked className="h-4 w-4" /> Mientras dure la preventa, no
-                vender las otras entradas de esta sección
-              </label>
-              <p className="basis-full text-xs text-[var(--ink-dim)]">
-                Hora del recinto. Ejemplo: &ldquo;Preventa&rdquo; a Bs 70 hasta el 20/10 a las 23:59: ese momento la
-                &ldquo;General&rdquo; de la misma sección empieza sola. En butacas numeradas siempre es así (un precio por
-                butaca a la vez).
-              </p>
-            </div>
-            <div className="flex basis-full flex-wrap items-end gap-3 rounded-md border border-dashed border-[var(--border)] p-3">
-              <p className="basis-full text-sm font-medium">Descuento de preventa (opcional)</p>
-              <label className="label">
-                Porcentaje (%)
-                <input name="discountPercent" inputMode="numeric" placeholder="ej. 20" className="field w-28" />
-              </label>
-              <label className="label">
-                Desde (opcional)
-                <input type="datetime-local" name="discountStartsAt" className="field" />
-              </label>
-              <label className="label">
-                Hasta
-                <input type="datetime-local" name="discountEndsAt" className="field" />
-              </label>
-              <p className="basis-full text-xs text-[var(--ink-dim)]">
-                Misma entrada, mismo cupo: hasta la fecha se cobra el precio con ese porcentaje menos y después vuelve al
-                precio normal solo. La web muestra el precio normal tachado y el descuento.
-              </p>
-            </div>
+            </details>
             <button type="submit" className="btn btn-dark">
               Agregar
             </button>
           </ActionForm>
         )}
         <p className="mt-3 text-xs text-[var(--ink-dim)]">
-          <strong>Lectura en puerta</strong>: la app del portero solo ofrece los métodos que admitan las entradas de su
-          función (por ejemplo, solo QR, o código de barras y NFC). Una entrada leída con un método no admitido se rechaza.
-          En secciones numeradas el cupo es la cantidad de butacas. Varios tipos pueden compartir una sección general
-          (ej. Preventa y General): juntos nunca superan su aforo.
+          Varios precios pueden compartir una sección general (ej. Preventa y General): juntos nunca superan su aforo.
+          <strong> Lectura en puerta</strong>: la app del portero solo acepta los métodos marcados (QR, código de barras,
+          NFC).
         </p>
       </section>
 
@@ -491,6 +540,7 @@ export default async function SessionPage({ params }: Props) {
             </Link>
           </div>
           <SeatMapPreview
+            items={mapItemsOf(session.venue.mapItems)}
             sections={[
               ...drawnZones.map(({ section, zone }) => {
                 const availability = zones.find((z) => z.id === section.id);
@@ -504,7 +554,16 @@ export default async function SessionPage({ params }: Props) {
                   muted: !pricedSections.has(section.id),
                 };
               }),
-              ...seatedSections.map((s) => ({ ...s, seats: positioned(s.seats), muted: !pricedSections.has(s.id) })),
+              ...seatedSections.map((s) =>
+                isTablesLayout(s.layout)
+                  ? {
+                      ...s,
+                      table: { radius: s.layout.radius },
+                      seats: s.seats.flatMap((seat) => (seat.x !== null && seat.y !== null ? [{ x: seat.x, y: seat.y, label: seat.number }] : [])),
+                      muted: !pricedSections.has(s.id),
+                    }
+                  : { ...s, seats: positioned(s.seats), muted: !pricedSections.has(s.id) },
+              ),
             ]}
           />
           <p className="text-xs text-[var(--ink-dim)]">Las secciones atenuadas no tienen precio en esta función.</p>
@@ -541,10 +600,27 @@ export default async function SessionPage({ params }: Props) {
         </section>
       )}
 
-      <ActionForm action={deleteSessionAction} confirm="¿Borrar esta función? No se puede deshacer.">
+      <section className="card p-6">
+        <h2 className="eyebrow mb-1">Duplicar {noun.the}</h2>
+        <p className="mb-4 text-sm text-[var(--ink-muted)]">
+          Crea {noun.a} igual otro día, a la misma hora: con sus horarios, precios, mesas y porteros.
+        </p>
+        <ActionForm action={duplicateSessionAction} className="flex flex-wrap items-end gap-3">
+          <input type="hidden" name="sessionId" value={session.id} />
+          <label className="label">
+            Día
+            <input type="date" name="date" required defaultValue={nextWeek} className="field" />
+          </label>
+          <button type="submit" className="btn btn-dark">
+            Duplicar
+          </button>
+        </ActionForm>
+      </section>
+
+      <ActionForm action={deleteSessionAction} confirm={`¿Borrar ${noun.the}? No se puede deshacer.`}>
         <input type="hidden" name="sessionId" value={session.id} />
         <button type="submit" className="text-sm text-[var(--danger)] hover:underline">
-          Borrar función
+          Borrar {noun.one}
         </button>
       </ActionForm>
     </div>

@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { prisma } from "@ticketera/db";
 import { NavLink, type NavIcon } from "@/components/nav-link";
+import { PasswordNotice } from "@/components/password-notice";
 import { ReadOnlyProvider } from "@/components/read-only";
 import { exitOrganizationAction } from "@/lib/actions/platform";
 import { signOut } from "@/lib/auth";
@@ -170,6 +171,9 @@ export default async function PanelLayout({ children }: { children: ReactNode })
             compradores e ingresos; los cambios (eventos, precios, recintos, promociones, cuentas) los hace Impacta.
           </div>
         )}
+        <Suspense fallback={null}>
+          <PasswordNotice />
+        </Suspense>
         <div className="p-4 md:p-8 print:p-0">
           <ReadOnlyProvider value={staff.readOnly}>
             <div className="mx-auto max-w-6xl">{children}</div>

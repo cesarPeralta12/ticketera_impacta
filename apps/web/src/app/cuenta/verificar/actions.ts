@@ -23,7 +23,7 @@ export async function confirmEmailAction(_prev: VerifyState, formData: FormData)
 export async function resendVerificationAction(_prev: VerifyState, formData: FormData): Promise<VerifyState> {
   const session = await auth();
   if (!session?.user?.id) redirect(`/login?next=${encodeURIComponent("/cuenta/verificar")}`);
-  const result = await sendVerificationEmail(session.user.id);
+  const result = await sendVerificationEmail(session.user.id, safeNext(formData.get("next")));
   if (result === "verified") redirect(safeNext(formData.get("next")));
   if (result === "wait") return { error: "Ya te enviamos un correo hace un momento. Espera un minuto antes de pedir otro y revisa también la carpeta de spam." };
   if (result === "failed") return { error: "No pudimos enviar el correo ahora. Intenta de nuevo en unos minutos." };

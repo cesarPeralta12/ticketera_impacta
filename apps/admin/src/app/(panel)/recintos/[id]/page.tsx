@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { isZoneLayout, type SectionShape, type ZoneShape } from "@ticketera/core";
+import { TABLE_RADIUS, isTablesLayout, isZoneLayout, mapItemsOf, type SectionShape, type ZoneShape } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import {
@@ -12,8 +12,9 @@ import {
   updateAccessPointSectionsAction,
 } from "@/lib/actions/venues";
 import { SeatMapPreview, positioned } from "@/components/seat-map-preview";
-import { SEATING_LABEL } from "@/lib/labels";
-import { ROLES, requireStaff } from "@/lib/session";
+import { seatingLabel } from "@/lib/labels";
+import { ROLES, isNightlife, requireStaff } from "@/lib/session";
+import { ClubMapDesigner, type DesignerTableGroup } from "./club-map-designer";
 import { SeatDesigner, type DesignerSection } from "./seat-designer";
 import { ZoneDesigner, type DesignerZone } from "./zone-designer";
 
@@ -30,7 +31,7 @@ export default async function VenuePage({ params }: Props) {
       sections: {
         orderBy: { sortOrder: "asc" },
         include: {
-          seats: { select: { x: true, y: true } },
+          seats: { select: { id: true, number: true, x: true, y: true, _count: { select: { orderItems: true } } } },
           ticketTypes: { select: { _count: { select: { orderItems: true } } } },
         },
       },
@@ -45,8 +46,23 @@ export default async function VenuePage({ params }: Props) {
     sold: s.ticketTypes.some((t) => t._count.orderItems > 0),
     priced: s.ticketTypes.length,
   }));
+  // Lounges en círculo: los edita el plano del boliche, no el editor de butacas.
+  const tableGroups: DesignerTableGroup[] = sections
+    .filter((s) => s.seatingMode === "RESERVED" && isTablesLayout(s.layout))
+    .map((s) => ({
+      sectionId: s.id,
+      name: s.name,
+      color: s.color,
+      prefix: isTablesLayout(s.layout) ? s.layout.prefix : "Lounge",
+      tables: s.seats.flatMap((seat) =>
+        seat.x !== null && seat.y !== null
+          ? [{ id: seat.id, number: Number(seat.number), x: seat.x, y: seat.y, sold: seat._count.orderItems > 0 }]
+          : [],
+      ),
+    }));
+  const mapItems = mapItemsOf(venue.mapItems);
   const seated: DesignerSection[] = sections
-    .filter((s) => s.seatingMode === "RESERVED")
+    .filter((s) => s.seatingMode === "RESERVED" && !isTablesLayout(s.layout))
     .map((s) => ({
       id: s.id,
       name: s.name,
@@ -86,7 +102,7 @@ export default async function VenuePage({ params }: Props) {
                 <span className="h-3 w-3 rounded-full" style={{ background: s.color }} />
                 <span className="flex-1 font-medium">{s.name}</span>
                 <span className="text-[var(--ink-muted)]">
-                  {SEATING_LABEL[s.seatingMode]} · {s.seatingMode === "RESERVED" ? `${s.seats.length} butacas` : `aforo ${s.capacity}`}
+                  {seatingLabel(s)} · {s.seatingMode === "RESERVED" ? `${s.seats.length} ${isTablesLayout(s.layout) ? "lounges" : "butacas"}` : `aforo ${s.capacity}`}
                 </span>
                 {!s.sold ? (
                   <ActionForm
@@ -112,9 +128,17 @@ export default async function VenuePage({ params }: Props) {
         <section className="card space-y-3 p-6">
           <h2 className="eyebrow">Mapa del recinto</h2>
           <SeatMapPreview
+            items={mapItems}
             sections={[
               ...zones.flatMap((z) => (z.layout ? [{ id: z.id, name: z.name, color: z.color, seats: [], zone: z.layout, detail: `Aforo ${z.capacity}` }] : [])),
               ...seated.map((sec) => ({ id: sec.id, name: sec.name, color: sec.color, seats: sec.seats })),
+              ...tableGroups.map((g) => ({
+                id: g.sectionId,
+                name: g.name,
+                color: g.color,
+                table: { radius: TABLE_RADIUS },
+                seats: g.tables.map((t) => ({ x: t.x, y: t.y, label: String(t.number) })),
+              })),
             ]}
           />
           <ul className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-[var(--ink-muted)]">
@@ -128,10 +152,33 @@ export default async function VenuePage({ params }: Props) {
                 {sec.name}: {sec.seats.length} butacas
               </li>
             ))}
+            {tableGroups.map((g) => (
+              <li key={g.sectionId}>
+                {g.name}: {g.tables.length} lounges
+              </li>
+            ))}
           </ul>
         </section>
       ) : (
         <>
+        {isNightlife(staff) && (
+          <section className="card space-y-3 p-6">
+            <h2 className="eyebrow">Plano del boliche</h2>
+            <p className="text-sm text-[var(--ink-muted)]">
+              Ubica el escenario, las barras, el DJ, la entrada y los baños, y pon cada lounge o mesa como un círculo donde está
+              en el local. El comprador ve este plano y elige su lounge tocándolo. La pista y otros sectores de pie se dibujan
+              abajo, en &ldquo;Zonas de entrada general&rdquo;.
+            </p>
+            <ClubMapDesigner
+              version={`${venue.updatedAt.getTime()}-${tableGroups.map((g) => `${g.sectionId}:${g.tables.length}`).join(",")}`}
+              venueId={venue.id}
+              items={mapItems}
+              groups={tableGroups}
+              zones={zones.flatMap((z) => (z.layout ? [{ id: z.id, name: z.name, color: z.color, layout: z.layout }] : []))}
+              seats={sections.flatMap((s) => (s.seatingMode === "RESERVED" && !isTablesLayout(s.layout) ? positioned(s.seats).map((p) => ({ ...p, color: s.color })) : []))}
+            />
+          </section>
+        )}
         <section className="space-y-3">
           <h2 className="eyebrow">Zonas de entrada general (sin butacas)</h2>
           <p className="text-sm text-[var(--ink-muted)]">

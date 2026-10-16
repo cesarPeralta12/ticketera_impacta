@@ -3,7 +3,23 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
-import { MAX_TICKETS_PER_ORDER, currentPrice, discountLabel, formatDateTime, formatMoney, formatClock, isZoneLayout, peopleIn, saleState, type ZoneShape } from "@ticketera/core";
+import {
+  MAX_TICKETS_PER_ORDER,
+  currentPrice,
+  describeSessionTimes,
+  discountLabel,
+  formatClock,
+  formatDateTime,
+  formatMoney,
+  isTablesLayout,
+  isZoneLayout,
+  mapItemsOf,
+  onlineSalesEnd,
+  peopleIn,
+  saleState,
+  timeZoneLabel,
+  type ZoneShape,
+} from "@ticketera/core";
 import { getQueueStatus, getSessionAvailability, getTakenSeatIds, getZoneAvailability, prisma } from "@ticketera/db";
 import { requireBuyer } from "@/lib/customer";
 import { queueCookieName } from "@/lib/queue-cookie";
@@ -36,7 +52,7 @@ export default async function BuyPage({ params }: Props) {
     session.event.mode !== "TICKETING" ||
     session.event.organization.status !== "ACTIVE" ||
     session.cancelledAt ||
-    session.startsAt <= new Date()
+    onlineSalesEnd(session) <= new Date()
   ) {
     notFound();
   }
@@ -100,12 +116,13 @@ export default async function BuyPage({ params }: Props) {
       presale: t.presale,
       maxPerOrder: Math.min(t.maxPerOrder, MAX_TICKETS_PER_ORDER),
       table: t.kind === "TABLE" ? { people: peopleIn(t) } : null,
+      round: isTablesLayout(t.section!.layout) ? { radius: t.section!.layout.radius } : null,
       consumption: t.consumptionAmount && t.consumptionAmount > 0 ? formatMoney(t.consumptionAmount, t.currency) : null,
       seats: t.section!.seats
         // Orden de lectura natural (fila A: 1, 2, … 10), no alfabético ("1", "10", "2").
         .toSorted((a, b) => a.row.localeCompare(b.row) || Number(a.number) - Number(b.number) || a.number.localeCompare(b.number))
         .flatMap((s) =>
-          s.x !== null && s.y !== null ? [{ id: s.id, label: s.label, x: s.x, y: s.y, taken: taken.has(s.id) }] : [],
+          s.x !== null && s.y !== null ? [{ id: s.id, label: s.label, x: s.x, y: s.y, taken: taken.has(s.id), short: s.number }] : [],
         ),
     }))
     .filter((t) => t.seats.length > 0);
@@ -129,6 +146,8 @@ export default async function BuyPage({ params }: Props) {
     });
   }
 
+  const when = describeSessionTimes(session, tz, session.event.category);
+
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 px-6 py-10">
       <Link href={`/eventos/${session.event.slug}`} className="text-sm text-[var(--ink-muted)] hover:text-[var(--ink)]">
@@ -137,7 +156,14 @@ export default async function BuyPage({ params }: Props) {
       <header>
         <p className="eyebrow">{session.venue.name}</p>
         <h1 className="font-display text-3xl sm:text-4xl">{session.event.title}</h1>
-        <p className="capitalize text-[var(--ink-muted)]">{formatDateTime(session.startsAt, session.venue.timezone)}</p>
+        <p className="text-[var(--ink-muted)] first-letter:uppercase">
+          {when.day} · {[when.doors, when.start].filter(Boolean).join(" · ")}
+        </p>
+        <p className="text-sm text-[var(--ink-dim)]">
+          {[when.end, when.arrival].filter(Boolean).join(" · ")}
+          {(when.end || when.arrival) && " · "}
+          {timeZoneLabel(session.venue.timezone)}
+        </p>
       </header>
 
       {turnEndsAt && <TurnCountdown endsAt={turnEndsAt.toISOString()} sessionId={session.id} />}
@@ -150,6 +176,7 @@ export default async function BuyPage({ params }: Props) {
           general={general}
           seated={seated}
           zones={zones}
+          items={mapItemsOf(session.venue.mapItems)}
           buyer={{ name: buyer.name, email: buyer.email, document: buyer.documentId }}
         />
       )}

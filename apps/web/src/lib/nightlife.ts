@@ -1,5 +1,5 @@
 import { DEFAULT_TIMEZONE, currentPrice, peopleIn, saleState, utcToZonedInput } from "@ticketera/core";
-import { getSessionAvailability, prisma } from "@ticketera/db";
+import { getSessionAvailability, onlineOnSaleWhere, prisma } from "@ticketera/db";
 
 export type When = "hoy" | "finde" | "semana";
 export const WHEN_LABEL: Record<When, string> = { hoy: "Hoy", finde: "Este finde", semana: "Próximos 7 días" };
@@ -87,7 +87,7 @@ export async function listClubs(filters: { city?: string; when?: When }) {
     include: {
       organization: { select: { name: true, isPlatform: true } },
       sessions: {
-        where: { cancelledAt: null, startsAt: { gt: now } },
+        where: { cancelledAt: null, ...onlineOnSaleWhere(now) },
         orderBy: { startsAt: "asc" },
         include: { venue: { select: { name: true, city: true, address: true, timezone: true } }, ticketTypes: { orderBy: { sortOrder: "asc" } } },
       },

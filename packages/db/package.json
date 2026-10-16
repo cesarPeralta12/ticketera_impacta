@@ -16,6 +16,7 @@
     "db:demo": "tsx prisma/demo.ts",
     "db:export-org": "tsx prisma/export-org.ts",
     "db:import-org": "tsx prisma/import-org.ts",
+    "db:accounts": "tsx prisma/create-accounts.ts",
     "db:studio": "prisma studio",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

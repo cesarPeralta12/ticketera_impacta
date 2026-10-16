@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { config } from "dotenv";
-import { MIN_PASSWORD_LENGTH, slugify } from "@ticketera/core";
+import { MIN_PASSWORD_LENGTH, mapItemsOf, slugify } from "@ticketera/core";
 
 config({ path: path.resolve(import.meta.dirname, "../../../.env"), quiet: true });
 
@@ -22,6 +22,8 @@ type Exported = {
     address: string | null;
     city: string | null;
     timezone: string;
+    /** Plano del boliche (archivos viejos no lo traen). */
+    mapItems?: unknown;
     sections: {
       name: string;
       seatingMode: "GENERAL_ADMISSION" | "RESERVED";
@@ -47,6 +49,8 @@ type Exported = {
       startsAt: string;
       endsAt: string | null;
       doorsOpenAt: string | null;
+      /** Archivos viejos no la traen. */
+      arrivalAt?: string | null;
       salesStartAt: string | null;
       salesEndAt: string | null;
       queueEnabled: boolean;
@@ -108,7 +112,10 @@ async function main() {
       const sectionIds = new Map<string, string>(); // "recinto/sección" → id
       const venueIds = new Map<string, string>();
       for (const v of data.venues) {
-        const venue = await tx.venue.create({ data: { organizationId: org.id, name: v.name, address: v.address, city: v.city, timezone: v.timezone } });
+        const mapItems = mapItemsOf(v.mapItems);
+        const venue = await tx.venue.create({
+          data: { organizationId: org.id, name: v.name, address: v.address, city: v.city, timezone: v.timezone, mapItems: mapItems.length ? mapItems : undefined },
+        });
         venueIds.set(v.name, venue.id);
         for (const s of v.sections) {
           const section = await tx.section.create({
@@ -160,6 +167,7 @@ async function main() {
               startsAt: new Date(s.startsAt),
               endsAt: date(s.endsAt),
               doorsOpenAt: date(s.doorsOpenAt),
+              arrivalAt: date(s.arrivalAt ?? null),
               salesStartAt: date(s.salesStartAt),
               salesEndAt: date(s.salesEndAt),
               queueEnabled: s.queueEnabled,

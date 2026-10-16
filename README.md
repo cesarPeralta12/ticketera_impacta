@@ -112,6 +112,19 @@ cambiar (eventos, noches, precios, recintos, promociones, cuentas) es solo de Im
 20. **Armar un boliche** (panel): evento con categoría *Boliche* → una noche → en sus precios, la caja
     *Boliche* (mesa, personas, consumo incluido, válida hasta) → en el evento, **Repetir noches** (días que
     abre y semanas). En la puerta, pasada la hora de la free ya no entra (también en la app móvil).
+21. **Plano del boliche** (panel como Impacta, entrando al boliche con "Entrar" → *Recintos* → su local):
+    agrega escenario, barra, DJ, entrada, baños o textos y arrástralos (la esquina cambia el tamaño); crea un
+    grupo de lounges ("Lounges VIP") y toca el plano donde va cada uno: cada círculo es un lounge numerado.
+    *Guardar plano*. Luego, en los precios de la noche, elige ese grupo como sección y marca "Es una mesa o
+    lounge": el comprador elige su lounge en el mapa y recibe un QR por persona. Un lounge vendido se puede
+    mover, no quitar. Boletería y *En vivo* muestran el mismo plano.
+22. **Horarios y venta de una función** (panel → evento → una noche → *Horarios y venta*): día y horas del reloj
+    del recinto (abren las puertas, empieza, termina, llegada recomendada); "termina 04:00" se entiende al día
+    siguiente. La venta online abre al publicar o en una fecha, y cierra cuando empieza, unas horas antes o en una
+    fecha (en boliches, también durante la noche). Abajo se ve la línea de tiempo y lo que verá el comprador.
+23. **Nueva noche** (evento de boliche): copia una noche con sus precios a otro día con un clic. En cualquier
+    función, *Duplicar*. El panel del evento muestra a la derecha lo que falta para publicar, con un enlace a cada
+    cosa.
 
 ## Comandos
 
@@ -288,7 +301,7 @@ SEED_ALLOW=si SEED_PASSWORD='una-contraseña-propia' npm run db:demo -w @tickete
 
 ### Pasar un organizador de tu PC al servidor
 
-Exporta la estructura de un organizador (recintos con su mapa, eventos, noches, precios, mesas y promociones; **sin
+Exporta la estructura de un organizador (recintos con su mapa y el plano del boliche, eventos, noches, precios, mesas y promociones; **sin
 cuentas, compras ni compradores**, porque el repositorio es público), súbela con el código y cárgala en el servidor:
 
 ```bash
@@ -297,6 +310,20 @@ npm run db:export-org -w @ticketera/db -- <slug>
 
 # En la terminal del servidor (no borra nada; si ya existe, no hace nada). La cuenta es opcional:
 SEED_ALLOW=si IMPORT_ADMIN_EMAIL=correo@del.organizador IMPORT_ADMIN_PASSWORD='temporal-de-8+' npm run db:import-org -w @ticketera/db -- prisma/organizers/<slug>.json
+```
+
+### Crear cuentas de clientes desde la terminal
+
+Lo mismo que "Nuevo usuario de eventos / de boliche" en *Organizadores*, varias de una vez: cada una es un
+organizador propio con su panel de solo lectura (Impacta lo llena con "Entrar"). No borra nada y salta los emails que
+ya existen. La contraseña es temporal: cada cuenta elige la suya al entrar.
+
+```bash
+# 3 de eventos (eventos1@impacta.test …) y 3 de boliche (boliche1@impacta.test …)
+ACCOUNTS_PASSWORD='temporal-de-8+' npm run db:accounts -w @ticketera/db
+
+# Con nombres y emails propios (tipo:nombre:email, separados por ;)
+ACCOUNTS='eventos:Producciones Sur:sur@correo.com;boliche:Club Norte:norte@correo.com' ACCOUNTS_PASSWORD='temporal-de-8+' npm run db:accounts -w @ticketera/db
 ```
 
 ## Problemas comunes

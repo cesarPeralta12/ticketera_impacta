@@ -52,6 +52,8 @@ async function main() {
       address: v.address,
       city: v.city,
       timezone: v.timezone,
+      // Plano del boliche (escenario, barras…); los lounges van como butacas de su sección.
+      mapItems: v.mapItems,
       sections: v.sections.map((s) => ({
         name: s.name,
         seatingMode: s.seatingMode,
@@ -77,6 +79,7 @@ async function main() {
         startsAt: s.startsAt,
         endsAt: s.endsAt,
         doorsOpenAt: s.doorsOpenAt,
+        arrivalAt: s.arrivalAt,
         salesStartAt: s.salesStartAt,
         salesEndAt: s.salesEndAt,
         queueEnabled: s.queueEnabled,

@@ -1,9 +1,11 @@
 "use client";
 
 import type { KeyboardEvent } from "react";
-import { CANVAS_HEIGHT, CANVAS_WIDTH, formatMoney } from "@ticketera/core";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, formatMoney, type MapItem } from "@ticketera/core";
+import { MapDecor } from "./map-decor";
 
-export type PickerSeat = { id: string; label: string; x: number; y: number; taken: boolean };
+/** `short`: el número que va dentro de un lounge en círculo. */
+export type PickerSeat = { id: string; label: string; x: number; y: number; taken: boolean; short?: string };
 export type PickerSection = {
   ticketTypeId: string;
   name: string;
@@ -15,6 +17,8 @@ export type PickerSection = {
   /** Descuento de preventa vigente (%): el unitAmount ya lo incluye. */
   discountPercent?: number | null;
   seats: PickerSeat[];
+  /** Lounges o mesas en círculo: cada "butaca" es una mesa y se dibuja más grande, con su número. */
+  table?: { radius: number } | null;
 };
 
 /**
@@ -25,10 +29,13 @@ export function SeatPicker({
   sections,
   selected,
   onToggle,
+  items,
 }: {
   sections: PickerSection[];
   selected: Set<string>;
   onToggle: (ticketTypeId: string, seatId: string) => void;
+  /** Plano del boliche (escenario, barras…). */
+  items?: MapItem[];
 }) {
   const labels = sections.map((s) => {
     const xs = s.seats.map((seat) => seat.x);
@@ -59,10 +66,7 @@ export function SeatPicker({
         role="group"
         aria-label="Mapa de butacas"
       >
-        <rect x={CANVAS_WIDTH / 2 - 160} y={18} width={320} height={16} rx={8} fill="#e1dfd7" />
-        <text x={CANVAS_WIDTH / 2} y={56} textAnchor="middle" fontSize="11" letterSpacing="4" fill="#9a9c92">
-          ESCENARIO
-        </text>
+        <MapDecor items={items} />
         {labels.map((l) => (
           <g key={l.name}>
             <text x={l.x} y={l.y} textAnchor="middle" fontSize="15" fontWeight="700" fill={l.color}>
@@ -76,15 +80,26 @@ export function SeatPicker({
         {sections.map((section) =>
           section.seats.map((seat) => {
             const isSelected = selected.has(seat.id);
+            const r = section.table ? section.table.radius : 7;
+            const number = section.table && seat.short ? (
+              <text x={seat.x} y={seat.y + 5} textAnchor="middle" fontSize="13" fontWeight="800" fill={isSelected ? "#ffffff" : "#14181b"} pointerEvents="none">
+                {seat.short}
+              </text>
+            ) : null;
             if (seat.taken) {
-              return <circle key={seat.id} cx={seat.x} cy={seat.y} r={7} fill="#d4d2c9" aria-hidden />;
+              return (
+                <g key={seat.id} aria-hidden>
+                  <circle cx={seat.x} cy={seat.y} r={r} fill="#d4d2c9" />
+                  {number}
+                </g>
+              );
             }
             return (
+              <g key={seat.id}>
               <circle
-                key={seat.id}
                 cx={seat.x}
                 cy={seat.y}
-                r={isSelected ? 9 : 7}
+                r={isSelected ? r + 2 : r}
                 fill={isSelected ? "#14181b" : "#ffffff"}
                 stroke={isSelected ? "#14181b" : section.color}
                 strokeWidth={2}
@@ -98,6 +113,8 @@ export function SeatPicker({
               >
                 <title>{`${section.name} · ${seat.label}`}</title>
               </circle>
+              {number}
+              </g>
             );
           }),
         )}

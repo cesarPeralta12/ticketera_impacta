@@ -3,7 +3,20 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { MAX_ROWS, MAX_SEATS_PER_ROW, computeSeatPositions, parseZoneLayout, type SectionShape, type ZoneShape } from "@ticketera/core";
+import {
+  MAX_ROWS,
+  MAX_SEATS_PER_ROW,
+  TABLE_RADIUS,
+  computeSeatPositions,
+  isTablesLayout,
+  parseMapItems,
+  parseTables,
+  parseZoneLayout,
+  tableName,
+  type PlacedTable,
+  type SectionShape,
+  type ZoneShape,
+} from "@ticketera/core";
 import { Prisma, prisma } from "@ticketera/db";
 import { formObject, intField, zodErrors, type FormState } from "@/lib/forms";
 import { requireEditor } from "@/lib/session";
@@ -330,3 +343,108 @@ export async function deleteAccessPointAction(_prev: FormState, formData: FormDa
   revalidatePath(`/recintos/${gate.venueId}`);
   return { ok: true };
 }
+
+type PlanGroup = { sectionId?: string; name: string; color: string; prefix: string; tables: PlacedTable[] };
+
+/** Lee y valida el plano que manda el editor de boliche. */
+function parsePlan(raw: string): { ok: true; items: NonNullable<ReturnType<typeof parseMapItems>>; groups: PlanGroup[] } | { ok: false; error: string } {
+  let plan: { items?: unknown; groups?: unknown };
+  try {
+    plan = JSON.parse(raw) as typeof plan;
+  } catch {
+    return { ok: false, error: "El plano no es válido." };
+  }
+  const items = parseMapItems(plan.items ?? []);
+  if (!items) return { ok: false, error: "Algún elemento del plano no es válido." };
+  if (!Array.isArray(plan.groups) || plan.groups.length > 20) return { ok: false, error: "Los grupos de lounges no son válidos." };
+  const groups: PlanGroup[] = [];
+  for (const g of plan.groups as Record<string, unknown>[]) {
+    const name = String(g.name ?? "").trim();
+    const color = String(g.color ?? "");
+    const prefix = String(g.prefix ?? "").trim().slice(0, 20) || "Lounge";
+    if (name.length < 2 || name.length > 60) return { ok: false, error: "Cada grupo de lounges necesita un nombre (ej. Lounges VIP)." };
+    if (!/^#[0-9a-fA-F]{6}$/.test(color)) return { ok: false, error: `Color inválido en "${name}".` };
+    const tables = parseTables(g.tables, TABLE_RADIUS);
+    if (!tables.ok) return { ok: false, error: `${name}: ${tables.error}` };
+    groups.push({ ...(typeof g.sectionId === "string" && g.sectionId ? { sectionId: g.sectionId } : {}), name, color, prefix, tables: tables.tables });
+  }
+  if (new Set(groups.map((g) => g.name.toLowerCase())).size !== groups.length) return { ok: false, error: "Dos grupos de lounges tienen el mismo nombre." };
+  return { ok: true, items, groups };
+}
+
+/**
+ * Guarda el plano de un boliche: los elementos (escenario, barras, DJ…) y los grupos de lounges en círculo.
+ * Cada grupo es una sección numerada cuyas "butacas" son los lounges (el comprador elige el suyo en el mapa).
+ * Un lounge con ventas o reservas se puede mover pero no quitar; el cupo de sus precios es la cantidad de lounges.
+ */
+export async function saveClubPlanAction(venueId: string, planJson: string): Promise<FormState> {
+  const staff = await requireEditor();
+  const venue = await ownedVenue(staff.organization.id, venueId);
+  if (!venue) return { error: "Recinto no encontrado." };
+  const plan = parsePlan(planJson);
+  if (!plan.ok) return { error: plan.error };
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.venue.update({ where: { id: venue.id }, data: { mapItems: plan.items } });
+      for (const group of plan.groups) {
+        const layout = { type: "tables" as const, radius: TABLE_RADIUS, prefix: group.prefix };
+        const seatData = (t: PlacedTable) => ({ row: "L", number: String(t.number), label: tableName(group.prefix, t.number), x: t.x, y: t.y });
+
+        if (!group.sectionId) {
+          await tx.section.create({
+            data: {
+              venueId: venue.id,
+              name: group.name,
+              color: group.color,
+              seatingMode: "RESERVED",
+              capacity: group.tables.length,
+              layout,
+              sortOrder: await tx.section.count({ where: { venueId: venue.id } }),
+              seats: { createMany: { data: group.tables.map(seatData) } },
+            },
+          });
+          continue;
+        }
+
+        const section = await tx.section.findFirst({ where: { id: group.sectionId, venueId: venue.id }, include: { seats: { include: { _count: { select: { orderItems: true } } } } } });
+        if (!section || !isTablesLayout(section.layout)) throw new PlanError(`El grupo "${group.name}" ya no existe: recarga la página.`);
+        const kept = new Set(group.tables.flatMap((t) => (t.id ? [t.id] : [])));
+        const removed = section.seats.filter((seat) => !kept.has(seat.id));
+        const sold = removed.find((seat) => seat._count.orderItems > 0);
+        if (sold) throw new PlanError(`${sold.label} ya tiene ventas o reservas: se puede mover, pero no quitar.`);
+        if (removed.length) await tx.seat.deleteMany({ where: { id: { in: removed.map((seat) => seat.id) } } });
+        const existing = new Map(section.seats.map((seat) => [seat.id, seat]));
+        for (const t of group.tables) {
+          if (t.id && existing.has(t.id)) {
+            // El número de un lounge no cambia (sus entradas lo nombran así); se mueve y toma el nombre del grupo.
+            const seat = existing.get(t.id)!;
+            await tx.seat.update({ where: { id: seat.id }, data: { x: t.x, y: t.y, label: tableName(group.prefix, seat.number) } });
+          } else {
+            await tx.seat.create({ data: { sectionId: section.id, ...seatData(t) } });
+          }
+        }
+        await tx.section.update({ where: { id: section.id }, data: { name: group.name, color: group.color, layout, capacity: group.tables.length } });
+        // En una sección numerada el cupo de cada precio es su cantidad de lugares (aquí, de lounges).
+        await tx.ticketType.updateMany({ where: { sectionId: section.id }, data: { capacity: group.tables.length } });
+      }
+    });
+  } catch (error) {
+    if (error instanceof PlanError) return { error: error.message };
+    if (isUnique(error)) return { error: "Ya existe una sección con ese nombre o dos lounges con el mismo número." };
+    throw error;
+  }
+  await logAudit({
+    actorType: "staff",
+    actorId: staff.id,
+    action: "venue.plan",
+    entity: "Venue",
+    entityId: venue.id,
+    data: { items: plan.items.length, groups: plan.groups.map((g) => ({ name: g.name, tables: g.tables.length })) },
+  });
+  revalidatePath(`/recintos/${venue.id}`);
+  const tables = plan.groups.reduce((n, g) => n + g.tables.length, 0);
+  return { ok: true, message: `Plano guardado: ${plan.items.length} elemento(s) y ${tables} lounge(s).` };
+}
+
+class PlanError extends Error {}

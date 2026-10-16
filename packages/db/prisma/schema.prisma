@@ -265,6 +265,8 @@ model Venue {
   city           String?
   /// Zona horaria IANA. Bolivia: "America/La_Paz".
   timezone       String   @default("America/La_Paz")
+  /// Plano de un boliche: escenario, barras, DJ, entrada, baños y textos (no se venden). Ver club-map.ts.
+  mapItems       Json?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -389,8 +391,13 @@ model EventSession {
   eventId                String
   venueId                String
   startsAt               DateTime
+  /// Hora estimada de cierre (de madrugada = día siguiente). Sin ella, la boletería vende hasta 4 h después del inicio.
   endsAt                 DateTime?
   doorsOpenAt            DateTime?
+  /// Hora de llegada recomendada que ve el comprador; vacía = la de las puertas.
+  arrivalAt              DateTime?
+  /// Ventana de venta online de toda la función: vacía = desde que se publica y hasta que empieza.
+  /// El cierre puede ser durante el evento (boliches), como máximo hasta que termina.
   salesStartAt           DateTime?
   salesEndAt             DateTime?
   cancelledAt            DateTime?

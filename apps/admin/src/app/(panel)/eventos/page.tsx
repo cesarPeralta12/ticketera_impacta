@@ -60,7 +60,19 @@ export default async function EventsPage() {
       </div>
 
       {events.length === 0 ? (
-        <div className="card border-dashed p-10 text-center text-[var(--ink-muted)]">Todavía no hay eventos.</div>
+        <div className="card border-dashed p-8 text-center">
+          <p className="font-medium">{isNightlife(staff) ? "Todavía no hay noches." : "Todavía no hay eventos."}</p>
+          <p className="mx-auto mt-1 max-w-md text-sm text-[var(--ink-muted)]">
+            {isNightlife(staff)
+              ? "Se arma una vez: el boliche con su plano (Recintos), una noche con sus precios, y después se repite cada semana."
+              : "El orden es: el recinto (una sola vez), el evento, sus fechas con precios y publicar."}
+          </p>
+          {!staff.readOnly && (
+            <Link href="/eventos/nuevo" className="btn btn-primary mt-4 inline-flex">
+              {isNightlife(staff) ? "Crear el primero" : "Crear el primer evento"}
+            </Link>
+          )}
+        </div>
       ) : (
         <ul className="flex flex-col gap-2.5">
           {events.map((event) => {

@@ -76,9 +76,9 @@ export function peopleIn(type: { kind?: string; peoplePerUnit?: number | null })
 
 /**
  * La mesa de una entrada, o null si no es de una mesa: "Mesa VIP N° 4" (zona sin butacas, número asignado) o
- * "VIP · Mesa A-3" (elegida en el mapa).
+ * "VIP · Lounge 3" (elegida en el mapa: el nombre de su lugar).
  */
 export function tableLabel(typeName: string, tableNumber: number | null | undefined, seatLabel?: string | null): string | null {
-  if (seatLabel) return `${typeName} · Mesa ${seatLabel}`;
+  if (seatLabel) return `${typeName} · ${seatLabel}`;
   return tableNumber ? `${typeName} N° ${tableNumber}` : null;
 }

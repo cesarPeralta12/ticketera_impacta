@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { MAX_TICKETS_PER_ORDER, currentPrice, discountLabel, formatDateTime, saleState } from "@ticketera/core";
+import { MAX_TICKETS_PER_ORDER, currentPrice, discountLabel, formatDateTime, saleState, isTablesLayout, mapItemsOf } from "@ticketera/core";
 import { getSessionAvailability, getTakenSeatIds, prisma, salesCutoff } from "@ticketera/db";
 import { ROLES, requireStaff } from "@/lib/session";
 import { PosForm, type PosGeneralType, type PosSeatedType } from "./pos-form";
@@ -66,10 +66,11 @@ export default async function PosSessionPage({ params }: Props) {
       currency: t.currency,
       presale: t.presale,
       maxPerOrder: Math.min(t.maxPerOrder, MAX_TICKETS_PER_ORDER),
+      table: isTablesLayout(t.section!.layout) ? { radius: t.section!.layout.radius } : null,
       seats: t.section!.seats
         .toSorted((a, b) => a.row.localeCompare(b.row) || Number(a.number) - Number(b.number) || a.number.localeCompare(b.number))
         .flatMap((s) =>
-          s.x !== null && s.y !== null ? [{ id: s.id, label: s.label, x: s.x, y: s.y, taken: taken.has(s.id) }] : [],
+          s.x !== null && s.y !== null ? [{ id: s.id, label: s.label, x: s.x, y: s.y, taken: taken.has(s.id), short: s.number }] : [],
         ),
     }))
     .filter((t) => t.seats.length > 0);
@@ -92,7 +93,7 @@ export default async function PosSessionPage({ params }: Props) {
           Cuenta de solo lectura: ves lo que queda a la venta, pero las ventas en boletería las hace el cajero.
         </p>
       ) : (
-        <PosForm sessionId={session.id} general={general} seated={seated} />
+        <PosForm sessionId={session.id} general={general} seated={seated} items={mapItemsOf(session.venue.mapItems)} />
       )}
     </div>
   );

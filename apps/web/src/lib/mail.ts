@@ -20,8 +20,11 @@ import {
 
 const baseUrl = () => requireEnv("WEB_URL").replace(/\/$/, "");
 
-/** Envía (o reenvía) el correo para confirmar el email. Devuelve false si todavía hay que esperar o ya está confirmado. */
-export async function sendVerificationEmail(customerId: string): Promise<"sent" | "wait" | "verified" | "failed"> {
+/**
+ * Envía (o reenvía) el correo para confirmar el email. `next`: a dónde vuelve después de confirmar (por ejemplo, la
+ * compra que estaba haciendo); solo rutas del sitio.
+ */
+export async function sendVerificationEmail(customerId: string, next?: string): Promise<"sent" | "wait" | "verified" | "failed"> {
   const issued = await requestCustomerEmailVerification(customerId);
   if (issued.status === "ALREADY_VERIFIED") return "verified";
   if (issued.status !== "SENT") return "wait";
@@ -29,7 +32,7 @@ export async function sendVerificationEmail(customerId: string): Promise<"sent" 
     verifyEmailMessage({
       to: issued.email,
       name: issued.name,
-      link: `${baseUrl()}/cuenta/verificar?token=${issued.token}`,
+      link: `${baseUrl()}/cuenta/verificar?token=${issued.token}${next && next !== "/" && next.startsWith("/") && !next.startsWith("//") ? `&next=${encodeURIComponent(next)}` : ""}`,
       hours: VERIFY_EMAIL_HOURS,
     }),
   );

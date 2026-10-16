@@ -2,7 +2,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { CATEGORY_COLOR, CATEGORY_LABEL, formatClock, formatDate, formatDateTime, formatMoney, currentPrice, saleState } from "@ticketera/core";
+import {
+  CATEGORY_COLOR,
+  CATEGORY_LABEL,
+  currentPrice,
+  describeSessionTimes,
+  formatClock,
+  formatDateTime,
+  formatMoney,
+  onlineSalesEnd,
+  saleState,
+} from "@ticketera/core";
 import { getSessionAvailability } from "@ticketera/db";
 import { ClubOfferView } from "@/components/club-offer";
 import { EventImage } from "@/components/event-image";
@@ -27,7 +37,7 @@ export default async function EventPage({ params }: Props) {
   const now = new Date();
   const sessions = await Promise.all(
     event.sessions
-      .filter((s) => s.startsAt > now)
+      .filter((s) => onlineSalesEnd(s) > now)
       .map(async (s) => {
         const remaining = await getSessionAvailability(s.id, now);
         // Solo lo que se vende ahora: una preventa vencida no cuenta, una general que empieza después tampoco.
@@ -118,19 +128,15 @@ export default async function EventPage({ params }: Props) {
             <ul className="flex flex-col gap-3">
               {sessions.map((s) => {
                 const soldOut = s.left <= 0;
-                const time = new Intl.DateTimeFormat("es-BO", {
-                  timeZone: s.venue.timezone,
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  hourCycle: "h23",
-                }).format(s.startsAt);
+                const when = describeSessionTimes(s, s.venue.timezone, event.category);
                 const body = (
                   <>
                     <div>
-                      <p className="font-semibold capitalize">{formatDate(s.startsAt, s.venue.timezone)}</p>
+                      <p className="font-semibold first-letter:uppercase">{when.day}</p>
                       <p className="text-sm text-[var(--ink-dim)]">
-                        {time} hs · {s.venue.name}
+                        {[when.doors, when.start].filter(Boolean).join(" · ")} · {s.venue.name}
                       </p>
+                      {when.end && <p className="text-xs text-[var(--ink-dim)]">{when.end}</p>}
                       <p className="mt-1 text-xs">
                         {s.freeUntil && (
                           <span className="mr-2 font-semibold text-[#35C48F]">Free hasta {formatClock(s.freeUntil, s.venue.timezone)} ·</span>

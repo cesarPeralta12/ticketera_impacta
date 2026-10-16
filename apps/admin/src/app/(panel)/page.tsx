@@ -3,7 +3,7 @@ import { connection } from "next/server";
 import { formatDateTime, formatMoney, sellableCapacity } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { GlobalDashboard } from "@/components/global-dashboard";
-import { ROLES, isGlobalView, requireStaff } from "@/lib/session";
+import { ROLES, isGlobalView, isNightlife, requireStaff } from "@/lib/session";
 
 export default async function DashboardPage() {
   await connection();
@@ -58,9 +58,14 @@ export default async function DashboardPage() {
       </dl>
 
       <section className="card">
-        <h2 className="eyebrow border-b border-[var(--border)] px-5 py-3">Próximas funciones</h2>
+        <h2 className="eyebrow border-b border-[var(--border)] px-5 py-3">{isNightlife(staff) ? "Próximas noches" : "Próximas funciones"}</h2>
         {nextSessions.length === 0 ? (
-          <p className="px-5 py-4 text-sm text-[var(--ink-muted)]">No hay funciones programadas.</p>
+          <p className="px-5 py-4 text-sm text-[var(--ink-muted)]">
+            {isNightlife(staff) ? "No hay noches programadas." : "No hay funciones programadas."}{" "}
+            <Link href="/eventos" className="text-[var(--accent)] hover:underline">
+              Ir a eventos
+            </Link>
+          </p>
         ) : (
           <ul className="divide-y divide-[var(--border)]">
             {nextSessions.map((session) => {

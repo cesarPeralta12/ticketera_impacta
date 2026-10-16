@@ -3,11 +3,11 @@
  * barra, entradas gratis por horario (una por persona, vencen en puerta) y noches que se repiten.
  */
 import { afterAll, describe, expect, it } from "vitest";
-import { localWeekday, randomCode } from "@ticketera/core";
+import { localWeekday, randomCode, utcToZonedInput } from "@ticketera/core";
 import { prisma } from "../src/client";
 import { scanTicket } from "../src/operations/access";
 import { getDoorDownload } from "../src/operations/mobile";
-import { getConsumption, redeemConsumption, repeatWeeklyNights } from "../src/operations/nightlife";
+import { duplicateSession, getConsumption, redeemConsumption, repeatWeeklyNights } from "../src/operations/nightlife";
 import { createPendingOrder } from "../src/operations/orders";
 import { applyPaymentUpdate, startPayment } from "../src/operations/payments";
 
@@ -269,6 +269,45 @@ describe("repetir noches", () => {
   });
 });
 
+describe("nueva noche", () => {
+  it("copia una noche a otro día a la misma hora, con sus precios y horarios corridos", async () => {
+    const { session, type } = await club({ startsInDays: 2 });
+    await prisma.eventSession.update({
+      where: { id: session.id },
+      data: { doorsOpenAt: new Date(session.startsAt.getTime() - 3_600_000), arrivalAt: new Date(session.startsAt.getTime() - 1_800_000), endsAt: new Date(session.startsAt.getTime() + 5 * 3_600_000) },
+    });
+    const staff = await bartender();
+    const date = utcToZonedInput(new Date(session.startsAt.getTime() + 3 * 86_400_000), TZ).slice(0, 10);
+
+    const copy = await duplicateSession({ templateSessionId: session.id, date, staffId: staff.id });
+    const night = await prisma.eventSession.findUniqueOrThrow({ where: { id: copy.id }, include: { ticketTypes: true } });
+    const delta = 3 * 86_400_000;
+    expect(night.startsAt.getTime()).toBe(session.startsAt.getTime() + delta);
+    expect(night.arrivalAt!.getTime()).toBe(session.startsAt.getTime() - 1_800_000 + delta);
+    expect(night.endsAt!.getTime()).toBe(session.startsAt.getTime() + 5 * 3_600_000 + delta);
+    expect(night.ticketTypes).toHaveLength(4);
+    const free = night.ticketTypes.find((t) => t.name === "Free")!;
+    expect(free.entryUntil!.getTime()).toBe(type("Free").entryUntil!.getTime() + delta);
+
+    await expect(duplicateSession({ templateSessionId: session.id, date, staffId: staff.id })).rejects.toThrow(/Ya hay una función/);
+    await expect(duplicateSession({ templateSessionId: session.id, date: "2020-01-01", staffId: staff.id })).rejects.toThrow(/ya pasó/);
+  });
+});
+
+describe("venta online durante la noche", () => {
+  it("con cierre de venta después del inicio se sigue vendiendo; sin él, no", async () => {
+    const { session, type } = await club({ startsInDays: 1 });
+    const started = new Date(Date.now() - 3_600_000);
+    await prisma.eventSession.update({ where: { id: session.id }, data: { startsAt: started, endsAt: new Date(Date.now() + 4 * 3_600_000) } });
+    const buyer = await person("Tarde");
+    await expect(buy(buyer, session.id, type("General").id, 1)).rejects.toThrow(/no está a la venta/);
+
+    await prisma.eventSession.update({ where: { id: session.id }, data: { salesEndAt: new Date(Date.now() + 3_600_000) } });
+    const { tickets } = await buy(buyer, session.id, type("General").id, 1);
+    expect(tickets).toHaveLength(1);
+  });
+});
+
 describe("mesas elegidas en el mapa", () => {
   /** Boliche con un "lounge" de 4 mesas dibujadas como butacas, cada una para 2 personas. */
   async function lounge() {
@@ -354,7 +393,7 @@ describe("mesas elegidas en el mapa", () => {
 
     const second = tickets.find((t) => !t.seatId && t.credit?.seat?.label === "A-3")!;
     const outcome = await scanTicket({ sessionId: session.id, raw: second.code });
-    expect(outcome).toMatchObject({ result: "ACCEPTED", ticket: { seat: "VIP · Mesa A-3" } });
+    expect(outcome).toMatchObject({ result: "ACCEPTED", ticket: { seat: "VIP · A-3" } });
     const seen = await getConsumption(second.code, session.id);
     expect(seen.ok && seen.credit.seat?.label).toBe("A-3");
   });

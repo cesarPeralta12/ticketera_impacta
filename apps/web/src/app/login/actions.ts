@@ -69,7 +69,7 @@ export async function registerAction(_prev: AuthState, formData: FormData): Prom
   }
 
   // Confirmar el correo es obligatorio para comprar: se envía el enlace al crear la cuenta.
-  await sendVerificationEmail(result.customer.id);
+  await sendVerificationEmail(result.customer.id, safeNext(formData.get("next")));
 
   try {
     await signIn("credentials", { email, password, redirectTo: safeNext(formData.get("next")) });
