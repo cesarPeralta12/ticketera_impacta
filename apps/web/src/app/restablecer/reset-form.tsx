@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { PasswordInput } from "@/components/password-input";
 import { resetPasswordAction } from "./actions";
 
 export function ResetForm({ token, minLength }: { token: string; minLength: number }) {
@@ -10,11 +11,11 @@ export function ResetForm({ token, minLength }: { token: string; minLength: numb
       <input type="hidden" name="token" value={token} />
       <label className="flex flex-col gap-1.5 text-sm text-[var(--ink-muted)]">
         Contraseña nueva (mínimo {minLength})
-        <input type="password" name="password" required minLength={minLength} autoComplete="new-password" className="field" />
+        <PasswordInput name="password" required minLength={minLength} autoComplete="new-password" className="field" />
       </label>
       <label className="flex flex-col gap-1.5 text-sm text-[var(--ink-muted)]">
         Repite la contraseña
-        <input type="password" name="repeat" required minLength={minLength} autoComplete="new-password" className="field" />
+        <PasswordInput name="repeat" required minLength={minLength} autoComplete="new-password" className="field" />
       </label>
       {state?.error && (
         <p role="alert" className="text-sm text-[var(--accent-2)]">

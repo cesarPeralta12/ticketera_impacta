@@ -5,6 +5,7 @@ import { MIN_PASSWORD_LENGTH } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { changePasswordAction, signOutEverywhereAction } from "@/lib/actions/account";
 import { HOME_BY_ROLE, ROLES, requireStaff } from "@/lib/session";
+import { PasswordInput } from "@/components/password-input";
 
 export const metadata: Metadata = { title: "Cambiar contraseña" };
 
@@ -29,13 +30,12 @@ export default async function ChangePasswordPage() {
       <ActionForm action={changePasswordAction} className="card flex flex-col gap-4 p-6">
         <label className="label">
           Contraseña actual {staff.mustChangePassword && "(la temporal)"}
-          <input name="current" type="password" required autoComplete="current-password" className="field" />
+          <PasswordInput name="current" required autoComplete="current-password" className="field" />
         </label>
         <label className="label">
           Nueva contraseña
-          <input
+          <PasswordInput
             name="next"
-            type="password"
             required
             minLength={MIN_PASSWORD_LENGTH}
             autoComplete="new-password"
@@ -47,7 +47,7 @@ export default async function ChangePasswordPage() {
         </label>
         <label className="label">
           Repite la nueva contraseña
-          <input name="confirm" type="password" required autoComplete="new-password" className="field" />
+          <PasswordInput name="confirm" required autoComplete="new-password" className="field" />
         </label>
         <button type="submit" className="btn btn-primary">
           Guardar contraseña

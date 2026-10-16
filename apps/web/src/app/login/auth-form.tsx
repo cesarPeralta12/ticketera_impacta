@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { MIN_PASSWORD_LENGTH } from "@ticketera/core";
+import { PasswordInput } from "@/components/password-input";
 import { loginAction, registerAction } from "./actions";
 
 /** Formularios de ingreso y registro (prototipo del compañero, con su estilo). */
@@ -36,8 +37,7 @@ export function AuthForm({ mode, next }: { mode: "login" | "register"; next?: st
       )}
       <label className="flex flex-col gap-1.5 text-sm text-[var(--ink-muted)]">
         Contraseña
-        <input
-          type="password"
+        <PasswordInput
           name="password"
           required
           minLength={mode === "register" ? MIN_PASSWORD_LENGTH : undefined}

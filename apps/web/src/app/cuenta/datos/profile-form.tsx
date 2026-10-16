@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { PasswordInput } from "@/components/password-input";
 import { changePasswordAction, saveProfileAction } from "./actions";
 
 export function ProfileForm({
@@ -49,15 +50,15 @@ export function PasswordForm({ minLength }: { minLength: number }) {
     <form action={formAction} className="flex flex-col gap-4">
       <label className="flex flex-col gap-1.5 text-sm text-[var(--ink-muted)]">
         Contraseña actual
-        <input type="password" name="current" required autoComplete="current-password" className="field" />
+        <PasswordInput name="current" required autoComplete="current-password" className="field" />
       </label>
       <label className="flex flex-col gap-1.5 text-sm text-[var(--ink-muted)]">
         Contraseña nueva (mínimo {minLength})
-        <input type="password" name="next" required minLength={minLength} autoComplete="new-password" className="field" />
+        <PasswordInput name="next" required minLength={minLength} autoComplete="new-password" className="field" />
       </label>
       <label className="flex flex-col gap-1.5 text-sm text-[var(--ink-muted)]">
         Repite la contraseña nueva
-        <input type="password" name="repeat" required minLength={minLength} autoComplete="new-password" className="field" />
+        <PasswordInput name="repeat" required minLength={minLength} autoComplete="new-password" className="field" />
       </label>
       {state?.error && (
         <p role="alert" className="text-sm text-[var(--accent-2)]">
