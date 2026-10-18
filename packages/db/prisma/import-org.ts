@@ -51,6 +51,7 @@ type Exported = {
     status: string;
     mode: "TICKETING" | "GUEST_LIST";
     transfersEnabled: boolean;
+    small?: boolean;
     minAge?: number | null;
     requiredDocument?: string | null;
     dressCode?: string | null;
@@ -193,6 +194,7 @@ async function main() {
             publishedAt: e.status === "PUBLISHED" ? new Date() : null,
             mode: e.mode,
             transfersEnabled: e.transfersEnabled,
+            small: e.small ?? false,
             minAge: e.minAge ?? null,
             requiredDocument: e.requiredDocument ?? null,
             dressCode: e.dressCode ?? null,

@@ -26,9 +26,9 @@ export type EventCard = {
 /**
  * Eventos publicados con venta y al menos una función futura, ordenados por la próxima.
  * Los eventos con lista de invitados no se publican en el sitio: se entra solo con invitación.
- * `search` filtra por título, recinto o ciudad.
+ * `search` filtra por título, recinto o ciudad; `small`, solo los eventos pequeños.
  */
-export async function listPublishedEvents(category?: EventCategory, search?: string): Promise<EventCard[]> {
+export async function listPublishedEvents(category?: EventCategory, search?: string, options: { small?: boolean } = {}): Promise<EventCard[]> {
   const now = new Date();
   const term = search?.trim();
   const events = await prisma.event.findMany({
@@ -38,6 +38,7 @@ export async function listPublishedEvents(category?: EventCategory, search?: str
       mode: "TICKETING",
       organization: { status: "ACTIVE" },
       ...(category ? { category } : {}),
+      ...(options.small ? { small: true } : {}),
       ...(term
         ? {
             OR: [

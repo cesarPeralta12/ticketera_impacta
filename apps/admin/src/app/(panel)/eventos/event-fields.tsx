@@ -17,6 +17,7 @@ export function EventFields({
     mode: string;
     clientId: string | null;
     transfersEnabled: boolean;
+    small?: boolean;
     minAge?: number | null;
     requiredDocument?: string | null;
     dressCode?: string | null;
@@ -71,6 +72,15 @@ export function EventFields({
             Permitir que los compradores transfieran sus entradas a otra persona registrada
             <span className="block text-xs font-normal text-[var(--ink-dim)]">
               La entrada recibe un código nuevo y pasa al nombre y carnet de quien la acepta. Máximo 2 transferencias por entrada y hasta 2 horas antes de la función.
+            </span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-sm sm:col-span-2">
+          <input type="checkbox" name="small" defaultChecked={defaults?.small ?? false} className="mt-1 h-4 w-4 accent-[var(--accent)]" />
+          <span>
+            Evento pequeño
+            <span className="block text-xs font-normal text-[var(--ink-dim)]">
+              Peñas, recitales íntimos, obras o fiestas con pocos cupos: además de la portada, aparece en la sección «Eventos pequeños» de la web.
             </span>
           </span>
         </label>

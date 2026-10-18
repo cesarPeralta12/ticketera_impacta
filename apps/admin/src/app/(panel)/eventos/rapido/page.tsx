@@ -35,7 +35,8 @@ export default async function SmallEventPage() {
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Evento pequeño (entradas impresas)</h1>
         <p className="text-sm text-[var(--ink-muted)]">
           Para eventos chicos que se venden en mano. Llenas esto y quedan las entradas numeradas listas para imprimir; el
-          evento queda en borrador (si después quieres venderlo online, lo publicas y le sumas cupo).
+          evento queda en borrador. Si después quieres venderlo online, le sumas cupo y lo publicas: sale en la sección «Eventos
+          pequeños» de la web.
         </p>
       </div>
       {quota?.reached && (

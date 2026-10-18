@@ -105,6 +105,7 @@ export default async function EventsPage() {
                     <div className="flex items-center gap-2.5">
                       <span className="font-medium">{event.title}</span>
                       <span className={`badge ${status.className}`}>{status.text}</span>
+                      {event.small && <span className="badge bg-[var(--accent-soft)] text-[var(--accent)]">Pequeño</span>}
                     </div>
                     <p className="mt-0.5 text-sm text-[var(--ink-muted)]">
                       {CATEGORY_LABEL[event.category]}

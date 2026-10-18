@@ -230,7 +230,7 @@ export async function createSmallEventAction(_prev: FormState, formData: FormDat
   let event;
   try {
     event = await createEventWithinLimit(
-      { organizationId: staff.organization.id, slug: await uniqueEventSlug(title), title, category, mode: "TICKETING", description: form.description?.trim() || null },
+      { organizationId: staff.organization.id, slug: await uniqueEventSlug(title), title, category, mode: "TICKETING", small: true, description: form.description?.trim() || null },
       { ignoreLimit: staff.platform },
     );
   } catch (error) {

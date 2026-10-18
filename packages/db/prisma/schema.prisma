@@ -387,6 +387,8 @@ model Event {
   reviewNote          String?
   /// ¿Los compradores pueden transferir sus entradas a otra persona registrada?
   transfersEnabled    Boolean       @default(true)
+  /// Evento pequeño (peña, recital íntimo, obra chica): aparece también en la sección "Eventos pequeños" de la web.
+  small               Boolean       @default(false)
   /// Condiciones que ve el comprador. Edad mínima nula = todo público.
   minAge              Int?
   requiredDocument    String?

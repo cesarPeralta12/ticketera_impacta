@@ -4,6 +4,20 @@ import { SignOutButton } from "./sign-out-button";
 
 export async function Nav() {
   const session = await auth();
+  // Las secciones del sitio. En el celular van en una segunda fila (con la cuenta no entran en una sola).
+  const sections = (
+    <>
+      <Link href="/" className="text-[var(--ink-muted)] transition-colors hover:text-[var(--ink)]">
+        Eventos
+      </Link>
+      <Link href="/boliches" className="font-semibold text-[#d9a6ff] transition-colors hover:text-[var(--ink)]">
+        Boliches
+      </Link>
+      <Link href="/eventos-pequenos" className="font-semibold text-[#5fe0bd] transition-colors hover:text-[var(--ink)]">
+        Eventos pequeños
+      </Link>
+    </>
+  );
 
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--bg)]/85 backdrop-blur-md">
@@ -12,12 +26,7 @@ export async function Nav() {
           Impacta<span className="text-[var(--accent)]">.</span>
         </Link>
         <nav className="flex items-center gap-3 whitespace-nowrap text-[13px] sm:gap-5 sm:text-sm">
-          <Link href="/" className="hidden text-[var(--ink-muted)] transition-colors hover:text-[var(--ink)] sm:inline">
-            Eventos
-          </Link>
-          <Link href="/boliches" className="font-semibold text-[#d9a6ff] transition-colors hover:text-[var(--ink)]">
-            Boliches
-          </Link>
+          <div className="hidden items-center gap-5 sm:flex">{sections}</div>
           {session?.user ? (
             <>
               <Link href="/mis-entradas" className="text-[var(--ink-muted)] transition-colors hover:text-[var(--ink)]">
@@ -52,6 +61,9 @@ export async function Nav() {
           )}
         </nav>
       </div>
+      <nav aria-label="Secciones" className="flex gap-5 overflow-x-auto whitespace-nowrap px-4 pb-2.5 text-[13px] sm:hidden">
+        {sections}
+      </nav>
     </header>
   );
 }

@@ -58,6 +58,11 @@ const eventSchema = z.object({
     .literal("on")
     .optional()
     .transform((v) => v === "on"),
+  /** Casilla "evento pequeño": sale también en la sección "Eventos pequeños" de la web. */
+  small: z
+    .literal("on")
+    .optional()
+    .transform((v) => v === "on"),
   // Condiciones y contacto (todo opcional; vacío = no se muestra).
   minAge: z.coerce.number().int().refine((n) => (MIN_AGE_OPTIONS as readonly number[]).includes(n), "Edad no válida.").optional(),
   requiredDocument: z.string().max(120).optional(),

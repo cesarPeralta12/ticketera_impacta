@@ -83,6 +83,7 @@ async function main() {
       status: e.status,
       mode: e.mode,
       transfersEnabled: e.transfersEnabled,
+      small: e.small,
       minAge: e.minAge,
       requiredDocument: e.requiredDocument,
       dressCode: e.dressCode,
