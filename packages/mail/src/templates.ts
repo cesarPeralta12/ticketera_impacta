@@ -2,7 +2,7 @@
  * Plantillas de los correos de Impacta. HTML simple con estilos en línea (los clientes de correo no
  * cargan hojas de estilo) y una versión de texto para quien no ve HTML.
  */
-import { formatCode, formatDateTime, type WhenWhere } from "@ticketera/core";
+import { formatCode, formatDateTime, reentryText, type WhenWhere } from "@ticketera/core";
 import type { Email, InlineImage } from "./send";
 
 const esc = (value: string) =>
@@ -81,6 +81,8 @@ export type TicketMail = {
   entrance?: string | null;
   /** QR dinámico: no lleva QR en el correo (una imagen fija no sirve); este enlace abre la entrada en el sitio. */
   dynamicUrl?: string | null;
+  /** Ingresos que permite su tipo (1 = sin reingreso, 0 = sin límite). Sin dato = uno solo. */
+  maxEntries?: number;
 };
 
 /** "Cuándo y dónde" de la función en el correo: horarios, lugar y cómo llegar, condiciones, programa y consultas. */
@@ -164,6 +166,7 @@ export function ticketsMessage(input: {
         images.push({ cid, filename: `entrada-${t.code}.png`, content: t.qrPng, contentType: "image/png" });
         qr = `<img src="cid:${cid}" width="200" height="200" alt="QR de la entrada ${esc(formatCode(t.code))}" style="display:block;margin:12px auto;border:0">`;
       }
+      const reentry = reentryText(t.maxEntries);
       const dynamic = t.dynamicUrl
         ? `<div style="margin:14px 0 6px">${button(t.dynamicUrl, "Abrir mi entrada")}</div>
         <div style="font-size:12px;color:#62655f;line-height:1.5;max-width:340px">Esta entrada es de <strong>QR dinámico</strong>: el QR cambia cada 30 segundos y no sirve una captura. <strong>Ábrela una vez con internet antes de salir</strong> y después funciona aunque no haya señal.</div>`
@@ -173,11 +176,14 @@ export function ticketsMessage(input: {
         <div style="font-size:18px;font-weight:700;margin-top:4px">${esc(t.typeName)}</div>
         ${t.seat ? `<div style="font-size:15px;font-weight:700;margin-top:2px">${esc(t.seat)}</div>` : ""}
         ${t.entrance ? `<div style="font-size:14px;font-weight:700;margin-top:6px;color:#0f8a6b">${esc(t.entrance)}</div>` : ""}
+        ${reentry ? `<div style="font-size:13px;margin-top:4px;color:#62655f">${esc(reentry)}. Al salir, haz leer el QR en la puerta de salida.</div>` : ""}
         ${qr}${dynamic}
         <div style="font-family:Consolas,monospace;font-size:16px;letter-spacing:2px">${esc(formatCode(t.code))}</div>
       </td></tr></table>`;
     })
     .join("");
+  // Si alguna permite reingreso, "un solo ingreso" sería falso: cada tarjeta dice lo suyo.
+  const singleEntry = input.tickets.every((t) => !reentryText(t.maxEntries));
 
   const html = layout(
     `${input.tickets.length} entrada(s) para ${input.eventTitle}`,
@@ -187,7 +193,7 @@ export function ticketsMessage(input: {
      ${input.whenWhere ? whenWhereHtml(input.whenWhere) : ""}
      ${cards}
      <p style="margin:22px 0;text-align:center">${button(input.orderUrl, "Ver mis entradas")}</p>
-     <p style="color:#62655f;font-size:13px;line-height:1.55">Cada entrada vale para <strong>un solo ingreso</strong> y está a tu nombre: lleva tu <strong>carnet de identidad</strong>, que se puede pedir en la puerta. No compartas el QR por redes: quien llegue primero con él entra. El botón de arriba abre siempre la versión actualizada.${input.orderCode ? ` Compra ${esc(input.orderCode)}.` : ""}</p>`,
+     <p style="color:#62655f;font-size:13px;line-height:1.55">${singleEntry ? "Cada entrada vale para <strong>un solo ingreso</strong> y está a tu nombre" : "Cada entrada está a tu nombre"}: lleva tu <strong>carnet de identidad</strong>, que se puede pedir en la puerta. No compartas el QR por redes: quien llegue primero con él entra. El botón de arriba abre siempre la versión actualizada.${input.orderCode ? ` Compra ${esc(input.orderCode)}.` : ""}</p>`,
   );
   const text =
     `¡Listo, ${input.buyerName}! Tus entradas para ${input.eventTitle}\n${when} · ${input.venueName}\n\n` +
@@ -196,10 +202,11 @@ export function ticketsMessage(input: {
       .map(
         (t, i) =>
           `Entrada ${i + 1}: ${t.typeName}${t.seat ? ` · ${t.seat}` : ""} · ${formatCode(t.code)}${t.entrance ? ` · ${t.entrance}` : ""}` +
+          (reentryText(t.maxEntries) ? ` · ${reentryText(t.maxEntries)}` : "") +
           (t.dynamicUrl ? `\n  QR dinámico (cambia cada 30 s): ábrela con internet antes de salir: ${t.dynamicUrl}` : ""),
       )
       .join("\n") +
-    `\n\nVer mis entradas: ${input.orderUrl}\n\nLleva tu carnet de identidad. Cada entrada vale para un solo ingreso.`;
+    `\n\nVer mis entradas: ${input.orderUrl}\n\nLleva tu carnet de identidad.${singleEntry ? " Cada entrada vale para un solo ingreso." : ""}`;
   return { to: input.to, subject, html, text, images };
 }
 

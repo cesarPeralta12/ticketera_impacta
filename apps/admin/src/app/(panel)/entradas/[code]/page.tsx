@@ -119,7 +119,7 @@ export default async function TicketPage({ params }: Props) {
                       {h.movement === "MANUAL" && <span className="block text-xs text-[var(--ink-dim)]">{h.rawCode}</span>}
                     </td>
                     <td className="py-1.5">
-                      {h.accessPoint ? `${h.accessPoint.name} (${DIRECTION_LABEL[h.accessPoint.direction].toLowerCase()})` : "—"}
+                      {h.accessPoint ? gateWithDirection(h.accessPoint.name, DIRECTION_LABEL[h.accessPoint.direction].toLowerCase()) : "—"}
                     </td>
                     <td className="py-1.5">{h.zone?.name ?? "—"}</td>
                     <td className="py-1.5">{h.operator?.name ?? "—"}</td>
@@ -175,4 +175,9 @@ export default async function TicketPage({ params }: Props) {
       )}
     </div>
   );
+}
+
+/** "Puerta principal (entrada)"; sin repetir cuando el nombre ya lo dice ("Salida", no "Salida (salida)"). */
+function gateWithDirection(name: string, direction: string) {
+  return name.toLowerCase().includes(direction) ? name : `${name} (${direction})`;
 }

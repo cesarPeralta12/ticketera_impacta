@@ -379,7 +379,7 @@ export async function getOrderByCode(code: string) {
       promoRedemption: { include: { promoCode: { select: { code: true } } } },
       tickets: {
         include: {
-          ticketType: true,
+          ticketType: { include: { zones: { select: { id: true } } } },
           seat: { include: { section: true } },
           credit: { select: { tableNumber: true, amount: true, spent: true, currency: true, seat: { select: { label: true } } } },
         },

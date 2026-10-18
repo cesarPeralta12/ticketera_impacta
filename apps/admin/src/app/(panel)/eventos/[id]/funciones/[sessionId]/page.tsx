@@ -69,6 +69,7 @@ export default async function SessionPage({ params }: Props) {
         include: {
           sections: { orderBy: { sortOrder: "asc" }, include: { seats: { select: { x: true, y: true, number: true } } } },
           zones: { orderBy: [{ level: "asc" }, { name: "asc" }], select: { id: true, name: true, color: true } },
+          accessPoints: { where: { direction: { not: "IN" } }, select: { id: true } },
         },
       },
       ticketTypes: {
@@ -363,7 +364,9 @@ export default async function SessionPage({ params }: Props) {
                           <button type="submit" className="btn w-fit px-2 py-1 text-xs">
                             Guardar reglas
                           </button>
-                          <p className="text-[var(--ink-dim)]">Para reingresar hace falta una puerta de salida (se configura en el recinto).</p>
+                          {session.venue.accessPoints.length === 0 && (
+                            <p className="text-[var(--ink-dim)]">Para reingresar hace falta una puerta de salida (se configura en el recinto).</p>
+                          )}
                         </ActionForm>
                       </details>
                       {t._count.orderItems === 0 && session.event.mode === "TICKETING" && (

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 const KEY = "impacta-recorrido-v1";
 
-export type TourStep = { title: string; text: string; href?: string };
+export type TourStep = { title: string; text: string; href?: string; target?: string };
 
 /**
  * Recorrido guiado la primera vez que alguien entra al panel (en este navegador): unos pasos que señalan el menú.
@@ -27,15 +27,16 @@ export function GuidedTour({ steps }: { steps: TourStep[] }) {
     return () => window.removeEventListener("impacta:recorrido", replay);
   }, []);
 
-  // Resalta en el menú la sección del paso.
-  const href = step === null ? undefined : steps[step]?.href;
+  // Resalta en el menú la sección del paso (o el elemento que el paso señala, como el buscador).
+  const current = step === null ? undefined : steps[step];
+  const selector = current?.target ?? (current?.href ? `aside a[href="${current.href}"]` : undefined);
   useEffect(() => {
-    if (!href) return;
-    const link = document.querySelector<HTMLElement>(`aside a[href="${href}"]`);
+    if (!selector) return;
+    const link = document.querySelector<HTMLElement>(selector);
     link?.classList.add("tour-target");
     link?.scrollIntoView({ block: "nearest" });
     return () => link?.classList.remove("tour-target");
-  }, [href]);
+  }, [selector]);
 
   function close() {
     try {
@@ -46,8 +47,7 @@ export function GuidedTour({ steps }: { steps: TourStep[] }) {
     setStep(null);
   }
 
-  if (step === null) return null;
-  const current = steps[step]!;
+  if (step === null || !current) return null;
   const last = step === steps.length - 1;
   return (
     <div role="dialog" aria-modal="false" aria-labelledby="recorrido-titulo" className="fixed bottom-4 right-4 z-50 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-2xl print:hidden">

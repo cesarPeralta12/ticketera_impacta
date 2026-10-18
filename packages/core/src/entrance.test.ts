@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { entranceFor, entranceLabel, entranceText } from "./entrance";
+import { entranceFor, entranceLabel, entranceText, reentryText } from "./entrance";
 
 const norte = { name: "Acceso norte", sectionIds: ["campo"] };
 const sur = { name: "Acceso sur", sectionIds: ["palco"] };
@@ -35,5 +35,23 @@ describe("por qué puerta entra una entrada", () => {
     expect(entranceText([norte, sur], "otra")).toBeNull();
     expect(entranceText([norte, sur], null)).toBeNull();
     expect(entranceLabel({ kind: "none" })).toBeNull();
+  });
+
+  it("la puerta de salida no es un ingreso y la del VIP solo para quien abre esa zona", () => {
+    const principal = { name: "Puerta principal", sectionIds: [], direction: "IN" as const, zoneId: "sala" };
+    const vip = { name: "Puerta VIP", sectionIds: [], direction: "IN" as const, zoneId: "vip" };
+    const salida = { name: "Salida", sectionIds: [], direction: "OUT" as const, zoneId: null };
+    expect(entranceText([principal, vip, salida], "platea", ["sala"])).toBe("Ingreso por: Puerta principal");
+    expect(entranceText([principal, vip, salida], "balcon", ["sala", "vip"])).toBe("Ingreso por cualquier puerta");
+    // Sin zonas en su tipo, entra por las de siempre (todas las de ingreso).
+    expect(entranceText([principal, vip, salida], "platea", [])).toBe("Ingreso por cualquier puerta");
+    expect(entranceText([salida], "platea")).toBeNull();
+  });
+
+  it("solo las entradas con reingreso lo dicen", () => {
+    expect(reentryText(1)).toBeNull();
+    expect(reentryText(undefined)).toBeNull();
+    expect(reentryText(2)).toBe("Permite salir y volver a entrar (hasta 2 ingresos)");
+    expect(reentryText(0)).toBe("Permite salir y volver a entrar");
   });
 });

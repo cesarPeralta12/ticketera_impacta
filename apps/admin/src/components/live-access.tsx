@@ -4,19 +4,10 @@ import { useMemo, useState } from "react";
 import { CANVAS_HEIGHT, CANVAS_WIDTH, formatCode } from "@ticketera/core";
 import { MapDecor } from "./map-decor";
 import type { LiveAccess, LiveScan, LiveTicket } from "@ticketera/db";
+import { SCAN_LABEL } from "@/lib/labels";
 
-const RESULT_LABEL: Record<string, string> = {
-  ACCEPTED: "Aceptada",
-  ALREADY_USED: "Reingreso (ya usada)",
-  NOT_FOUND: "No existe",
-  CANCELLED: "Anulada",
-  WRONG_SESSION: "Otra función",
-  WRONG_GATE: "Puerta equivocada",
-  INVALID: "Código inválido",
-  METHOD_NOT_ALLOWED: "Método no permitido",
-  QR_EXPIRED: "QR vencido (captura)",
-  STATIC_NOT_ALLOWED: "Exige QR dinámico",
-};
+// Los mismos nombres que el resto del panel (incluye fuera de horario, impresa sin vender y salida sin entrar).
+const RESULT_LABEL: Record<string, string> = SCAN_LABEL;
 
 const METHOD_LABEL: Record<string, string> = { QR: "QR", BARCODE: "Código de barras", NFC: "NFC", MANUAL: "Código escrito" };
 

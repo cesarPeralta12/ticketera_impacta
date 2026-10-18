@@ -46,13 +46,15 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
       take: 100,
       include: {
         event: { select: { title: true } },
-        venue: { select: { name: true, timezone: true, accessPoints: { orderBy: { name: "asc" } } } },
+        venue: { select: { id: true, name: true, timezone: true, accessPoints: { orderBy: { name: "asc" } } } },
       },
     }),
     prisma.deviceToken.findMany({ where: { userId }, orderBy: { lastSeenAt: "desc" }, take: 20 }),
   ]);
 
   const gates = [...new Map(sessions.flatMap((s) => s.venue.accessPoints).map((g) => [g.id, g])).values()];
+  // Varios recintos tienen una "Puerta principal": se agrupan por recinto para no elegir la de otro lugar.
+  const venues = [...new Map(sessions.map((s) => [s.venue.id, s.venue])).values()].filter((v) => v.accessPoints.length > 0);
 
   return (
     <div className="space-y-6">
@@ -133,10 +135,15 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
                   <option value="" disabled>
                     Elige la puerta
                   </option>
-                  {gates.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}
-                    </option>
+                  {venues.map((v) => (
+                    <optgroup key={v.id} label={v.name}>
+                      {v.accessPoints.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.name}
+                          {g.direction === "OUT" && !/salida/i.test(g.name) ? " (salida)" : ""}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </label>

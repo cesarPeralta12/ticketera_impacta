@@ -9,7 +9,7 @@
  * Mientras la oferta esté pendiente, la entrada sigue siendo del titular y puede usarla: si ingresa antes
  * de que la acepten, la oferta ya no se puede aceptar.
  */
-import { consumptionLeft, entranceText, isValidDocument, MAX_TRANSFER_REQUESTS_PER_HOUR, normalizeDocument, offerExpiry, randomCode, tableLabel, transferBlockReason, transferDeadline, whenWhere, type WhenWhereInput } from "@ticketera/core";
+import { consumptionLeft, entranceText, gateInfo, isValidDocument, MAX_TRANSFER_REQUESTS_PER_HOUR, normalizeDocument, offerExpiry, randomCode, tableLabel, transferBlockReason, transferDeadline, whenWhere, type WhenWhereInput } from "@ticketera/core";
 import { prisma } from "../client";
 import { DomainError, audit } from "./shared";
 
@@ -41,12 +41,12 @@ const eventInclude = {
           mapUrl: true,
           parking: true,
           accessibility: true,
-          accessPoints: { select: { name: true, sections: { select: { id: true } } } },
+          accessPoints: { select: { name: true, direction: true, zoneId: true, sections: { select: { id: true } } } },
         },
       },
     },
   },
-  ticketType: { select: { name: true, accessMethods: true, qrMode: true, sectionId: true, kind: true, entryUntil: true } },
+  ticketType: { select: { name: true, accessMethods: true, qrMode: true, sectionId: true, kind: true, entryUntil: true, maxEntries: true, zones: { select: { id: true } } } },
   seat: { include: { section: { select: { name: true } } } },
   // Boliche: la mesa de la entrada y su saldo de consumo.
   credit: { select: { tableNumber: true, amount: true, spent: true, currency: true, seat: { select: { label: true } } } },
@@ -62,18 +62,24 @@ function describe(ticket: {
     sectionId: string | null;
     kind?: "ENTRY" | "TABLE";
     entryUntil?: Date | null;
+    maxEntries?: number;
+    zones?: { id: string }[];
   };
   seat: { label: string; section: { name: string } } | null;
   credit?: { tableNumber: number | null; amount: number; spent: number; currency: string; seat?: { label: string } | null } | null;
   session: WhenWhereInput["session"] & {
     startsAt: Date;
     event: WhenWhereInput["event"] & { title: string };
-    venue: WhenWhereInput["venue"] & { accessPoints: { name: string; sections: { id: string }[] }[] };
+    venue: WhenWhereInput["venue"] & {
+      accessPoints: { name: string; direction?: "IN" | "OUT" | "BOTH"; zoneId?: string | null; sections: { id: string }[] }[];
+    };
   };
 }) {
   return {
     code: ticket.code,
     typeName: ticket.ticketType.name,
+    /** Ingresos que permite (1 = sin reingreso, 0 = sin límite). */
+    maxEntries: ticket.ticketType.maxEntries,
     accessMethods: ticket.ticketType.accessMethods,
     /** DYNAMIC: no lleva QR fijo; se abre en el sitio, donde el QR cambia cada 30 segundos. */
     qrMode: ticket.ticketType.qrMode,
@@ -101,8 +107,9 @@ function describe(ticket: {
     whenWhere: whenWhere({ session: ticket.session, venue: ticket.session.venue, event: ticket.session.event }),
     /** Por qué puerta ingresa ("Ingreso por: Acceso norte"), o null si el recinto no tiene puertas cargadas. */
     entrance: entranceText(
-      ticket.session.venue.accessPoints.map((g) => ({ name: g.name, sectionIds: g.sections.map((s) => s.id) })),
+      ticket.session.venue.accessPoints.map(gateInfo),
       ticket.ticketType.sectionId,
+      ticket.ticketType.zones?.map((z) => z.id),
     ),
   };
 }

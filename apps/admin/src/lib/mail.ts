@@ -1,5 +1,5 @@
 import QRCode from "qrcode";
-import { entranceText, signTicketPayload, whenWhere } from "@ticketera/core";
+import { entranceText, gateInfo, signTicketPayload, whenWhere } from "@ticketera/core";
 import { RESET_PASSWORD_MINUTES, getOrderByCode, requestStaffPasswordReset, requireEnv } from "@ticketera/db";
 import { passwordChangedMessage, resetPasswordMessage, sendEmailSafely, ticketsMessage } from "@ticketera/mail";
 
@@ -35,16 +35,17 @@ export async function sendOrderTicketsEmail(orderCode: string): Promise<boolean>
   const session = order.items[0]?.ticketType.session;
   if (!session) return false;
   const secret = requireEnv("TICKET_QR_SECRET");
-  const gates = session.venue.accessPoints.map((g) => ({ name: g.name, sectionIds: g.sections.map((s) => s.id) }));
+  const gates = session.venue.accessPoints.map(gateInfo);
   const tickets = await Promise.all(
     order.tickets
       .filter((t) => t.status !== "CANCELLED")
       .map(async (t) => ({
         code: t.code,
         typeName: t.ticketType.name,
-        entrance: entranceText(gates, t.ticketType.sectionId),
+        entrance: entranceText(gates, t.ticketType.sectionId, t.ticketType.zones.map((z) => z.id)),
         seat: t.seat ? `${t.seat.section.name} · ${t.seat.label}` : null,
         dynamicUrl: t.ticketType.qrMode === "DYNAMIC" ? `${webUrl()}/entrada/${t.code}` : null,
+        maxEntries: t.ticketType.maxEntries,
         qrPng:
           t.ticketType.qrMode !== "DYNAMIC" && t.ticketType.accessMethods.includes("QR")
             ? await QRCode.toBuffer(await signTicketPayload(t.code, secret), { type: "png", margin: 1, width: 400, errorCorrectionLevel: "M" })

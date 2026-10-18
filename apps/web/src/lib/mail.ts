@@ -1,5 +1,5 @@
 import QRCode from "qrcode";
-import { entranceText, signTicketPayload, TRANSFER_OFFER_HOURS, whenWhere, type WhenWhere } from "@ticketera/core";
+import { entranceText, gateInfo, signTicketPayload, TRANSFER_OFFER_HOURS, whenWhere, type WhenWhere } from "@ticketera/core";
 import {
   RESET_PASSWORD_MINUTES,
   VERIFY_EMAIL_HOURS,
@@ -67,7 +67,7 @@ export async function sendTicketsEmail(orderCode: string): Promise<boolean> {
   const session = order.items[0]?.ticketType.session;
   if (!session) return false;
   const secret = requireEnv("TICKET_QR_SECRET");
-  const gates = session.venue.accessPoints.map((g) => ({ name: g.name, sectionIds: g.sections.map((s) => s.id) }));
+  const gates = session.venue.accessPoints.map(gateInfo);
 
   const tickets = await Promise.all(
     order.tickets
@@ -75,11 +75,12 @@ export async function sendTicketsEmail(orderCode: string): Promise<boolean> {
       .map(async (t) => ({
         code: t.code,
         typeName: t.ticketType.name,
-        entrance: entranceText(gates, t.ticketType.sectionId),
+        entrance: entranceText(gates, t.ticketType.sectionId, t.ticketType.zones.map((z) => z.id)),
         seat: t.seat ? `${t.seat.section.name} · ${t.seat.label}` : null,
         // Solo si el tipo de entrada se lee por QR fijo: una entrada solo NFC o solo código de barras no lleva QR,
         // y una de QR dinámico se abre en el sitio (una imagen en el correo sería una foto fija).
         dynamicUrl: t.ticketType.qrMode === "DYNAMIC" ? `${baseUrl()}/entrada/${t.code}` : null,
+        maxEntries: t.ticketType.maxEntries,
         qrPng: t.ticketType.qrMode !== "DYNAMIC" && t.ticketType.accessMethods.includes("QR")
           ? await QRCode.toBuffer(await signTicketPayload(t.code, secret), { type: "png", margin: 1, width: 400, errorCorrectionLevel: "M" })
           : null,
@@ -113,6 +114,8 @@ type TransferTicket = {
   timezone: string;
   entrance?: string | null;
   whenWhere?: WhenWhere;
+  /** Ingresos que permite (1 = sin reingreso, 0 = sin límite). */
+  maxEntries?: number;
 };
 
 /** Avisa a la persona a quien le ofrecieron una entrada. */
@@ -166,6 +169,7 @@ export async function sendTransferAcceptedEmails(done: {
           entrance: done.ticket.entrance,
           qrPng,
           dynamicUrl: dynamic ? `${baseUrl()}/entrada/${done.ticket.code}` : null,
+          maxEntries: done.ticket.maxEntries,
         },
       ],
     }),

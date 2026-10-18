@@ -81,6 +81,33 @@ describe("correo", () => {
     expect(email.text).toContain("Ingreso por: Acceso norte");
   });
 
+  it("solo promete «un solo ingreso» si ninguna entrada permite reingreso", () => {
+    const base = {
+      to: "ana@prueba.test",
+      buyerName: "Ana Rojas",
+      eventTitle: "Gala de Tango",
+      startsAt: new Date("2026-11-12T20:00:00Z"),
+      timezone: "America/La_Paz",
+      venueName: "Teatro",
+      orderUrl: "https://ticketera.proshop.lat/mis-entradas",
+    };
+    const single = ticketsMessage({ ...base, tickets: [{ code: "K7Q3MXPA2B", typeName: "Platea", seat: null, qrPng: null, maxEntries: 1 }] });
+    expect(single.html).toContain("un solo ingreso");
+    expect(single.text).toContain("un solo ingreso");
+
+    const mixed = ticketsMessage({
+      ...base,
+      tickets: [
+        { code: "K7Q3MXPA2B", typeName: "Platea", seat: null, qrPng: null, maxEntries: 2 },
+        { code: "ZZ9988AABB", typeName: "VIP", seat: null, qrPng: null, maxEntries: 0 },
+      ],
+    });
+    expect(mixed.html).not.toContain("un solo ingreso");
+    expect(mixed.text).not.toContain("un solo ingreso");
+    expect(mixed.html).toContain("Permite salir y volver a entrar (hasta 2 ingresos)");
+    expect(mixed.text).toContain("VIP · ZZ998-8AABB · Permite salir y volver a entrar");
+  });
+
   it("con Resend manda la API key, el remitente y las imágenes como adjuntos en línea", async () => {
     vi.stubEnv("MAIL_PROVIDER", "resend");
     vi.stubEnv("RESEND_API_KEY", "re_test");

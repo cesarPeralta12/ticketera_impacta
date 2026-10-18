@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import QRCode from "qrcode";
-import { code128Svg, consumptionLeft, entranceText, formatCode, formatDateTime, formatMoney, formatClock, signTicketPayload, tableLabel, whenWhere, type GateInfo } from "@ticketera/core";
+import { code128Svg, consumptionLeft, entranceText, formatCode, formatDateTime, formatMoney, formatClock, gateInfo, reentryText, signTicketPayload, tableLabel, whenWhere, type GateInfo } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, expireStaleOrders, getOrderByCode, requireEnv } from "@ticketera/db";
 import { payOrderAction } from "./actions";
 import { auth } from "@/lib/auth";
@@ -113,7 +113,9 @@ export default async function OrderPage({ params }: Props) {
                 ? "Presenta este QR en la puerta. Es personal y vale para un ingreso."
                 : email && order.channel === "ONLINE"
                   ? `Te enviamos las entradas a ${email}. Presenta el QR en la puerta.`
-                  : "Presenta el QR en la puerta. Cada entrada vale para un ingreso."}
+                  : order.tickets.every((t) => !reentryText(t.ticketType.maxEntries))
+                    ? "Presenta el QR en la puerta. Cada entrada vale para un ingreso."
+                    : "Presenta el QR en la puerta."}
             </p>
             {isOwner && order.channel === "ONLINE" && <ResendTickets code={order.code} />}
           </div>
@@ -121,7 +123,7 @@ export default async function OrderPage({ params }: Props) {
             tickets={order.tickets}
             guest={guest}
             ownerId={order.customerId}
-            gates={(session?.venue.accessPoints ?? []).map((g) => ({ name: g.name, sectionIds: g.sections.map((s) => s.id) }))}
+            gates={(session?.venue.accessPoints ?? []).map(gateInfo)}
             timeZone={session?.venue.timezone ?? "America/La_Paz"}
           />
           {isOwner && order.channel === "ONLINE" && (
@@ -183,6 +185,8 @@ type TicketForList = {
     kind: "ENTRY" | "TABLE";
     peoplePerUnit: number;
     entryUntil: Date | null;
+    maxEntries: number;
+    zones: { id: string }[];
   };
   seat: { label: string; section: { name: string } } | null;
   /** Boliche: mesa y saldo de consumo. */
@@ -263,8 +267,13 @@ async function TicketList({
               {formatMoney(ticket.credit.amount, ticket.credit.currency)}
             </p>
           )}
-          {!ticket.transferred && entranceText(gates, ticket.ticketType.sectionId) && (
-            <p className="mt-1 text-sm font-bold text-[#0f8a6b]">{entranceText(gates, ticket.ticketType.sectionId)}</p>
+          {!ticket.transferred && entranceText(gates, ticket.ticketType.sectionId, ticket.ticketType.zones.map((z) => z.id)) && (
+            <p className="mt-1 text-sm font-bold text-[#0f8a6b]">
+              {entranceText(gates, ticket.ticketType.sectionId, ticket.ticketType.zones.map((z) => z.id))}
+            </p>
+          )}
+          {!ticket.transferred && reentryText(ticket.ticketType.maxEntries) && (
+            <p className="mt-1 text-xs text-[#62655f]">{reentryText(ticket.ticketType.maxEntries)}: al salir, haz leer el QR en la puerta de salida.</p>
           )}
           {ticket.transferred && (
             <p className="my-4 rounded-lg bg-[#fff4d6] px-3 py-3 text-sm font-semibold">Esta entrada fue transferida a otra persona.</p>

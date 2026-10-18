@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { code128Svg, entranceText, formatCode, formatClock, formatDateTime, formatMoney, tableLabel, whenWhere } from "@ticketera/core";
+import { code128Svg, entranceText, formatCode, formatClock, formatDateTime, formatMoney, gateInfo, reentryText, tableLabel, whenWhere } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, getOrderByCode, prisma } from "@ticketera/db";
 import { PrintButton } from "@/components/print-button";
 import { ticketQrSvg } from "@/lib/qr";
@@ -55,8 +55,9 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
       barcode: t.ticketType.accessMethods.includes("BARCODE") ? code128Svg(t.code, { height: 48 }) : null,
       price: order.items.find((i) => i.id === t.orderItemId)?.unitAmount ?? 0,
       entrance: entranceText(
-        session.venue.accessPoints.map((g) => ({ name: g.name, sectionIds: g.sections.map((s) => s.id) })),
+        session.venue.accessPoints.map(gateInfo),
         t.ticketType.sectionId,
+        t.ticketType.zones.map((z) => z.id),
       ),
     })),
   );
@@ -149,7 +150,9 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
               <br />
               {order.paidAt && formatDateTime(order.paidAt, tz)} · Cajero: {cashier?.name ?? "—"}
               <br />
-              Válida para un ingreso. No la compartas: el QR se anula al entrar.
+              {reentryText(t.ticketType.maxEntries)
+                ? `${reentryText(t.ticketType.maxEntries)}: al salir, haz leer el QR en la puerta de salida. No la compartas.`
+                : "Válida para un ingreso. No la compartas: el QR se anula al entrar."}
             </p>
           </li>
         ))}

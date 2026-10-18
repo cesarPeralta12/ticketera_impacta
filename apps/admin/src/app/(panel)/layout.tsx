@@ -117,6 +117,7 @@ function tourSteps(staff: Staff): TourStep[] {
     { title: "Ingresos en puerta", href: "/ingresos", text: "Cada lectura de las puertas en vivo: quién entró, por dónde y los rechazos." },
     {
       title: "Buscar",
+      target: 'aside input[name="q"]',
       text: "Arriba del menú buscas cualquier cosa: un evento, una orden o una entrada por su código, o un comprador por nombre, correo o carnet.",
     },
   ];
