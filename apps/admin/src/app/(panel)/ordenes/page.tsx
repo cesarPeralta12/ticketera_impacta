@@ -100,7 +100,7 @@ export default async function SalesPage({ searchParams }: Props) {
       </form>
 
       <div className="card overflow-x-auto">
-        <table className="w-full text-left text-sm">
+        <table className="table-cards w-full text-left text-sm">
           <thead className="eyebrow border-b border-[var(--border)]">
             <tr>
               <th className="px-4 py-3 font-normal">Orden</th>
@@ -127,20 +127,20 @@ export default async function SalesPage({ searchParams }: Props) {
               const email = order.buyerEmail === BOX_OFFICE_BUYER.email ? "" : order.buyerEmail;
               return (
                 <tr key={order.id} className="align-top">
-                  <td className="px-4 py-3">
+                  <td data-label="Orden" className="px-4 py-3">
                     <p className="font-mono">{formatCode(order.code)}</p>
                     <p className="text-xs text-[var(--ink-muted)]">
                       {formatDateTime(order.createdAt, session?.venue.timezone ?? DEFAULT_TIMEZONE)}
                     </p>
                     <p className="text-xs text-[var(--ink-dim)]">{CHANNEL_LABEL[order.channel]}</p>
                   </td>
-                  <td className="px-4 py-3">
+                  <td data-label="Comprador" className="px-4 py-3">
                     <p>{order.buyerName}</p>
                     <p className="text-xs text-[var(--ink-muted)]">
                       {[email, order.buyerDocument && `CI ${order.buyerDocument}`].filter(Boolean).join(" · ")}
                     </p>
                   </td>
-                  <td className="px-4 py-3">
+                  <td data-label="Evento" className="px-4 py-3">
                     <p>{session?.event.title}</p>
                     {global && session && <p className="text-xs font-medium text-[var(--ink-muted)]">{session.event.organization.name}</p>}
                     <p className="text-xs text-[var(--ink-muted)]">
@@ -148,8 +148,8 @@ export default async function SalesPage({ searchParams }: Props) {
                       {order._count.tickets > 0 && ` · ${order._count.tickets} entrada(s)`}
                     </p>
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums">{formatMoney(order.totalAmount, order.currency)}</td>
-                  <td className="px-4 py-3">
+                  <td data-label="Total" className="px-4 py-3 text-right tabular-nums">{formatMoney(order.totalAmount, order.currency)}</td>
+                  <td data-label="Estado" className="px-4 py-3">
                     <span className={`whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium ${status.className}`}>
                       {status.text}
                     </span>

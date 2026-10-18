@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { MAX_TICKETS_PER_ORDER, currentPrice, discountLabel, formatDateTime, saleState, isTablesLayout, mapItemsOf } from "@ticketera/core";
-import { getSessionAvailability, getTakenSeatIds, prisma, salesCutoff } from "@ticketera/db";
+import { MAX_TICKETS_PER_ORDER, currentPrice, discountLabel, formatDateTime, saleState, isSeatedTablesLayout, isTablesLayout, mapItemsOf } from "@ticketera/core";
+import { getSessionAvailability, getTakenSeatIds, listSeatHolds, prisma, salesCutoff } from "@ticketera/db";
 import { ROLES, requireStaff } from "@/lib/session";
 import { PosForm, type PosGeneralType, type PosSeatedType } from "./pos-form";
 
@@ -36,7 +36,9 @@ export default async function PosSessionPage({ params }: Props) {
   });
   if (!session || !onSale(session)) notFound();
 
-  const [remaining, taken] = await Promise.all([getSessionAvailability(session.id), getTakenSeatIds(session.id)]);
+  const [remaining, taken, holds] = await Promise.all([getSessionAvailability(session.id), getTakenSeatIds(session.id), listSeatHolds(session.id)]);
+  // Retenciones: la boletería las vende, pero el cajero las ve con el color de su retención.
+  const heldBy = new Map(holds.flatMap((h) => h.seats.map((seat) => [seat.seatId, { name: h.name, color: h.color }] as const)));
 
   // En caja se vende lo mismo que online en este momento: la preventa mientras dure, la general cuando empiece.
   // Los tipos de QR dinámico son solo online: en caja no se imprimen.
@@ -66,11 +68,15 @@ export default async function PosSessionPage({ params }: Props) {
       currency: t.currency,
       presale: t.presale,
       maxPerOrder: Math.min(t.maxPerOrder, MAX_TICKETS_PER_ORDER),
-      table: isTablesLayout(t.section!.layout) ? { radius: t.section!.layout.radius } : null,
+      table: isTablesLayout(t.section!.layout) ? { radius: t.section!.layout.radius, shape: t.section!.layout.shape } : null,
+      wholeTable:
+        isSeatedTablesLayout(t.section!.layout) && t.section!.layout.mode === "WHOLE"
+          ? { prefix: t.section!.layout.prefix, chairs: t.section!.layout.chairs }
+          : null,
       seats: t.section!.seats
         .toSorted((a, b) => a.row.localeCompare(b.row) || Number(a.number) - Number(b.number) || a.number.localeCompare(b.number))
         .flatMap((s) =>
-          s.x !== null && s.y !== null ? [{ id: s.id, label: s.label, x: s.x, y: s.y, taken: taken.has(s.id), short: s.number }] : [],
+          s.x !== null && s.y !== null ? [{ id: s.id, label: s.label, x: s.x, y: s.y, taken: taken.has(s.id), short: s.number, group: s.row, held: heldBy.get(s.id) ?? null }] : [],
         ),
     }))
     .filter((t) => t.seats.length > 0);
@@ -82,6 +88,11 @@ export default async function PosSessionPage({ params }: Props) {
           ← Boletería
         </Link>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">{session.event.title}</h1>
+        {session.ticketTypes.some((t) => t.kind === "TABLE" || isTablesLayout(t.section?.layout) || isSeatedTablesLayout(t.section?.layout)) && (
+          <Link href={`/boleteria/${session.id}/mesas`} className="text-sm text-[var(--accent)] hover:underline">
+            Ver el estado de las mesas →
+          </Link>
+        )}
         <p className="text-sm text-[var(--ink-muted)]">
           {formatDateTime(session.startsAt, session.venue.timezone)} · {session.venue.name}
         </p>

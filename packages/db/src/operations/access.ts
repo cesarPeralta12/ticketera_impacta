@@ -3,12 +3,14 @@ import {
   parseDynamicPayload,
   parseManualWithOtp,
   parseTicketPayload,
+  printedOpensDoor,
   tableLabel,
+  type PrintStateName,
   verifyDynamicOtp,
   verifyDynamicPayload,
 } from "@ticketera/core";
 import { prisma } from "../client";
-import type { AccessMethod, ScanResult } from "../generated/prisma/client";
+import type { AccessMethod, PresenceMovement, ScanResult } from "../generated/prisma/client";
 import { expireTimedTickets } from "./nightlife";
 import { isUniqueViolation, requireEnv } from "./shared";
 
@@ -29,6 +31,9 @@ export type ScanOutcome = {
   previousEntry: { at: Date; accessPoint: string | null } | null;
   /** Para WRONG_GATE: por qué puertas sí puede entrar. */
   allowedGates: string[];
+  /** Lectura aceptada: primer ingreso, reingreso, salida o cambio de zona; y la zona en la que quedó. */
+  movement?: Exclude<PresenceMovement, "MANUAL">;
+  zone?: string | null;
   /**
    * Solo QR dinámico leído sin conexión, al sincronizar: BAD_PROOF = la prueba no corresponde a la entrada
    * (teléfono modificado o QR falsificado); STALE_OFFLINE = auténtica pero de un momento lejano a la lectura.
@@ -44,7 +49,11 @@ const OFFLINE_STEP_WINDOW = 2;
  *
  * - Marca la entrada como usada con un único UPDATE condicional (status = VALID): si dos
  *   puertas la leen a la vez, solo una la acepta.
- * - Si la puerta tiene secciones asignadas, rechaza entradas de otras secciones.
+ * - Si la puerta tiene secciones asignadas, rechaza entradas de otras secciones; si da a una zona (VIP), solo
+ *   entran los tipos de entrada que abren esa zona.
+ * - Presencia: una puerta de salida (o de ida y vuelta con la entrada adentro) registra la salida; con reingreso
+ *   permitido, la entrada vuelve a pasar mientras no supere sus ingresos; ya adentro, una puerta a otra zona es un
+ *   cambio de zona. Sin reingreso (lo de siempre), una segunda lectura es "ya utilizada".
  * - También recibe lecturas hechas sin conexión (offline = true, con la hora real del
  *   dispositivo). Si al sincronizar la entrada ya había sido usada en otro lado, queda
  *   registrada como ALREADY_USED: es un doble ingreso ocurrido offline, visible en reportes.
@@ -84,15 +93,18 @@ export async function scanTicket(input: {
 
   let result: ScanResult = "INVALID";
   let allowedGates: string[] = [];
+  let movement: ScanOutcome["movement"];
+  let zoneAfter: { id: string; name: string } | null = null;
   let proofNote: ScanOutcome["proofNote"];
   const ticket = code
     ? await prisma.ticket.findUnique({
         where: { code },
         include: {
-          ticketType: true,
+          ticketType: { include: { zones: { select: { id: true } } } },
           seat: { include: { section: true } },
           session: { include: { event: true } },
           credit: { select: { tableNumber: true, seat: { select: { label: true } } } },
+          printBatch: { select: { mode: true } },
         },
       })
     : null;
@@ -134,41 +146,110 @@ export async function scanTicket(input: {
     else if (input.method && input.method !== "MANUAL" && !ticket.ticketType.accessMethods.includes(input.method)) {
       result = "METHOD_NOT_ALLOWED";
     } else if (
-      // "Free hasta la 01:00": después de esa hora ya no entra (si ya había entrado, sigue siendo "ya utilizada").
-      ticket.ticketType.entryUntil &&
-      scannedAt > ticket.ticketType.entryUntil &&
-      (ticket.status === "VALID" || ticket.expiredAt !== null)
+      // Entrada impresa sin vender (lote "activada al vender"): una fotocopia o una robada no pasa.
+      ticket.printBatch &&
+      ticket.printState !== "VOID" &&
+      !printedOpensDoor(ticket.printBatch.mode, (ticket.printState ?? "STOCK") as PrintStateName)
     ) {
-      result = "OUT_OF_HOURS";
+      result = "NOT_ACTIVATED";
     } else {
       const gate = input.accessPointId
         ? await prisma.accessPoint.findUnique({
             where: { id: input.accessPointId },
-            include: { sections: { select: { id: true } } },
+            include: { sections: { select: { id: true } }, zone: { select: { id: true, name: true } } },
           })
         : null;
-      const restricted = gate && gate.sections.length > 0;
-      if (restricted && !gate.sections.some((s) => s.id === ticket.ticketType.sectionId)) {
+      const type = ticket.ticketType;
+      const zoneIds = type.zones.map((z) => z.id);
+      // Una puerta de salida, o de ida y vuelta con la entrada adentro: es una salida (ni zonas ni horario).
+      const exiting = gate?.direction === "OUT" || (gate?.direction === "BOTH" && ticket.inside);
+      const deadline = entryDeadlineOf(ticket);
+      const canReenter = ticket.status === "USED" && !ticket.inside && (type.maxEntries === 0 || ticket.entries < type.maxEntries);
+      if (exiting) {
+        const { count } = await prisma.ticket.updateMany({
+          where: { id: ticket.id, status: "USED", inside: true },
+          data: { inside: false, zoneId: null, lastMovementAt: scannedAt },
+        });
+        if (count === 1) {
+          result = "ACCEPTED";
+          movement = "EXIT";
+        } else result = ticket.status === "CANCELLED" ? "CANCELLED" : "NOT_INSIDE";
+      } else if (
+        // "Free hasta la 01:00" o el último ingreso de la función: después ya no entra (si ya había entrado y no
+        // puede reingresar, sigue siendo "ya utilizada"). El horario propio del tipo de entrada manda sobre el de la función.
+        deadline &&
+        scannedAt > deadline &&
+        (ticket.status === "VALID" || ticket.expiredAt !== null || canReenter)
+      ) {
+        result = "OUT_OF_HOURS";
+      } else if (
+        gate &&
+        ((gate.sections.length > 0 && !gate.sections.some((s) => s.id === type.sectionId)) ||
+          (gate.zoneId && zoneIds.length > 0 && !zoneIds.includes(gate.zoneId)))
+      ) {
         result = "WRONG_GATE";
-        allowedGates = ticket.ticketType.sectionId
-          ? (
-              await prisma.accessPoint.findMany({
-                where: { venueId: gate.venueId, sections: { some: { id: ticket.ticketType.sectionId } } },
-                select: { name: true },
-              })
-            ).map((g) => g.name)
-          : [];
+        const gates = await prisma.accessPoint.findMany({
+          where: { venueId: gate.venueId, direction: { not: "OUT" } },
+          orderBy: { name: "asc" },
+          include: { sections: { select: { id: true } } },
+        });
+        allowedGates = gates
+          .filter(
+            (g) =>
+              g.id !== gate.id &&
+              (g.sections.length === 0 || g.sections.some((s) => s.id === type.sectionId)) &&
+              (!g.zoneId || zoneIds.length === 0 || zoneIds.includes(g.zoneId)),
+          )
+          .map((g) => g.name);
       } else {
         // Una lectura sin conexión hecha a tiempo vale aunque la entrada haya vencido mientras se sincronizaba.
-        const inTime = ticket.ticketType.entryUntil !== null && scannedAt <= ticket.ticketType.entryUntil;
-        const { count } = await prisma.ticket.updateMany({
+        const inTime = deadline !== null && scannedAt <= deadline;
+        const zone = gate?.zone ?? null;
+        const first = await prisma.ticket.updateMany({
           where: { id: ticket.id, OR: [{ status: "VALID" }, ...(inTime ? [{ status: "CANCELLED" as const, expiredAt: { not: null } }] : [])] },
-          data: { status: "USED", usedAt: scannedAt, ...(inTime ? { cancelledAt: null, expiredAt: null } : {}) },
+          data: {
+            status: "USED",
+            usedAt: scannedAt,
+            inside: true,
+            zoneId: zone?.id ?? null,
+            entries: 1,
+            lastMovementAt: scannedAt,
+            ...(inTime ? { cancelledAt: null, expiredAt: null } : {}),
+          },
         });
-        if (count === 1) result = "ACCEPTED";
-        else {
-          const current = await prisma.ticket.findUniqueOrThrow({ where: { id: ticket.id }, select: { status: true } });
-          result = current.status === "CANCELLED" ? "CANCELLED" : "ALREADY_USED";
+        if (first.count === 1) {
+          result = "ACCEPTED";
+          movement = "ENTRY";
+          zoneAfter = zone;
+        } else {
+          const current = await prisma.ticket.findUniqueOrThrow({
+            where: { id: ticket.id },
+            select: { status: true, inside: true, zoneId: true, entries: true },
+          });
+          const reenter = current.status === "USED" && !current.inside && (type.maxEntries === 0 || current.entries < type.maxEntries);
+          if (current.status === "CANCELLED") result = "CANCELLED";
+          else if (current.status === "USED" && current.inside && zone && current.zoneId !== zone.id) {
+            // Ya adentro y pasa a otra zona (del general al VIP): cambio de zona, no cuenta como ingreso.
+            const moved = await prisma.ticket.updateMany({
+              where: { id: ticket.id, status: "USED", inside: true, zoneId: current.zoneId },
+              data: { zoneId: zone.id, lastMovementAt: scannedAt },
+            });
+            result = moved.count === 1 ? "ACCEPTED" : "ALREADY_USED";
+            if (moved.count === 1) {
+              movement = "ZONE_CHANGE";
+              zoneAfter = zone;
+            }
+          } else if (reenter) {
+            const again = await prisma.ticket.updateMany({
+              where: { id: ticket.id, status: "USED", inside: false, entries: current.entries },
+              data: { inside: true, zoneId: zone?.id ?? null, entries: { increment: 1 }, lastMovementAt: scannedAt },
+            });
+            result = again.count === 1 ? "ACCEPTED" : "ALREADY_USED";
+            if (again.count === 1) {
+              movement = "REENTRY";
+              zoneAfter = zone;
+            }
+          } else result = "ALREADY_USED";
         }
       }
     }
@@ -198,6 +279,8 @@ export async function scanTicket(input: {
         syncedAt: input.offline ? new Date() : null,
         clientScanId: input.clientScanId,
         method: input.method,
+        movement,
+        zoneId: zoneAfter?.id,
       },
     });
   } catch (error) {
@@ -222,8 +305,14 @@ export async function scanTicket(input: {
       : null,
     previousEntry: previous ? { at: previous.scannedAt, accessPoint: previous.accessPoint?.name ?? null } : null,
     allowedGates,
+    ...(movement ? { movement, zone: zoneAfter?.name ?? null } : {}),
     ...(proofNote ? { proofNote } : {}),
   };
+}
+
+/** Hasta cuándo puede entrar una entrada: el horario de su tipo o, si no tiene, el último ingreso de la función. */
+function entryDeadlineOf(ticket: { ticketType: { entryUntil: Date | null }; session: { lastEntryAt: Date | null } }): Date | null {
+  return ticket.ticketType.entryUntil ?? ticket.session.lastEntryAt;
 }
 
 /** Resultado de una lectura ya registrada (reenvío de la app de puerta). */

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
 import { prisma } from "@ticketera/db";
+import { GuidedTour, TourReplay, type TourStep } from "@/components/guided-tour";
 import { NavLink, type NavIcon } from "@/components/nav-link";
 import { PasswordNotice } from "@/components/password-notice";
 import { ReadOnlyProvider } from "@/components/read-only";
@@ -90,6 +91,37 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
   ];
 }
 
+/** Pasos del recorrido guiado de la primera vez (según lo que la cuenta puede hacer). */
+function tourSteps(staff: Staff): TourStep[] {
+  const nightlife = isNightlife(staff);
+  return [
+    {
+      title: "Bienvenido al panel de Impacta",
+      text: staff.readOnly
+        ? "Aquí ves en vivo tus eventos, ventas, compradores e ingresos. Te mostramos dónde está cada cosa en 4 pasos."
+        : "Desde aquí armas tus eventos, vendes en boletería y controlas la puerta. Te mostramos lo principal en unos pasos.",
+    },
+    {
+      title: nightlife ? "Noches" : "Eventos",
+      href: "/eventos",
+      text: staff.readOnly
+        ? "Cada evento con sus funciones, cuánto se vendió y quién entró."
+        : "Crea un evento y el asistente te lleva paso a paso: lugar y fecha, entradas (con modelos), revisión con la vista previa del comprador y publicar. Para eventos chicos con entradas impresas, usa '+ Evento pequeño'.",
+    },
+    {
+      title: "Recintos",
+      href: "/recintos",
+      text: "El lugar y su mapa: zonas de pie, butacas, mesas con sillas, lounges, puertas y zonas de acceso. Empieza desde una plantilla (boliche, teatro, salón o aire libre).",
+    },
+    { title: "Ventas", href: "/ordenes", text: "Todas las ventas (web, boletería, invitaciones, impresas e importadas), con su estado. Se exportan a Excel." },
+    { title: "Ingresos en puerta", href: "/ingresos", text: "Cada lectura de las puertas en vivo: quién entró, por dónde y los rechazos." },
+    {
+      title: "Buscar",
+      text: "Arriba del menú buscas cualquier cosa: un evento, una orden o una entrada por su código, o un comprador por nombre, correo o carnet.",
+    },
+  ];
+}
+
 export default async function PanelLayout({ children }: { children: ReactNode }) {
   const staff = await requireStaff([...ROLES.manage, ...ROLES.pos, ...ROLES.client]);
   if (staff.mustChangePassword) redirect("/cuenta/contrasena");
@@ -115,6 +147,16 @@ export default async function PanelLayout({ children }: { children: ReactNode })
           </span>
         </div>
 
+        {can(staff, ROLES.manage) && (
+          <form action="/buscar" role="search" className="px-3 pb-3">
+            <input
+              name="q"
+              aria-label="Buscar en el panel"
+              placeholder="Buscar evento, orden, código…"
+              className="w-full rounded-md border border-[var(--side-border)] bg-transparent px-3 py-1.5 text-sm text-[var(--side-ink)] placeholder:text-[var(--side-dim)] focus:border-[var(--accent)] focus:outline-none"
+            />
+          </form>
+        )}
         <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-1 md:flex-col md:gap-0.5 md:overflow-y-auto md:pb-0">
           {groups.map((group, i) => (
             <div key={group.title ?? i} className="flex gap-1 md:mb-3 md:block md:space-y-0.5">
@@ -133,9 +175,14 @@ export default async function PanelLayout({ children }: { children: ReactNode })
               {staff.readOnly ? "Solo lectura" : ROLE_LABEL[staff.role]}
               {staff.viewingAs ? " · Impacta" : ""}
             </p>
-            <Link href="/cuenta/contrasena" className="mb-3 mt-1 hidden text-xs text-[var(--side-dim)] hover:text-[var(--side-ink)] md:block">
+            <Link href="/cuenta/contrasena" className="mt-1 hidden text-xs text-[var(--side-dim)] hover:text-[var(--side-ink)] md:block">
               Cambiar contraseña
             </Link>
+            {can(staff, ROLES.manage) && (
+              <span className="mb-3 mt-1 block">
+                <TourReplay />
+              </span>
+            )}
           </div>
           <form
             action={async () => {
@@ -178,6 +225,7 @@ export default async function PanelLayout({ children }: { children: ReactNode })
           <ReadOnlyProvider value={staff.readOnly}>
             <div className="mx-auto max-w-6xl">{children}</div>
           </ReadOnlyProvider>
+          {can(staff, ROLES.manage) && <GuidedTour steps={tourSteps(staff)} />}
         </div>
       </main>
     </div>

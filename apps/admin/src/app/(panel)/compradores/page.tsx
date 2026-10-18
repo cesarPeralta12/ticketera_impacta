@@ -94,7 +94,7 @@ export default async function BuyersPage({ searchParams }: Props) {
       </form>
 
       <div className="card overflow-x-auto">
-        <table className="w-full text-left text-sm">
+        <table className="table-cards w-full text-left text-sm">
           <thead className="eyebrow border-b border-[var(--border)]">
             <tr>
               <th className="px-4 py-3 font-normal">Comprador</th>
@@ -115,7 +115,7 @@ export default async function BuyersPage({ searchParams }: Props) {
             )}
             {shown.map((b) => (
               <tr key={b.email} className="align-top">
-                <td className="px-4 py-3">
+                <td data-label="Comprador" className="px-4 py-3">
                   <Link href={`/ordenes?q=${encodeURIComponent(b.email)}`} className="font-medium hover:text-[var(--accent)]">
                     {b.name}
                   </Link>
@@ -126,11 +126,11 @@ export default async function BuyersPage({ searchParams }: Props) {
                     {b.channels.map((c) => CHANNEL_LABEL[c as keyof typeof CHANNEL_LABEL] ?? c).join(" + ")}
                   </p>
                 </td>
-                <td className="px-4 py-3 text-right font-mono">{b.orders}</td>
-                <td className="px-4 py-3 text-right font-mono">{b.tickets}</td>
-                <td className="px-4 py-3 text-right font-mono">{formatMoney(b.total, b.currency)}</td>
-                <td className="px-4 py-3 text-xs text-[var(--ink-muted)]">{formatDateTime(b.lastPurchase, DEFAULT_TIMEZONE)}</td>
-                <td className="px-4 py-3 text-xs text-[var(--ink-muted)]">
+                <td data-label="Compras" className="px-4 py-3 text-right font-mono">{b.orders}</td>
+                <td data-label="Entradas" className="px-4 py-3 text-right font-mono">{b.tickets}</td>
+                <td data-label="Total" className="px-4 py-3 text-right font-mono">{formatMoney(b.total, b.currency)}</td>
+                <td data-label="Última compra" className="px-4 py-3 text-xs text-[var(--ink-muted)]">{formatDateTime(b.lastPurchase, DEFAULT_TIMEZONE)}</td>
+                <td data-label="Eventos" className="px-4 py-3 text-xs text-[var(--ink-muted)]">
                   {b.events.slice(0, 3).join(", ")}
                   {b.events.length > 3 && ` y ${b.events.length - 3} más`}
                   {global && <p className="font-medium">{b.organizers.join(", ")}</p>}

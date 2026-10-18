@@ -269,6 +269,30 @@ describe("repetir noches", () => {
   });
 });
 
+describe("último ingreso de la función", () => {
+  it("pasada la hora: no entra, baja anulada a la app y no se vende; la free sigue con su propio horario", async () => {
+    const { session, type } = await club();
+    const general = await buy(await person(), session.id, type("General").id, 1);
+    const free = await buy(await person(), session.id, type("Free").id, 1);
+    // La free tiene su horario (dentro de 2 h desde el inicio): ese manda sobre el de la función.
+    await prisma.eventSession.update({ where: { id: session.id }, data: { lastEntryAt: new Date(Date.now() - 60_000) } });
+
+    await expect(buy(await person(), session.id, type("General").id, 1)).rejects.toMatchObject({ code: "NOT_ON_SALE" });
+    const download = await getDoorDownload({ sessionId: session.id });
+    expect(download!.tickets.find((t) => t.code === general.tickets[0]!.code)?.status).toBe("C");
+    expect((await scanTicket({ sessionId: session.id, raw: general.tickets[0]!.code })).result).toBe("OUT_OF_HOURS");
+    expect(download!.tickets.find((t) => t.code === free.tickets[0]!.code)?.status).not.toBe("C");
+    expect((await scanTicket({ sessionId: session.id, raw: free.tickets[0]!.code })).result).toBe("ACCEPTED");
+  });
+
+  it("antes del último ingreso entra normal", async () => {
+    const { session, type } = await club();
+    await prisma.eventSession.update({ where: { id: session.id }, data: { lastEntryAt: new Date(Date.now() + 3_600_000) } });
+    const { tickets } = await buy(await person(), session.id, type("General").id, 1);
+    expect((await scanTicket({ sessionId: session.id, raw: tickets[0]!.code })).result).toBe("ACCEPTED");
+  });
+});
+
 describe("nueva noche", () => {
   it("copia una noche a otro día a la misma hora, con sus precios y horarios corridos", async () => {
     const { session, type } = await club({ startsInDays: 2 });

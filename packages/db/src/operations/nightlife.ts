@@ -127,12 +127,19 @@ export async function nightConsumption(sessionId: string) {
 }
 
 /**
- * Las entradas con horario de ingreso ("free hasta la 01:00") que no se usaron a tiempo quedan anuladas.
- * Así la app de puerta, que valida contra su lista descargada, las ve anuladas al sincronizar.
+ * Las entradas con horario de ingreso que no se usaron a tiempo quedan anuladas: las de su propio horario ("free
+ * hasta la 01:00") y, pasado el último ingreso de la función, todas las demás. Así la app de puerta, que valida
+ * contra su lista descargada, las ve anuladas al sincronizar.
  */
 export async function expireTimedTickets(sessionId: string, now = new Date()) {
+  const session = await prisma.eventSession.findUnique({ where: { id: sessionId }, select: { lastEntryAt: true } });
+  const sessionClosed = Boolean(session?.lastEntryAt && session.lastEntryAt <= now);
   const { count } = await prisma.ticket.updateMany({
-    where: { sessionId, status: "VALID", ticketType: { entryUntil: { lte: now } } },
+    where: {
+      sessionId,
+      status: "VALID",
+      ticketType: sessionClosed ? { OR: [{ entryUntil: { lte: now } }, { entryUntil: null }] } : { entryUntil: { lte: now } },
+    },
     data: { status: "CANCELLED", cancelledAt: now, expiredAt: now },
   });
   return count;
@@ -144,7 +151,11 @@ type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 function loadTemplate(sessionId: string) {
   return prisma.eventSession.findUnique({
     where: { id: sessionId },
-    include: { ticketTypes: { orderBy: { sortOrder: "asc" } }, doorAssignments: true, venue: { select: { timezone: true } } },
+    include: {
+      ticketTypes: { orderBy: { sortOrder: "asc" }, include: { zones: { select: { id: true } } } },
+      doorAssignments: true,
+      venue: { select: { timezone: true } },
+    },
   });
 }
 
@@ -164,14 +175,16 @@ async function copySession(tx: Tx, template: Template, startsAt: Date) {
       endsAt: shift(template.endsAt),
       doorsOpenAt: shift(template.doorsOpenAt),
       arrivalAt: shift(template.arrivalAt),
+      lastEntryAt: shift(template.lastEntryAt),
+      program: template.program ?? undefined,
       salesStartAt: shift(template.salesStartAt),
       salesEndAt: shift(template.salesEndAt),
       queueEnabled: template.queueEnabled,
       maxConcurrentCheckouts: template.maxConcurrentCheckouts,
     },
   });
-  await tx.ticketType.createMany({
-    data: template.ticketTypes.map((t) => ({
+  const types = template.ticketTypes.map((t) => ({
+    data: {
       sessionId: night.id,
       sectionId: t.sectionId,
       name: t.name,
@@ -193,8 +206,18 @@ async function copySession(tx: Tx, template: Template, startsAt: Date) {
       peoplePerUnit: t.peoplePerUnit,
       consumptionAmount: t.consumptionAmount,
       entryUntil: shift(t.entryUntil),
-    })),
-  });
+      maxEntries: t.maxEntries,
+    },
+    zones: t.zones,
+  }));
+  await tx.ticketType.createMany({ data: types.map((t) => t.data) });
+  // Las zonas que abre cada tipo (relación de muchos a muchos: createMany no la carga).
+  for (const t of types.filter((x) => x.zones.length > 0)) {
+    await tx.ticketType.update({
+      where: { id: (await tx.ticketType.findFirstOrThrow({ where: { sessionId: night.id, name: t.data.name, sortOrder: t.data.sortOrder } })).id },
+      data: { zones: { connect: t.zones } },
+    });
+  }
   if (template.doorAssignments.length > 0) {
     await tx.doorAssignment.createMany({
       data: template.doorAssignments.map((a) => ({ userId: a.userId, sessionId: night.id, accessPointId: a.accessPointId })),

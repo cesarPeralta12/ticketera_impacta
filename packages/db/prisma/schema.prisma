@@ -46,6 +46,7 @@ model Organization {
 
   members    Membership[]
   promoCodes PromoCode[]
+  ticketArts TicketArt[]
   venues     Venue[]
   events     Event[]
   clients    Client[]
@@ -95,6 +96,11 @@ model StaffUser {
   deviceTokens    DeviceToken[]
   emailTokens     EmailToken[]
   consumptions    ConsumptionRedemption[]
+  printBatches    PrintBatch[]
+  printedSales    Ticket[]                @relation("PrintedSoldBy")
+  settlements     PrintSettlement[]
+  importBatches   ImportBatch[]
+  seatHolds       SeatHold[]
 }
 
 /// Funciones (y opcionalmente una puerta) que un portero puede descargar y controlar
@@ -267,13 +273,20 @@ model Venue {
   timezone       String   @default("America/La_Paz")
   /// Plano de un boliche: escenario, barras, DJ, entrada, baños y textos (no se venden). Ver club-map.ts.
   mapItems       Json?
+  /// Para el comprador: cómo llegar y por dónde entrar, enlace de mapa (https), estacionamiento y accesibilidad.
+  directions     String?
+  mapUrl         String?
+  parking        String?
+  accessibility  String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization   @relation(fields: [organizationId], references: [id])
+  organization Organization    @relation(fields: [organizationId], references: [id])
   sections     Section[]
   sessions     EventSession[]
   accessPoints AccessPoint[]
+  zones        AccessZone[]
+  planImage    VenuePlanImage?
 }
 
 enum SeatingMode {
@@ -318,6 +331,7 @@ model Seat {
   orderItems OrderItem[]
   tickets    Ticket[]
   credits    ConsumptionCredit[]
+  holds      SeatHoldSeat[]
 
   @@unique([sectionId, row, number])
 }
@@ -373,6 +387,16 @@ model Event {
   reviewNote          String?
   /// ¿Los compradores pueden transferir sus entradas a otra persona registrada?
   transfersEnabled    Boolean       @default(true)
+  /// Condiciones que ve el comprador. Edad mínima nula = todo público.
+  minAge              Int?
+  requiredDocument    String?
+  dressCode           String?
+  forbiddenItems      String?
+  reentryPolicy       String?
+  refundPolicy        String?
+  /// Consultas: WhatsApp o teléfono, y correo.
+  contactPhone        String?
+  contactEmail        String?
   promoCodes          PromoCode[]
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
@@ -380,6 +404,7 @@ model Event {
   organization Organization   @relation(fields: [organizationId], references: [id])
   client       Client?        @relation(fields: [clientId], references: [id])
   sessions     EventSession[]
+  imports      ImportBatch[]
 
   @@index([organizationId, status])
   @@index([clientId])
@@ -396,6 +421,11 @@ model EventSession {
   doorsOpenAt            DateTime?
   /// Hora de llegada recomendada que ve el comprador; vacía = la de las puertas.
   arrivalAt              DateTime?
+  /// Última hora de ingreso de toda la función (después ya no entra nadie). Un tipo de entrada con su propio
+  /// horario ("free hasta la 01:00") usa el suyo.
+  lastEntryAt            DateTime?
+  /// Programa: [{ time: "23:00", name: "DJ Alok", note?: "b2b" }], en la hora del recinto.
+  program                Json?
   /// Ventana de venta online de toda la función: vacía = desde que se publica y hasta que empieza.
   /// El cierre puede ser durante el evento (boliches), como máximo hasta que termina.
   salesStartAt           DateTime?
@@ -416,6 +446,8 @@ model EventSession {
   credits         ConsumptionCredit[]
   doorAssignments DoorAssignment[]
   queue           QueueEntry[]
+  seatHolds       SeatHold[]
+  printBatches    PrintBatch[]
 
   @@index([eventId, startsAt])
 }
@@ -458,14 +490,19 @@ model TicketType {
   consumptionAmount Int?
   /// Válida para entrar solo hasta esta hora (ej. "free hasta la 01:00"): después se rechaza en puerta.
   entryUntil        DateTime?
+  /// Cuántas veces puede entrar: 1 = sin reingreso (lo de siempre); 0 = sin límite.
+  maxEntries        Int            @default(1)
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
-  session    EventSession        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  section    Section?            @relation(fields: [sectionId], references: [id])
-  orderItems OrderItem[]
-  tickets    Ticket[]
-  credits    ConsumptionCredit[]
+  session      EventSession        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  section      Section?            @relation(fields: [sectionId], references: [id])
+  /// Zonas que abre. Vacío: las de siempre (según las secciones de cada puerta).
+  zones        AccessZone[]        @relation("TicketTypeZones")
+  orderItems   OrderItem[]
+  tickets      Ticket[]
+  credits      ConsumptionCredit[]
+  printBatches PrintBatch[]
 
   @@index([sessionId])
 }
@@ -488,34 +525,43 @@ enum OrderChannel {
   POS
   /// Invitación o cortesía (sin cobro).
   GUEST
+  /// Entrada impresa de un lote numerado: suma a la recaudación recién cuando se marca vendida.
+  PRINTED
+  /// Importada desde Excel (vendida por otro medio o cortesía): con el monto que se declaró al importarla.
+  IMPORT
 }
 
 /// Una orden PENDING_PAYMENT con expiresAt futuro ES la reserva temporal de inventario.
 model Order {
-  id             String       @id @default(cuid())
+  id               String       @id @default(cuid())
   /// Código legible para soporte (ver @ticketera/core/codes).
-  code           String       @unique
-  customerId     String?
-  buyerEmail     String
-  buyerName      String
-  buyerDocument  String?
-  status         OrderStatus  @default(PENDING_PAYMENT)
-  channel        OrderChannel @default(ONLINE)
+  code             String       @unique
+  customerId       String?
+  buyerEmail       String
+  buyerName        String
+  buyerDocument    String?
+  status           OrderStatus  @default(PENDING_PAYMENT)
+  channel          OrderChannel @default(ONLINE)
   /// Staff que vendió en boletería o emitió la invitación.
-  issuedById     String?
-  currency       String       @db.Char(3)
-  subtotalAmount Int
-  feeAmount      Int          @default(0)
+  issuedById       String?
+  currency         String       @db.Char(3)
+  subtotalAmount   Int
+  feeAmount        Int          @default(0)
   /// Descuento de un código promocional (ya restado del total).
-  discountAmount Int          @default(0)
-  totalAmount    Int
-  expiresAt      DateTime
-  paidAt         DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  discountAmount   Int          @default(0)
+  totalAmount      Int
+  expiresAt        DateTime
+  paidAt           DateTime?
+  /// Lote de importación del que salió (canal IMPORT).
+  importBatchId    String?
+  /// Cuándo se le enviaron las entradas por correo desde el panel (las importadas se envían a pedido).
+  ticketsEmailedAt DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
   customer        Customer?           @relation(fields: [customerId], references: [id])
   issuedBy        StaffUser?          @relation(fields: [issuedById], references: [id])
+  importBatch     ImportBatch?        @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
   items           OrderItem[]
   payments        Payment[]
   tickets         Ticket[]
@@ -525,6 +571,7 @@ model Order {
   @@index([status, expiresAt])
   @@index([buyerEmail])
   @@index([channel])
+  @@index([importBatchId])
 }
 
 model OrderItem {
@@ -627,6 +674,24 @@ model Ticket {
   creditId       String?
   /// Tenía horario de ingreso (entryUntil) y venció sin usarse: queda anulada.
   expiredAt      DateTime?
+  /// Entrada impresa: número de serie visible ("A-0001"), su lote y dónde está (ver PrintState).
+  serial         String?
+  printBatchId   String?
+  printState     PrintState?
+  /// Vendedor o RRPP que tiene el talonario.
+  assignedTo     String?
+  assignedAt     DateTime?
+  soldAt         DateTime?
+  soldById       String?
+  /// Cómo se cobró: EFECTIVO, QR o TRANSFERENCIA.
+  soldMethod     String?
+  /// Cuántas veces se imprimió (más de una = reimpresión, queda en Seguridad).
+  printedCount   Int          @default(0)
+  /// Presencia: si está adentro ahora, en qué zona, cuántas veces entró y su último movimiento.
+  inside         Boolean      @default(false)
+  zoneId         String?
+  entries        Int          @default(0)
+  lastMovementAt DateTime?
 
   order      Order              @relation(fields: [orderId], references: [id])
   orderItem  OrderItem          @relation(fields: [orderItemId], references: [id])
@@ -637,10 +702,16 @@ model Ticket {
   scans      AccessScan[]
   transfers  TicketTransfer[]
   credit     ConsumptionCredit? @relation(fields: [creditId], references: [id])
+  printBatch PrintBatch?        @relation(fields: [printBatchId], references: [id])
+  soldBy     StaffUser?         @relation("PrintedSoldBy", fields: [soldById], references: [id])
+  zone       AccessZone?        @relation(fields: [zoneId], references: [id], onDelete: SetNull)
 
   // Para asientos numerados se agregará un índice único parcial
   // (sessionId, seatId) WHERE status <> 'CANCELLED' mediante SQL en la migración:
   // es la última barrera contra la doble venta.
+  @@unique([sessionId, serial])
+  @@index([printBatchId])
+  @@index([sessionId, inside, zoneId])
   @@index([sessionId, status])
   @@index([orderId])
   @@index([creditId])
@@ -652,16 +723,57 @@ model Ticket {
 /// el ingreso, evita el doble ingreso sin conexión: una misma entrada no puede ser aceptada
 /// por dos puertas distintas que estén offline a la vez.
 model AccessPoint {
-  id      String @id @default(cuid())
-  venueId String
-  name    String
+  id        String        @id @default(cuid())
+  venueId   String
+  name      String
+  /// IN: se entra (lo de siempre). OUT: se sale. BOTH: entra o sale según si la entrada está adentro.
+  direction GateDirection @default(IN)
+  /// Zona a la que da la puerta (ej. la puerta del VIP). Vacía: el ingreso general al recinto.
+  zoneId    String?
 
   venue       Venue            @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  zone        AccessZone?      @relation(fields: [zoneId], references: [id], onDelete: SetNull)
   scans       AccessScan[]
   sections    Section[]
   assignments DoorAssignment[]
 
   @@unique([venueId, name])
+}
+
+enum GateDirection {
+  IN
+  OUT
+  BOTH
+}
+
+/// Zona de acceso de un recinto (Exterior, General, VIP, Súper VIP): las puertas dan a una zona, cada tipo de entrada
+/// dice qué zonas abre y el panel muestra cuántas personas hay adentro de cada una.
+model AccessZone {
+  id       String @id @default(cuid())
+  venueId  String
+  name     String
+  /// Orden de afuera hacia adentro: 0 exterior, 1 general, 2 VIP…
+  level    Int    @default(1)
+  /// Aforo de la zona (para el aforo en vivo). Vacío: sin tope propio.
+  capacity Int?
+  color    String @default("#2E9E6A")
+
+  venue       Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  gates       AccessPoint[]
+  ticketTypes TicketType[]  @relation("TicketTypeZones")
+  inside      Ticket[]
+  scans       AccessScan[]
+
+  @@unique([venueId, name])
+}
+
+/// Qué pasó con una lectura aceptada: primer ingreso, reingreso, salida, cambio de zona o corrección manual.
+enum PresenceMovement {
+  ENTRY
+  REENTRY
+  EXIT
+  ZONE_CHANGE
+  MANUAL
 }
 
 enum ScanResult {
@@ -681,6 +793,10 @@ enum ScanResult {
   STATIC_NOT_ALLOWED
   /// La entrada solo valía para entrar hasta una hora (ej. "free hasta la 01:00") y ya pasó.
   OUT_OF_HOURS
+  /// Entrada impresa que todavía no se vendió (lote "activada al vender"): una fotocopia o una robada no pasa.
+  NOT_ACTIVATED
+  /// Se leyó en una puerta de salida pero la entrada no estaba adentro.
+  NOT_INSIDE
 }
 
 /// Cómo se muestra la entrada: con un QR fijo, o con uno que cambia cada 30 segundos (ver docs/qr-dinamico.md).
@@ -698,7 +814,7 @@ enum AccessMethod {
 
 /// Cada lectura en puerta, aceptada o rechazada: es el historial de auditoría del acceso.
 model AccessScan {
-  id            String     @id @default(cuid())
+  id            String            @id @default(cuid())
   sessionId     String
   ticketId      String?
   accessPointId String?
@@ -707,20 +823,25 @@ model AccessScan {
   rawCode       String
   deviceId      String?
   /// Hora del dispositivo (relevante si la lectura se hizo offline).
-  scannedAt     DateTime   @default(now())
+  scannedAt     DateTime          @default(now())
   /// Se completa cuando la lectura llega por sincronización offline.
   syncedAt      DateTime?
   /// La validó el dispositivo sin conexión (contra la lista sincronizada).
-  offline       Boolean    @default(false)
+  offline       Boolean           @default(false)
   /// Id que genera la app de puerta por lectura: si reenvía la misma al sincronizar, no se duplica.
-  clientScanId  String?    @unique
+  clientScanId  String?           @unique
   /// Cómo se leyó: QR, BARCODE, NFC o MANUAL (código escrito a mano).
   method        String?
+  /// Lectura aceptada: si fue ingreso, reingreso, salida, cambio de zona o corrección manual. Vacío en las viejas (ingreso).
+  movement      PresenceMovement?
+  /// Zona en la que quedó la entrada después del movimiento.
+  zoneId        String?
 
   session     EventSession @relation(fields: [sessionId], references: [id])
   ticket      Ticket?      @relation(fields: [ticketId], references: [id])
   accessPoint AccessPoint? @relation(fields: [accessPointId], references: [id])
   operator    StaffUser?   @relation(fields: [operatorId], references: [id])
+  zone        AccessZone?  @relation(fields: [zoneId], references: [id], onDelete: SetNull)
 
   @@index([sessionId, scannedAt])
   @@index([ticketId])
@@ -911,4 +1032,178 @@ model ConsumptionRedemption {
 enum OrganizationKind {
   EVENTS
   NIGHTLIFE
+}
+
+// ───────────────────────── Entradas impresas ─────────────────────────
+
+/// A: la entrada vale desde que se imprime. B (recomendada): vale recién cuando se marca vendida.
+enum PrintMode {
+  VALID_ON_PRINT
+  ACTIVATE_ON_SALE
+}
+
+/// Dónde está una entrada impresa. USADA es el estado de la entrada (Ticket.status = USED).
+enum PrintState {
+  /// En poder del organizador.
+  STOCK
+  /// Entregada a un vendedor o RRPP (talonario).
+  ASSIGNED
+  SOLD
+  /// Volvió sin vender: se puede volver a entregar o anular.
+  RETURNED
+  /// Perdida o inválida: no abre la puerta y libera su cupo.
+  VOID
+}
+
+/// Lote de entradas impresas de un tipo de entrada: numeradas, sin comprador, descuentan cupo al crearse.
+model PrintBatch {
+  id           String    @id @default(cuid())
+  sessionId    String
+  ticketTypeId String
+  /// "A" -> A-0001, A-0002…
+  prefix       String
+  firstNumber  Int
+  quantity     Int
+  mode         PrintMode @default(ACTIVATE_ON_SALE)
+  /// Precio de referencia por entrada (para la rendición).
+  unitAmount   Int
+  currency     String    @db.Char(3)
+  note         String?
+  artId        String?
+  createdById  String
+  createdAt    DateTime  @default(now())
+
+  session     EventSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  ticketType  TicketType        @relation(fields: [ticketTypeId], references: [id])
+  createdBy   StaffUser         @relation(fields: [createdById], references: [id])
+  art         TicketArt?        @relation(fields: [artId], references: [id], onDelete: SetNull)
+  tickets     Ticket[]
+  settlements PrintSettlement[]
+
+  @@index([sessionId])
+}
+
+/// Rendición de un vendedor: cuántas vendió y devolvió, cuánto debía entregar y cuánto entregó.
+model PrintSettlement {
+  id             String   @id @default(cuid())
+  batchId        String
+  seller         String
+  sold           Int
+  returned       Int
+  expectedAmount Int
+  receivedAmount Int
+  note           String?
+  staffId        String
+  createdAt      DateTime @default(now())
+
+  batch PrintBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  staff StaffUser  @relation(fields: [staffId], references: [id])
+
+  @@index([batchId])
+}
+
+/// Arte propio de la entrada impresa (PNG o JPG): se dibuja de fondo y encima van el QR, la serie y los datos.
+model TicketArt {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  mimeType       String
+  data           Bytes
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  batches      PrintBatch[]
+
+  @@index([organizationId])
+}
+
+// ───────────────────────── Importación desde Excel ─────────────────────────
+
+enum ImportStatus {
+  /// Revisado y a la espera de confirmar (todavía no descuenta cupo).
+  DRAFT
+  /// Confirmado: cada fila es una orden con sus entradas.
+  CONFIRMED
+  /// Deshecho: se anularon las entradas que no se usaron.
+  UNDONE
+  /// Descartado sin confirmar.
+  DISCARDED
+}
+
+/// Un archivo de entradas importadas: se revisa entero (vista previa con errores por fila), se confirma todo junto
+/// y se puede deshacer.
+model ImportBatch {
+  id          String       @id @default(cuid())
+  eventId     String
+  staffId     String
+  fileName    String
+  status      ImportStatus @default(DRAFT)
+  /// Filas válidas ya resueltas (función, tipo de entrada, butaca o mesa), listas para confirmar.
+  rows        Json
+  /// Problemas por fila ([{ line, message }]): con errores solo se confirma dejando fuera esas filas.
+  errors      Json
+  /// Avisos que no impiden importar (ej. ese carnet ya tiene entrada en la función).
+  warnings    Json
+  totalRows   Int
+  validRows   Int
+  /// Entradas que se emiten (una mesa emite una por persona).
+  ticketCount Int
+  createdAt   DateTime     @default(now())
+  confirmedAt DateTime?
+  undoneAt    DateTime?
+
+  event  Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  staff  StaffUser @relation(fields: [staffId], references: [id])
+  orders Order[]
+
+  @@index([eventId, createdAt])
+}
+
+// ───────────────────────────── Retenciones ─────────────────────────────
+
+/// Butacas (o mesas, o sillas) apartadas de la venta en una función: para prensa, artistas o producción. El color solo
+/// se ve en el panel; con el código, quien lo tenga puede comprar esas butacas en la web. Liberar = borrar la retención.
+model SeatHold {
+  id          String   @id @default(cuid())
+  sessionId   String
+  name        String
+  color       String   @default("#7C3AED")
+  /// Código de liberación (opcional): habilita estas butacas en la web para quien lo escriba.
+  code        String?
+  note        String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  session   EventSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdBy StaffUser      @relation(fields: [createdById], references: [id])
+  seats     SeatHoldSeat[]
+
+  @@unique([sessionId, name])
+  @@unique([sessionId, code])
+}
+
+/// Una butaca dentro de una retención: cada butaca está en una sola retención por función.
+model SeatHoldSeat {
+  holdId    String
+  seatId    String
+  sessionId String
+
+  hold SeatHold @relation(fields: [holdId], references: [id], onDelete: Cascade)
+  seat Seat     @relation(fields: [seatId], references: [id], onDelete: Cascade)
+
+  @@id([holdId, seatId])
+  @@unique([sessionId, seatId])
+}
+
+/// Imagen del plano real de un recinto (PNG, JPG, WebP o SVG) para calcar en los editores del panel; el comprador no
+/// la ve. Va en su propia tabla para no cargarla con cada consulta del recinto.
+model VenuePlanImage {
+  venueId   String   @id
+  mimeType  String
+  data      Bytes
+  /// Opacidad con la que se ve de fondo (5 a 100).
+  opacity   Int      @default(40)
+  updatedAt DateTime @updatedAt
+
+  venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
 }

@@ -12,6 +12,10 @@ const REJECTIONS = [
   "METHOD_NOT_ALLOWED",
   "QR_EXPIRED",
   "STATIC_NOT_ALLOWED",
+  // Los que puede decidir sin conexión una app que conoce horarios, impresas y puertas de salida.
+  "OUT_OF_HOURS",
+  "NOT_ACTIVATED",
+  "NOT_INSIDE",
 ] as const;
 
 const bodySchema = z.object({

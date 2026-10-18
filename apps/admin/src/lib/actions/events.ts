@@ -4,11 +4,15 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import {
+  DEFAULT_TIMEZONE,
   MAX_DISCOUNT_PERCENT,
+  MIN_AGE_OPTIONS,
   entryDeadline,
+  isSeatedTablesLayout,
   isTablesLayout,
   isTimeOfDay,
   normalizeImageUrl,
+  parseProgram,
   parseSalesWindow,
   parseSessionTimes,
   sessionNoun,
@@ -21,6 +25,7 @@ import {
   DomainError,
   EventCategory,
   EventMode,
+  Prisma,
   createEventWithinLimit,
   duplicateSession,
   prisma,
@@ -53,7 +58,33 @@ const eventSchema = z.object({
     .literal("on")
     .optional()
     .transform((v) => v === "on"),
+  // Condiciones y contacto (todo opcional; vacío = no se muestra).
+  minAge: z.coerce.number().int().refine((n) => (MIN_AGE_OPTIONS as readonly number[]).includes(n), "Edad no válida.").optional(),
+  requiredDocument: z.string().max(120).optional(),
+  dressCode: z.string().max(200).optional(),
+  forbiddenItems: z.string().max(300).optional(),
+  reentryPolicy: z.string().max(300).optional(),
+  refundPolicy: z.string().max(2000).optional(),
+  contactPhone: z.string().max(40).optional(),
+  contactEmail: z.email("Correo de consultas inválido.").max(120).optional(),
 });
+
+/** Los campos opcionales que se dejaron vacíos se guardan vacíos (null), para poder borrarlos. */
+function eventData(data: z.infer<typeof eventSchema>) {
+  return {
+    ...data,
+    description: data.description ?? null,
+    imageUrl: data.imageUrl ?? null,
+    minAge: data.minAge ?? null,
+    requiredDocument: data.requiredDocument ?? null,
+    dressCode: data.dressCode ?? null,
+    forbiddenItems: data.forbiddenItems ?? null,
+    reentryPolicy: data.reentryPolicy ?? null,
+    refundPolicy: data.refundPolicy ?? null,
+    contactPhone: data.contactPhone ?? null,
+    contactEmail: data.contactEmail?.toLowerCase() ?? null,
+  };
+}
 
 /** El cliente elegido tiene que ser de la organización; vacío = evento propio de IMPACTA. */
 async function checkClient(organizationId: string, clientId: string | undefined) {
@@ -91,7 +122,7 @@ export async function createEventAction(_prev: FormState, formData: FormData): P
       {
         organizationId: staff.organization.id,
         slug: await uniqueSlug(parsed.data.title),
-        ...parsed.data,
+        ...eventData(parsed.data),
         clientId: client.clientId,
       },
       { ignoreLimit: staff.platform },
@@ -101,7 +132,8 @@ export async function createEventAction(_prev: FormState, formData: FormData): P
     throw error;
   }
   await audit(staff.id, "event.create", "Event", event.id);
-  redirect(`/eventos/${event.id}`);
+  // Sigue el asistente: lugar y fecha, entradas, revisar y publicar (se puede salir en cualquier paso).
+  redirect(`/eventos/${event.id}/asistente/lugar`);
 }
 
 export async function updateEventAction(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -124,9 +156,7 @@ export async function updateEventAction(_prev: FormState, formData: FormData): P
   await prisma.event.update({
     where: { id: event.id },
     data: {
-      ...parsed.data,
-      description: parsed.data.description ?? null,
-      imageUrl: parsed.data.imageUrl ?? null,
+      ...eventData(parsed.data),
       clientId: client.clientId,
       // Sin cliente no hay espacio de cliente que mantener abierto.
       ...(client.clientId ? {} : { clientAccessEnabled: false, clientAccessUntil: null }),
@@ -153,7 +183,7 @@ export async function publishEventAction(_prev: FormState, formData: FormData): 
       if (error instanceof DomainError) return { error: error.message };
       throw error;
     }
-    revalidatePath(`/eventos/${event.id}`);
+    revalidatePath(`/eventos/${event.id}`, "layout");
     return { ok: true };
   }
 
@@ -164,7 +194,7 @@ export async function publishEventAction(_prev: FormState, formData: FormData): 
     data: { status: "PUBLISHED", publishedAt: new Date(), reviewNote: null },
   });
   await audit(staff.id, "event.publish", "Event", event.id);
-  revalidatePath(`/eventos/${event.id}`);
+  revalidatePath(`/eventos/${event.id}`, "layout");
   return { ok: true };
 }
 
@@ -175,13 +205,16 @@ export async function unpublishEventAction(_prev: FormState, formData: FormData)
   if (!event) return { error: "Evento no encontrado." };
   await prisma.event.update({ where: { id: event.id }, data: { status: "DRAFT" } });
   await audit(staff.id, "event.unpublish", "Event", event.id);
-  revalidatePath(`/eventos/${event.id}`);
+  revalidatePath(`/eventos/${event.id}`, "layout");
   return { ok: true };
 }
 
 /** Horarios y venta online de una función, tal como vienen del formulario (ver SessionTimesFields). */
 function readSessionForm(form: Record<string, string | undefined>, timeZone: string) {
-  const times = parseSessionTimes({ date: form.date, start: form.start, doors: form.doors, arrival: form.arrival, end: form.end }, timeZone);
+  const times = parseSessionTimes(
+    { date: form.date, start: form.start, doors: form.doors, arrival: form.arrival, end: form.end, lastEntry: form.lastEntry },
+    timeZone,
+  );
   if (!times.ok) return { ok: false as const, state: { fieldErrors: { [times.field]: times.message } } satisfies FormState };
   const sales = parseSalesWindow(
     { open: form.open, openAt: form.openAt, close: form.close, closeHours: form.closeHours, closeAt: form.closeAt },
@@ -195,23 +228,51 @@ function readSessionForm(form: Record<string, string | undefined>, timeZone: str
 export async function createSessionAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireEditor();
   const form = formObject(formData);
-  if (!form.venueId) return { fieldErrors: { venueId: "Elige un recinto." } };
+  // Asistente: en vez de elegir un recinto se puede escribir un lugar simple (una zona general con su aforo).
+  const newVenue = form.newVenueName?.slice(0, 120);
+  const newCapacity = Number(form.newVenueCapacity);
+  if (newVenue && (!Number.isInteger(newCapacity) || newCapacity < 1 || newCapacity > 200_000)) {
+    return { fieldErrors: { newVenueCapacity: "Indica cuántas personas entran en el lugar (aforo)." } };
+  }
+  if (!newVenue && !form.venueId) return { fieldErrors: { venueId: "Elige un recinto o escribe un lugar nuevo." } };
 
-  const [event, venue] = await Promise.all([
+  const [event, existing] = await Promise.all([
     ownedEvent(staff.organization.id, String(form.eventId)),
-    prisma.venue.findFirst({ where: { id: form.venueId, organizationId: staff.organization.id } }),
+    newVenue ? null : prisma.venue.findFirst({ where: { id: form.venueId, organizationId: staff.organization.id } }),
   ]);
-  if (!event || !venue) return { error: "Evento o recinto no encontrado." };
+  if (!event || (!newVenue && !existing)) return { error: "Evento o recinto no encontrado." };
 
   // La hora que escribe el organizador es la del recinto, no la del servidor.
-  const parsed = readSessionForm(form, venue.timezone);
+  const timeZone = existing?.timezone ?? DEFAULT_TIMEZONE;
+  const parsed = readSessionForm(form, timeZone);
   if (!parsed.ok) return parsed.state;
   const noun = sessionNoun(event.category);
   if (parsed.data.startsAt <= new Date()) return { fieldErrors: { date: `${noun.The} debe ser en el futuro.` } };
 
-  const session = await prisma.eventSession.create({ data: { eventId: event.id, venueId: venue.id, ...parsed.data } });
+  let venueId = existing?.id;
+  if (newVenue) {
+    if (await prisma.venue.findFirst({ where: { organizationId: staff.organization.id, name: newVenue } })) {
+      return { fieldErrors: { newVenueName: `Ya tienes un recinto "${newVenue}": elígelo en la lista.` } };
+    }
+    const venue = await prisma.venue.create({
+      data: {
+        organizationId: staff.organization.id,
+        name: newVenue,
+        address: form.newVenueAddress?.slice(0, 200) || null,
+        city: form.newVenueCity?.slice(0, 80) || null,
+        timezone: timeZone,
+        accessPoints: { create: [{ name: "Puerta principal" }] },
+        sections: { create: [{ name: "General", seatingMode: "GENERAL_ADMISSION", capacity: newCapacity }] },
+      },
+    });
+    await audit(staff.id, "venue.create", "Venue", venue.id);
+    venueId = venue.id;
+  }
+
+  const session = await prisma.eventSession.create({ data: { eventId: event.id, venueId: venueId!, ...parsed.data } });
   await audit(staff.id, "session.create", "EventSession", session.id);
   revalidatePath(`/eventos/${event.id}`);
+  if (form.next === "asistente") redirect(`/eventos/${event.id}/asistente/entradas`);
   return { ok: true, message: `${noun.One} agregada: cárgale los precios.` };
 }
 
@@ -249,6 +310,26 @@ export async function updateSessionAction(_prev: FormState, formData: FormData):
   revalidatePath(`/eventos/${session.eventId}`);
   revalidatePath(`/eventos/${session.eventId}/funciones/${session.id}`);
   return { ok: true, message: "Horarios guardados." };
+}
+
+/** Programa de la función (quién toca y a qué hora). Vacío = sin programa. */
+export async function updateProgramAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const session = await prisma.eventSession.findFirst({
+    where: { id: String(formData.get("sessionId")), event: { organizationId: staff.organization.id } },
+  });
+  if (!session) return { error: "Función no encontrada." };
+  let json: unknown = [];
+  try {
+    json = JSON.parse(String(formData.get("program") ?? "[]"));
+  } catch {
+    return { error: "El programa no es válido." };
+  }
+  const program = parseProgram(json);
+  await prisma.eventSession.update({ where: { id: session.id }, data: { program: program.length ? program : Prisma.DbNull } });
+  await audit(staff.id, "session.program", "EventSession", session.id, { items: program.length });
+  revalidatePath(`/eventos/${session.eventId}/funciones/${session.id}`);
+  return { ok: true, message: program.length ? `Programa guardado (${program.length}).` : "Programa vacío: no se muestra." };
 }
 
 /** "Nueva noche" / "Duplicar función": copia una función con sus precios a otro día y abre la copia. */
@@ -399,6 +480,9 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
   const table = Boolean(data.table);
   const peoplePerUnit = table ? data.peoplePerUnit : 1;
   if (table && !peoplePerUnit) return { fieldErrors: { peoplePerUnit: "Indica cuántas personas entran con cada mesa." } };
+  if (table && isSeatedTablesLayout(section.layout)) {
+    return { fieldErrors: { table: `"${section.name}" son mesas con sillas: cada silla es una entrada (no marques "Es una mesa o lounge"). El precio es por silla.` } };
+  }
   if (!table && isTablesLayout(section.layout)) {
     return { fieldErrors: { table: `"${section.name}" son lounges: marca "Es una mesa o lounge" y cuántas personas entran en cada uno.` } };
   }
@@ -491,6 +575,7 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
     shifted: adjusted.filter((a) => a.changed).map((a) => a.type.id),
   });
   revalidatePath(`/eventos/${session.eventId}/funciones/${session.id}`);
+  revalidatePath(`/eventos/${session.eventId}/asistente/entradas`);
   return { ok: true };
 }
 
@@ -506,6 +591,27 @@ export async function updateAccessMethodsAction(_prev: FormState, formData: Form
   const methods = [...readAccessMethods(formData)];
   await prisma.ticketType.update({ where: { id: type.id }, data: { accessMethods: methods } });
   await audit(staff.id, "ticket_type.access_methods", "TicketType", type.id, { methods });
+  revalidatePath(`/eventos/${type.session.eventId}/funciones/${type.sessionId}`);
+  return { ok: true };
+}
+
+/**
+ * Reglas de acceso de un tipo de entrada: cuántas veces puede entrar (1 = sin reingreso; 0 = sin límite) y qué zonas
+ * del recinto abre (ninguna marcada = las de siempre, según las secciones de cada puerta). Valen también para las ya vendidas.
+ */
+export async function updateEntryRulesAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const type = await prisma.ticketType.findFirst({
+    where: { id: String(formData.get("ticketTypeId")), session: { event: { organizationId: staff.organization.id } } },
+    include: { session: true },
+  });
+  if (!type) return { error: "Tipo de entrada no encontrado." };
+  const maxEntries = Number(formData.get("maxEntries"));
+  if (!Number.isInteger(maxEntries) || maxEntries < 0 || maxEntries > 20) return { fieldErrors: { maxEntries: "Ingresos permitidos: de 1 a 20, o sin límite." } };
+  const requested = formData.getAll("zoneIds").map(String);
+  const zones = await prisma.accessZone.findMany({ where: { id: { in: requested }, venueId: type.session.venueId }, select: { id: true } });
+  await prisma.ticketType.update({ where: { id: type.id }, data: { maxEntries, zones: { set: zones } } });
+  await audit(staff.id, "ticket_type.entry_rules", "TicketType", type.id, { maxEntries, zones: zones.map((z) => z.id) });
   revalidatePath(`/eventos/${type.session.eventId}/funciones/${type.sessionId}`);
   return { ok: true };
 }

@@ -172,7 +172,7 @@ export async function applyPaymentUpdate(update: PaymentUpdate, now = new Date()
   });
 }
 
-type PaidOrder = {
+export type PaidOrder = {
   id: string;
   customerId: string | null;
   buyerName: string;
@@ -189,8 +189,9 @@ type PaidOrder = {
  * Emite las entradas de una orden pagada. Una mesa emite un QR por persona, recibe su número (Mesa 1, 2…)
  * y abre un saldo de consumo que comparten sus personas; una entrada con consumo incluido abre un saldo
  * propio. Las mesas se numeran con su tipo de entrada bloqueado: dos pagos a la vez no repiten número.
+ * `tableNumbers`: número de mesa ya decidido por línea (al importar una planilla que dice "Mesa 7").
  */
-async function issueTickets(tx: Tx, order: PaidOrder) {
+export async function issueTickets(tx: Tx, order: PaidOrder, tableNumbers?: Map<string, number>) {
   const tableTypes = [...new Set(order.items.filter((i) => i.ticketType.kind === "TABLE").map((i) => i.ticketTypeId))];
   if (tableTypes.length > 0) await lockInventory(tx, tableTypes);
 
@@ -236,6 +237,9 @@ async function issueTickets(tx: Tx, order: PaidOrder) {
       for (let person = 0; person < peopleIn(type); person++) {
         rows.push({ ...ticket(table.id), seatId: person === 0 ? item.seatId : null });
       }
+    } else if (type.kind === "TABLE" && tableNumbers?.has(item.id)) {
+      const table = await credit(tableNumbers.get(item.id)!);
+      for (let person = 0; person < peopleIn(type); person++) rows.push(ticket(table.id));
     } else if (type.kind === "TABLE") {
       const last = await tx.consumptionCredit.aggregate({ where: { ticketTypeId: item.ticketTypeId }, _max: { tableNumber: true } });
       let next = (last._max.tableNumber ?? 0) + 1;

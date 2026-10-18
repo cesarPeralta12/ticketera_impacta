@@ -16,11 +16,19 @@ export type SessionTimesInput = {
   doors?: string;
   arrival?: string;
   end?: string;
+  /** Última hora de ingreso: después de empezar (de madrugada, al día siguiente). */
+  lastEntry?: string;
 };
 
-export type SessionTimes = { startsAt: Date; doorsOpenAt: Date | null; arrivalAt: Date | null; endsAt: Date | null };
+export type SessionTimes = {
+  startsAt: Date;
+  doorsOpenAt: Date | null;
+  arrivalAt: Date | null;
+  endsAt: Date | null;
+  lastEntryAt: Date | null;
+};
 
-export type SessionTimesField = "date" | "start" | "doors" | "arrival" | "end";
+export type SessionTimesField = "date" | "start" | "doors" | "arrival" | "end" | "lastEntry";
 
 /** Las puertas y la llegada son como mucho esto antes del inicio: más, es un error de tipeo (ej. 23:30 con inicio 23:00). */
 export const MAX_HOURS_BEFORE_START = 12;
@@ -44,7 +52,7 @@ export function clockBefore(at: Date, time: string, timeZone: string): Date {
 export function parseSessionTimes(input: SessionTimesInput, timeZone: string): TimesResult {
   if (!input.date || !DATE.test(input.date)) return { ok: false, field: "date", message: "Elige el día." };
   if (!input.start || !isTimeOfDay(input.start)) return { ok: false, field: "start", message: "Escribe a qué hora empieza (ej. 23:00)." };
-  for (const field of ["doors", "arrival", "end"] as const) {
+  for (const field of ["doors", "arrival", "end", "lastEntry"] as const) {
     const value = input[field];
     if (value && !isTimeOfDay(value)) return { ok: false, field, message: `Hora inválida: ${value} (ej. 22:00).` };
   }
@@ -60,6 +68,8 @@ export function parseSessionTimes(input: SessionTimesInput, timeZone: string): T
   const doorsOpenAt = input.doors ? clockBefore(startsAt, input.doors, timeZone) : null;
   const arrivalAt = input.arrival ? clockBefore(startsAt, input.arrival, timeZone) : null;
   const endsAt = input.end ? entryDeadline(startsAt, input.end, timeZone) : null;
+  // A la misma hora que empieza = no entra nadie después de empezar (ej. teatro con puertas cerradas al inicio).
+  const lastEntryAt = input.lastEntry ? (input.lastEntry === input.start ? startsAt : entryDeadline(startsAt, input.lastEntry, timeZone)) : null;
   const tooEarly = (d: Date | null) => d !== null && startsAt.getTime() - d.getTime() > MAX_HOURS_BEFORE_START * 3_600_000;
   if (tooEarly(doorsOpenAt)) {
     return { ok: false, field: "doors", message: `Las puertas abren a las ${input.doors}, después de que empieza (${input.start}). Revisa la hora.` };
@@ -74,7 +84,14 @@ export function parseSessionTimes(input: SessionTimesInput, timeZone: string): T
       message: `Pides llegar a las ${input.arrival}, antes de que abran las puertas (${input.doors}). Revisa la hora.`,
     };
   }
-  return { ok: true, times: { startsAt, doorsOpenAt, arrivalAt, endsAt } };
+  if (lastEntryAt && endsAt && lastEntryAt > endsAt) {
+    return {
+      ok: false,
+      field: "lastEntry",
+      message: `El último ingreso (${input.lastEntry}) es después de que termina (${input.end}): esa hora ya no permite entrar a nadie.`,
+    };
+  }
+  return { ok: true, times: { startsAt, doorsOpenAt, arrivalAt, endsAt, lastEntryAt } };
 }
 
 /** Valores del formulario a partir de una función guardada (para editarla). */
@@ -86,6 +103,7 @@ export function sessionTimesInput(session: Partial<SessionTimes> & { startsAt: D
     doors: clock(session.doorsOpenAt),
     arrival: clock(session.arrivalAt),
     end: clock(session.endsAt),
+    lastEntry: clock(session.lastEntryAt),
   };
 }
 
@@ -130,13 +148,19 @@ export type SalesWindow = { salesStartAt: Date | null; salesEndAt: Date | null }
 export type SalesField = "openAt" | "closeHours" | "closeAt";
 export type SalesResult = { ok: true; window: SalesWindow } | { ok: false; field: SalesField; message: string };
 
-/** Hasta cuándo puede seguir la venta online de una función: su fin, o unas horas después del inicio. */
-export function latestSalesEnd(times: { startsAt: Date; endsAt: Date | null }): Date {
-  return times.endsAt ?? new Date(times.startsAt.getTime() + SALES_AFTER_START_HOURS * 3_600_000);
+type SalesTimes = { startsAt: Date; endsAt: Date | null; lastEntryAt?: Date | null };
+
+/**
+ * Hasta cuándo puede seguir la venta de una función: el último ingreso (después nadie puede entrar), si no su fin, o
+ * unas horas después del inicio.
+ */
+export function latestSalesEnd(times: SalesTimes): Date {
+  const end = times.endsAt ?? new Date(times.startsAt.getTime() + SALES_AFTER_START_HOURS * 3_600_000);
+  return times.lastEntryAt && times.lastEntryAt < end ? times.lastEntryAt : end;
 }
 
 /** Lee "Abre la venta" y "Cierra la venta" del formulario, en la hora del recinto. */
-export function parseSalesWindow(input: SalesInput, times: { startsAt: Date; endsAt: Date | null }, timeZone: string): SalesResult {
+export function parseSalesWindow(input: SalesInput, times: SalesTimes, timeZone: string): SalesResult {
   const local = (value: string | undefined, field: SalesField): Date | SalesResult => {
     if (!value) return { ok: false, field, message: "Elige la fecha y la hora." };
     try {
@@ -173,9 +197,12 @@ export function parseSalesWindow(input: SalesInput, times: { startsAt: Date; end
     return {
       ok: false,
       field: "closeAt",
-      message: times.endsAt
-        ? "La venta termina después de que el evento acabó."
-        : `La venta termina más de ${SALES_AFTER_START_HOURS} h después de que empieza: pon la hora de fin o una fecha anterior.`,
+      message:
+        times.lastEntryAt && times.lastEntryAt.getTime() === latestSalesEnd(times).getTime()
+          ? "La venta termina después del último ingreso: nadie podría entrar con esa entrada."
+          : times.endsAt
+            ? "La venta termina después de que el evento acabó."
+            : `La venta termina más de ${SALES_AFTER_START_HOURS} h después de que empieza: pon la hora de fin o una fecha anterior.`,
     };
   }
   return { ok: true, window: { salesStartAt, salesEndAt } };
@@ -217,11 +244,13 @@ export type SessionWhen = {
   end: string | null;
   /** "Llega desde las 22:00" (si no hay hora de llegada, la de las puertas) */
   arrival: string | null;
+  /** "Último ingreso 02:00" */
+  lastEntry: string | null;
 };
 
 /** Los horarios de una función en palabras, para la web, la entrada y el correo. */
 export function describeSessionTimes(
-  session: { startsAt: Date; doorsOpenAt?: Date | null; arrivalAt?: Date | null; endsAt?: Date | null },
+  session: { startsAt: Date; doorsOpenAt?: Date | null; arrivalAt?: Date | null; endsAt?: Date | null; lastEntryAt?: Date | null },
   timeZone: string,
   category: string,
 ): SessionWhen {
@@ -240,5 +269,6 @@ export function describeSessionTimes(
     start: `${startLabel(category)} ${clockText(session.startsAt, timeZone)}`,
     end,
     arrival: arrive ? `Llega desde las ${clockText(arrive, timeZone)}` : null,
+    lastEntry: session.lastEntryAt ? `Último ingreso ${clockText(session.lastEntryAt, timeZone)}` : null,
   };
 }

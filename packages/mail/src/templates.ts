@@ -2,7 +2,7 @@
  * Plantillas de los correos de Impacta. HTML simple con estilos en línea (los clientes de correo no
  * cargan hojas de estilo) y una versión de texto para quien no ve HTML.
  */
-import { formatCode, formatDateTime } from "@ticketera/core";
+import { formatCode, formatDateTime, type WhenWhere } from "@ticketera/core";
 import type { Email, InlineImage } from "./send";
 
 const esc = (value: string) =>
@@ -83,6 +83,57 @@ export type TicketMail = {
   dynamicUrl?: string | null;
 };
 
+/** "Cuándo y dónde" de la función en el correo: horarios, lugar y cómo llegar, condiciones, programa y consultas. */
+function whenWhereHtml(ww: WhenWhere): string {
+  const row = (title: string, lines: string[]) =>
+    lines.length
+      ? `<tr><td style="padding:6px 0;vertical-align:top;width:110px;font-size:12px;color:#7a7d76;text-transform:uppercase;letter-spacing:1px">${esc(title)}</td><td style="padding:6px 0;font-size:14px;line-height:1.5">${lines.join("<br>")}</td></tr>`
+      : "";
+  const when = [
+    `<strong>${esc(capitalize(ww.when.day))}</strong>`,
+    esc([ww.when.doors, ww.when.start, ww.when.lastEntry].filter(Boolean).join(" · ")),
+    ...(ww.when.end ? [esc(ww.when.end)] : []),
+    ...(ww.when.arrival ? [`<strong style="color:#0f8a6b">${esc(ww.when.arrival)}</strong>`] : []),
+  ];
+  const where = [
+    `<strong>${esc(ww.place.name)}</strong>`,
+    ...(ww.place.address ? [esc(ww.place.address)] : []),
+    ...(ww.place.directions ? [`Cómo llegar: ${esc(ww.place.directions)}`] : []),
+    ...(ww.place.parking ? [`Estacionamiento: ${esc(ww.place.parking)}`] : []),
+    ...(ww.place.mapUrl ? [`<a href="${esc(ww.place.mapUrl)}" style="color:#0f8a6b;font-weight:700">Ver en el mapa</a>`] : []),
+  ];
+  const program = ww.program.map((item) => `<strong>${esc(item.time)}</strong> ${esc(item.name)}${item.note ? ` · ${esc(item.note)}` : ""}`);
+  const contact = [
+    ...(ww.contact.whatsapp
+      ? [`<a href="${esc(ww.contact.whatsapp)}" style="color:#0f8a6b">WhatsApp ${esc(ww.contact.phone ?? "")}</a>`]
+      : ww.contact.phone
+        ? [esc(ww.contact.phone)]
+        : []),
+    ...(ww.contact.email ? [`<a href="mailto:${esc(ww.contact.email)}" style="color:#0f8a6b">${esc(ww.contact.email)}</a>`] : []),
+  ];
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;border-top:1px solid #e1dfd7;border-bottom:1px solid #e1dfd7">
+    ${row("Cuándo", when)}${row("Dónde", where)}${row("Condiciones", ww.conditions.map(esc))}${row("Programa", program)}${row("Consultas", contact)}
+  </table>`;
+}
+
+function whenWhereText(ww: WhenWhere): string {
+  const lines = [
+    `Cuándo: ${capitalize(ww.when.day)} · ${[ww.when.doors, ww.when.start, ww.when.lastEntry].filter(Boolean).join(" · ")}`,
+    ww.when.end,
+    ww.when.arrival,
+    `Dónde: ${ww.place.name}${ww.place.address ? `, ${ww.place.address}` : ""}`,
+    ww.place.directions && `Cómo llegar: ${ww.place.directions}`,
+    ww.place.mapUrl && `Mapa: ${ww.place.mapUrl}`,
+    ww.conditions.length ? `Condiciones: ${ww.conditions.join(" · ")}` : null,
+    ww.program.length ? `Programa: ${ww.program.map((item) => `${item.time} ${item.name}`).join(" · ")}` : null,
+    ww.contact.phone && `Consultas: ${ww.contact.phone}`,
+    ww.contact.email && `Correo: ${ww.contact.email}`,
+  ];
+  return lines.filter(Boolean).join("\n");
+}
+
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
 /**
  * Entradas por correo: el QR de cada una viaja como imagen dentro del mensaje (sirve aunque el cliente
  * de correo no cargue imágenes remotas, y se puede mostrar en la puerta) y un botón lleva a la
@@ -99,6 +150,8 @@ export function ticketsMessage(input: {
   orderCode?: string;
   orderUrl: string;
   tickets: TicketMail[];
+  /** Horarios, lugar, condiciones, programa y contacto de la función. */
+  whenWhere?: WhenWhere;
 }): Email {
   const when = formatDateTime(input.startsAt, input.timezone);
   const subject = `Tus entradas para ${input.eventTitle}`;
@@ -131,12 +184,14 @@ export function ticketsMessage(input: {
     `<h1 style="margin:0 0 6px;font-size:24px">¡Listo, ${esc(input.buyerName.split(" ")[0] ?? "")}! Tus entradas</h1>
      <p style="margin:0 0 4px;font-size:18px;font-weight:700">${esc(input.eventTitle)}</p>
      <p style="margin:0;color:#62655f">${esc(when)} · ${esc(input.venueName)}</p>
+     ${input.whenWhere ? whenWhereHtml(input.whenWhere) : ""}
      ${cards}
      <p style="margin:22px 0;text-align:center">${button(input.orderUrl, "Ver mis entradas")}</p>
      <p style="color:#62655f;font-size:13px;line-height:1.55">Cada entrada vale para <strong>un solo ingreso</strong> y está a tu nombre: lleva tu <strong>carnet de identidad</strong>, que se puede pedir en la puerta. No compartas el QR por redes: quien llegue primero con él entra. El botón de arriba abre siempre la versión actualizada.${input.orderCode ? ` Compra ${esc(input.orderCode)}.` : ""}</p>`,
   );
   const text =
     `¡Listo, ${input.buyerName}! Tus entradas para ${input.eventTitle}\n${when} · ${input.venueName}\n\n` +
+    (input.whenWhere ? `${whenWhereText(input.whenWhere)}\n\n` : "") +
     input.tickets
       .map(
         (t, i) =>

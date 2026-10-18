@@ -26,7 +26,8 @@ async function main() {
         orderBy: { createdAt: "asc" },
         include: {
           sections: { orderBy: { sortOrder: "asc" }, include: { seats: { orderBy: [{ row: "asc" }, { number: "asc" }] } } },
-          accessPoints: { orderBy: { name: "asc" }, include: { sections: { select: { name: true } } } },
+          accessPoints: { orderBy: { name: "asc" }, include: { sections: { select: { name: true } }, zone: { select: { name: true } } } },
+          zones: { orderBy: [{ level: "asc" }, { name: "asc" }] },
         },
       },
       events: {
@@ -34,7 +35,10 @@ async function main() {
         include: {
           sessions: {
             orderBy: { startsAt: "asc" },
-            include: { venue: { select: { name: true } }, ticketTypes: { orderBy: { sortOrder: "asc" }, include: { section: { select: { name: true } } } } },
+            include: {
+              venue: { select: { name: true } },
+              ticketTypes: { orderBy: { sortOrder: "asc" }, include: { section: { select: { name: true } }, zones: { select: { name: true } } } },
+            },
           },
         },
       },
@@ -54,6 +58,10 @@ async function main() {
       timezone: v.timezone,
       // Plano del boliche (escenario, barras…); los lounges van como butacas de su sección.
       mapItems: v.mapItems,
+      directions: v.directions,
+      mapUrl: v.mapUrl,
+      parking: v.parking,
+      accessibility: v.accessibility,
       sections: v.sections.map((s) => ({
         name: s.name,
         seatingMode: s.seatingMode,
@@ -63,7 +71,8 @@ async function main() {
         layout: s.layout,
         seats: s.seats.map((seat) => ({ row: seat.row, number: seat.number, label: seat.label, x: seat.x, y: seat.y })),
       })),
-      accessPoints: v.accessPoints.map((a) => ({ name: a.name, sections: a.sections.map((s) => s.name) })),
+      zones: v.zones.map((z) => ({ name: z.name, level: z.level, capacity: z.capacity, color: z.color })),
+      accessPoints: v.accessPoints.map((a) => ({ name: a.name, sections: a.sections.map((s) => s.name), direction: a.direction, zone: a.zone?.name ?? null })),
     })),
     events: org.events.map((e) => ({
       slug: e.slug,
@@ -74,12 +83,22 @@ async function main() {
       status: e.status,
       mode: e.mode,
       transfersEnabled: e.transfersEnabled,
+      minAge: e.minAge,
+      requiredDocument: e.requiredDocument,
+      dressCode: e.dressCode,
+      forbiddenItems: e.forbiddenItems,
+      reentryPolicy: e.reentryPolicy,
+      refundPolicy: e.refundPolicy,
+      contactPhone: e.contactPhone,
+      contactEmail: e.contactEmail,
       sessions: e.sessions.map((s) => ({
         venue: s.venue.name,
         startsAt: s.startsAt,
         endsAt: s.endsAt,
         doorsOpenAt: s.doorsOpenAt,
         arrivalAt: s.arrivalAt,
+        lastEntryAt: s.lastEntryAt,
+        program: s.program,
         salesStartAt: s.salesStartAt,
         salesEndAt: s.salesEndAt,
         queueEnabled: s.queueEnabled,
@@ -105,6 +124,8 @@ async function main() {
           peoplePerUnit: t.peoplePerUnit,
           consumptionAmount: t.consumptionAmount,
           entryUntil: t.entryUntil,
+          maxEntries: t.maxEntries,
+          zones: t.zones.map((z) => z.name),
         })),
       })),
     })),

@@ -1,4 +1,4 @@
-import { CATEGORY_LABEL } from "@ticketera/core";
+import { CATEGORY_LABEL, DEFAULT_REFUND_POLICY, MIN_AGE_OPTIONS } from "@ticketera/core";
 import { EventCategory } from "@ticketera/db";
 import { MODE_LABEL } from "@/lib/labels";
 import { ImageUrlField } from "./image-url-field";
@@ -17,6 +17,14 @@ export function EventFields({
     mode: string;
     clientId: string | null;
     transfersEnabled: boolean;
+    minAge?: number | null;
+    requiredDocument?: string | null;
+    dressCode?: string | null;
+    forbiddenItems?: string | null;
+    reentryPolicy?: string | null;
+    refundPolicy?: string | null;
+    contactPhone?: string | null;
+    contactEmail?: string | null;
   };
   /** Clientes de Impacta (null: no aplica, por ejemplo en el panel de un organizador). */
   clients: { id: string; name: string }[] | null;
@@ -83,6 +91,56 @@ export function EventFields({
           </label>
         )}
       </div>
+      <details
+        className="rounded-md border border-[var(--border)] p-4"
+        open={Boolean(defaults && (defaults.minAge || defaults.requiredDocument || defaults.dressCode || defaults.refundPolicy || defaults.contactPhone))}
+      >
+        <summary className="cursor-pointer text-sm font-medium">
+          Condiciones y contacto <span className="font-normal text-[var(--ink-dim)]">· lo ve el comprador antes de comprar y en su entrada</span>
+        </summary>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <label className="label">
+            Edad mínima
+            <select name="minAge" defaultValue={defaults?.minAge ? String(defaults.minAge) : ""} className="field">
+              <option value="">Todo público</option>
+              {MIN_AGE_OPTIONS.map((age) => (
+                <option key={age} value={age}>
+                  Mayores de {age}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="label">
+            Documento para entrar
+            <input name="requiredDocument" maxLength={120} defaultValue={defaults?.requiredDocument ?? ""} placeholder="Carnet de identidad" className="field" />
+          </label>
+          <label className="label">
+            Código de vestimenta
+            <input name="dressCode" maxLength={200} defaultValue={defaults?.dressCode ?? ""} placeholder="Elegante sport" className="field" />
+          </label>
+          <label className="label">
+            Objetos no permitidos
+            <input name="forbiddenItems" maxLength={300} defaultValue={defaults?.forbiddenItems ?? ""} placeholder="Bebidas, armas, cámaras profesionales" className="field" />
+          </label>
+          <label className="label sm:col-span-2">
+            Reingreso (¿se puede salir y volver?)
+            <input name="reentryPolicy" maxLength={300} defaultValue={defaults?.reentryPolicy ?? ""} placeholder="No se permite reingreso sin pulsera." className="field" />
+          </label>
+          <label className="label sm:col-span-2">
+            Cambios y reembolsos
+            <textarea name="refundPolicy" rows={3} maxLength={2000} defaultValue={defaults?.refundPolicy ?? DEFAULT_REFUND_POLICY} className="field" />
+            <span className="text-xs font-normal text-[var(--ink-dim)]">Viene un texto estándar: edítalo o bórralo.</span>
+          </label>
+          <label className="label">
+            WhatsApp o teléfono de consultas
+            <input name="contactPhone" type="tel" maxLength={40} defaultValue={defaults?.contactPhone ?? ""} placeholder="71234567" className="field" />
+          </label>
+          <label className="label">
+            Correo de consultas
+            <input name="contactEmail" type="email" maxLength={120} defaultValue={defaults?.contactEmail ?? ""} className="field" />
+          </label>
+        </div>
+      </details>
     </>
   );
 }

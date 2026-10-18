@@ -96,7 +96,8 @@ export function mapItemsOf(value: unknown): MapItem[] {
 
 // ── Lounges / mesas en círculo ──
 
-export type TablesLayout = { type: "tables"; radius: number; prefix: string };
+/** `shape`: "round" = lounge o mesa (círculo); "rect" = reservado (rectángulo). Los viejos no lo traen: círculo. */
+export type TablesLayout = { type: "tables"; radius: number; prefix: string; shape?: "round" | "rect" };
 
 export const TABLE_RADIUS = 18;
 export const MAX_TABLES = 200;
@@ -150,4 +151,9 @@ export function parseTables(input: unknown, radius = TABLE_RADIUS): { ok: true; 
 /** Número para el próximo lounge del grupo. */
 export function nextTableNumber(tables: { number: number }[]): number {
   return tables.reduce((max, t) => Math.max(max, t.number), 0) + 1;
+}
+
+/** Un reservado se dibuja como rectángulo: ancho y alto alrededor de su centro. */
+export function reservadoSize(radius: number) {
+  return { width: radius * 3, height: radius * 2 };
 }

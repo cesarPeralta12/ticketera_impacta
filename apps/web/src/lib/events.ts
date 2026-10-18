@@ -1,5 +1,5 @@
 import { currentPrice, saleState, type CardSales } from "@ticketera/core";
-import { getSessionAvailability, onlineOnSaleWhere, prisma, type EventCategory } from "@ticketera/db";
+import { getSessionAvailability, onlineOnSaleWhere, prisma, type EventCategory, type Prisma } from "@ticketera/db";
 
 /** Lo que muestra la portada de cada evento: su próxima función, el precio desde y su estado de venta. */
 export type EventCard = {
@@ -131,6 +131,23 @@ export async function listPublishedEvents(category?: EventCategory, search?: str
   );
 
   return cards.flatMap((c) => (c ? [c] : [])).sort((a, b) => a.nextSession.startsAt.getTime() - b.nextSession.startsAt.getTime());
+}
+
+const eventPageInclude = {
+  organization: { select: { name: true, isPlatform: true } },
+  sessions: {
+    where: { cancelledAt: null },
+    orderBy: { startsAt: "asc" },
+    include: {
+      venue: true,
+      ticketTypes: { orderBy: { sortOrder: "asc" }, include: { section: true } },
+    },
+  },
+} satisfies Prisma.EventInclude;
+
+/** Un evento por su id en cualquier estado (borrador, en revisión): para la vista previa firmada desde el panel. */
+export async function getEventForPreview(id: string) {
+  return prisma.event.findFirst({ where: { id, status: { not: "CANCELLED" } }, include: eventPageInclude });
 }
 
 export async function getPublishedEvent(slug: string) {

@@ -1,11 +1,22 @@
 "use client";
 
-import type { KeyboardEvent } from "react";
-import { CANVAS_HEIGHT, CANVAS_WIDTH, formatMoney, type MapItem } from "@ticketera/core";
+import type { KeyboardEvent, SVGProps } from "react";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, formatMoney, reservadoSize, type MapItem } from "@ticketera/core";
 import { MapDecor } from "./map-decor";
 
 /** `short`: el número que va dentro de un lounge en círculo. */
-export type PickerSeat = { id: string; label: string; x: number; y: number; taken: boolean; short?: string };
+/** `group`: en mesas con sillas, la mesa de la silla. */
+export type PickerSeat = {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  taken: boolean;
+  short?: string;
+  group?: string;
+  /** Apartada en una retención: la boletería la vende igual, pero se ve marcada. */
+  held?: { name: string; color: string } | null;
+};
 export type PickerSection = {
   ticketTypeId: string;
   name: string;
@@ -18,7 +29,9 @@ export type PickerSection = {
   discountPercent?: number | null;
   seats: PickerSeat[];
   /** Lounges o mesas en círculo: cada "butaca" es una mesa y se dibuja más grande, con su número. */
-  table?: { radius: number } | null;
+  table?: { radius: number; shape?: "round" | "rect" } | null;
+  /** Mesas con sillas que se venden completas: al tocar una silla se elige toda su mesa. */
+  wholeTable?: { prefix: string; chairs: number } | null;
 };
 
 /**
@@ -81,6 +94,7 @@ export function SeatPicker({
           section.seats.map((seat) => {
             const isSelected = selected.has(seat.id);
             const r = section.table ? section.table.radius : 7;
+            const rect = section.table?.shape === "rect";
             const number = section.table && seat.short ? (
               <text x={seat.x} y={seat.y + 5} textAnchor="middle" fontSize="13" fontWeight="800" fill={isSelected ? "#ffffff" : "#14181b"} pointerEvents="none">
                 {seat.short}
@@ -89,30 +103,32 @@ export function SeatPicker({
             if (seat.taken) {
               return (
                 <g key={seat.id} aria-hidden>
-                  <circle cx={seat.x} cy={seat.y} r={r} fill="#d4d2c9" />
+                  <Spot x={seat.x} y={seat.y} r={r} rect={rect} fill="#d4d2c9" />
                   {number}
                 </g>
               );
             }
             return (
               <g key={seat.id}>
-              <circle
-                cx={seat.x}
-                cy={seat.y}
+              <Spot
+                x={seat.x}
+                y={seat.y}
+                rect={rect}
                 r={isSelected ? r + 2 : r}
-                fill={isSelected ? "#14181b" : "#ffffff"}
+                fill={isSelected ? "#14181b" : seat.held ? seat.held.color : "#ffffff"}
+                fillOpacity={!isSelected && seat.held ? 0.45 : 1}
                 stroke={isSelected ? "#14181b" : section.color}
                 strokeWidth={2}
                 role="checkbox"
                 aria-checked={isSelected}
-                aria-label={`${section.name}, ${seat.label}`}
+                aria-label={`${section.name}, ${seat.label}${seat.held ? ` (retención ${seat.held.name})` : ""}`}
                 tabIndex={0}
                 className="cursor-pointer outline-none focus-visible:stroke-[#0f8a6b]"
                 onClick={() => onToggle(section.ticketTypeId, seat.id)}
                 onKeyDown={(e) => onKey(e, section.ticketTypeId, seat.id)}
               >
-                <title>{`${section.name} · ${seat.label}`}</title>
-              </circle>
+                <title>{`${section.name} · ${seat.label}${seat.held ? ` · retención ${seat.held.name}` : ""}`}</title>
+              </Spot>
               {number}
               </g>
             );
@@ -131,5 +147,22 @@ export function SeatPicker({
         </span>
       </div>
     </div>
+  );
+}
+
+/** Un lounge (círculo) o un reservado (rectángulo) con centro en (x, y). */
+function Spot({ x, y, r, rect, children, ...rest }: { x: number; y: number; r: number; rect?: boolean } & Omit<SVGProps<SVGCircleElement>, "ref">) {
+  if (!rect) {
+    return (
+      <circle cx={x} cy={y} r={r} {...rest}>
+        {children}
+      </circle>
+    );
+  }
+  const { width, height } = reservadoSize(r);
+  return (
+    <rect x={x - width / 2} y={y - height / 2} width={width} height={height} rx={6} {...(rest as SVGProps<SVGRectElement>)}>
+      {children}
+    </rect>
   );
 }

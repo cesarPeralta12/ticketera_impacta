@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { deriveTicketKey, tableLabel, toBase64Url } from "@ticketera/core";
+import { deriveTicketKey, printedOpensDoor, tableLabel, toBase64Url, type PrintStateName } from "@ticketera/core";
 import { prisma } from "../client";
 import type { AccessMethod, StaffRole } from "../generated/prisma/client";
 import { verifyStaffCredentials } from "./accounts";
@@ -297,7 +297,9 @@ const STATUS_CODE = { VALID: "V", USED: "U", CANCELLED: "C" } as const;
  * - Las entradas de la puerta elegida van completas (titular, tipo, butaca, métodos).
  * - Las de otras puertas van compactas (solo código, sección y estado): sirven para decir
  *   "puerta equivocada, esta entrada entra por X" en vez de "no existe".
- * - Con `since`, devuelve solo lo que cambió desde esa hora (ventas nuevas, usadas, anuladas).
+ * - Con `since`, devuelve solo lo que cambió desde esa hora (ventas nuevas, usadas, anuladas, salidas).
+ * - Presencia: una entrada que salió y todavía puede reingresar baja como válida, así la app (que solo conoce
+ *   "usada / no usada") la deja pasar también sin conexión; al sincronizar, el servidor la cuenta como reingreso.
  * - No incluye el secreto del QR: el teléfono valida que el código exista en la lista. Las entradas de QR
  *   dinámico (solo las de las secciones de esta puerta) llevan además su LLAVE, para recalcular la prueba sin
  *   internet; `syncedAt` es la hora del servidor con la que el teléfono calibra su reloj.
@@ -339,6 +341,10 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
               { cancelledAt: { gte: since } },
               // Transferida: lleva código y titular nuevos.
               { transferredAt: { gte: since } },
+              // Entrada impresa recién vendida (o entregada/devuelta): cambia si abre la puerta.
+              { soldAt: { gte: since } },
+              // Salió, reingresó o cambió de zona.
+              { lastMovementAt: { gte: since } },
             ],
           }
         : {}),
@@ -348,10 +354,14 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
       status: true,
       holderName: true,
       holderDocument: true,
-      ticketType: { select: { name: true, sectionId: true, accessMethods: true, qrMode: true } },
+      ticketType: { select: { name: true, sectionId: true, accessMethods: true, qrMode: true, maxEntries: true, zones: { select: { id: true } } } },
       seat: { select: { label: true } },
       order: { select: { buyerName: true, buyerDocument: true } },
       credit: { select: { tableNumber: true, seat: { select: { label: true } } } },
+      printState: true,
+      printBatch: { select: { mode: true } },
+      inside: true,
+      entries: true,
     },
   });
   const secret = tickets.some((t) => t.ticketType.qrMode === "DYNAMIC") ? requireEnv("TICKET_QR_SECRET") : "";
@@ -378,13 +388,23 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
       timezone: session.venue.timezone,
     },
     gateId: gate?.id ?? null,
-    gates: session.venue.accessPoints.map((g) => ({ id: g.id, name: g.name, sectionIds: g.sections.map((s) => s.id) })),
+    // direction (IN, OUT, BOTH) y zoneId: para que la app sepa si la puerta es de salida y a qué zona da.
+    gates: session.venue.accessPoints.map((g) => ({ id: g.id, name: g.name, sectionIds: g.sections.map((s) => s.id), direction: g.direction, zoneId: g.zoneId })),
     sections: Object.fromEntries(session.venue.sections.map((s) => [s.id, s.name])),
     tickets: await Promise.all(
       tickets.map(async (t) => {
         const sectionId = t.ticketType.sectionId;
         const mine = !restricted || (sectionId !== null && gateSections.has(sectionId));
-        const base = { code: t.code, status: STATUS_CODE[t.status], sectionId, mine };
+        // Entrada impresa que todavía no se vendió (lote "activada al vender"): en el teléfono figura anulada.
+        const inactive = t.status === "VALID" && t.printBatch !== null && !printedOpensDoor(t.printBatch.mode, (t.printState ?? "STOCK") as PrintStateName);
+        // Salió y le quedan ingresos: para el teléfono vuelve a estar sin usar.
+        const canReenter = t.status === "USED" && !t.inside && (t.ticketType.maxEntries === 0 || t.entries < t.ticketType.maxEntries);
+        const base = {
+          code: t.code,
+          status: inactive ? STATUS_CODE.CANCELLED : canReenter ? STATUS_CODE.VALID : STATUS_CODE[t.status],
+          sectionId,
+          mine,
+        };
         if (!mine) return base;
         const dynamic = t.ticketType.qrMode === "DYNAMIC";
         return {
@@ -398,6 +418,12 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
           methods: t.ticketType.accessMethods,
           // QR dinámico: el teléfono recalcula la prueba con esta llave (solo de las entradas de su puerta).
           dynamic,
+          // Presencia y reglas (para puertas de salida, reingreso y zonas): si está adentro, cuántas veces entró, cuántas
+          // puede (0 = sin límite) y qué zonas abre (vacío = las de siempre).
+          inside: t.inside,
+          entries: t.entries,
+          maxEntries: t.ticketType.maxEntries,
+          zoneIds: t.ticketType.zones.map((z) => z.id),
           ...(dynamic ? { key: toBase64Url(await deriveTicketKey(secret, t.code)) } : {}),
         };
       }),

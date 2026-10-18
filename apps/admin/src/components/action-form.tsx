@@ -17,6 +17,7 @@ export function ActionForm({
   resetOnSuccess = false,
   successMessage,
   confirm,
+  onSuccess,
 }: {
   action: (state: FormState, formData: FormData) => Promise<FormState>;
   children: ReactNode;
@@ -25,6 +26,8 @@ export function ActionForm({
   successMessage?: string;
   /** Pide confirmación antes de enviar (acciones destructivas). */
   confirm?: string;
+  /** Después de guardar bien (ej. limpiar lo elegido en un mapa). */
+  onSuccess?: () => void;
 }) {
   const [state, formAction, pending] = useActionState(action, undefined);
   // Cuenta de solo lectura: el formulario se ve pero no se puede usar.
@@ -35,6 +38,8 @@ export function ActionForm({
 
   useEffect(() => {
     if (state?.ok && resetOnSuccess) formRef.current?.reset();
+    if (state?.ok) onSuccess?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo cuando llega un resultado nuevo
   }, [state, resetOnSuccess]);
 
   // El campo con error, en rojo y con el foco: no hay que buscarlo en el formulario.

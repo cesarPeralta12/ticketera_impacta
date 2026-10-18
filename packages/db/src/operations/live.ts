@@ -86,6 +86,7 @@ export async function getLiveAccess(sessionId: string) {
         rawCode: true,
         accessPoint: { select: { name: true } },
         operator: { select: { name: true } },
+        movement: true,
       },
     }),
   ]);
@@ -104,7 +105,7 @@ export async function getLiveAccess(sessionId: string) {
   for (const s of scans) {
     if (!s.ticketId) continue;
     if (s.result === "ACCEPTED") {
-      if (!entryByTicket.has(s.ticketId)) entryByTicket.set(s.ticketId, toScan(s));
+      if (!entryByTicket.has(s.ticketId) && isEntry(s.movement)) entryByTicket.set(s.ticketId, toScan(s));
     } else {
       attemptsByTicket.set(s.ticketId, [...(attemptsByTicket.get(s.ticketId) ?? []), toScan(s)]);
     }
@@ -146,7 +147,7 @@ export async function getLiveAccess(sessionId: string) {
   const byGate = session.venue.accessPoints.map((g) => ({
     id: g.id,
     name: g.name,
-    entered: scans.filter((s) => s.result === "ACCEPTED" && s.accessPoint?.name === g.name).length,
+    entered: scans.filter((s) => s.result === "ACCEPTED" && isEntry(s.movement) && s.accessPoint?.name === g.name).length,
   }));
 
   const rejected = scans
@@ -185,4 +186,9 @@ export async function getLiveAccess(sessionId: string) {
     tickets: liveTickets,
     rejected: rejected.slice(0, 100),
   };
+}
+
+/** Una lectura aceptada que es un ingreso (o reingreso): no una salida, un cambio de zona ni una corrección. */
+function isEntry(movement: string | null) {
+  return movement === null || movement === "ENTRY" || movement === "REENTRY";
 }

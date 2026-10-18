@@ -1,5 +1,6 @@
 "use client";
 
+import { PlanBackground, type PlanBackgroundInfo } from "@/components/plan-background";
 /**
  * Editor de zonas de entrada general (sin butacas): se dibujan como una forma en el mismo mapa que las butacas
  * (rectángulo, óvalo, trapecio o arco), con su nombre y su aforo. Se arrastra para ubicarla y se ajusta con
@@ -56,7 +57,7 @@ function freeSpot(zones: DesignerZone[], seats: Props["seats"]) {
 
 const num = (v: string) => (v === "" ? Number.NaN : Number(v));
 
-export function ZoneDesigner({ venueId, zones, seats }: Props) {
+export function ZoneDesigner({ venueId, zones, seats, background }: Props & { background?: PlanBackgroundInfo }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [capacity, setCapacity] = useState(200);
@@ -167,6 +168,7 @@ export function ZoneDesigner({ venueId, zones, seats }: Props) {
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_300px]">
       <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]">
         <svg ref={svgRef} viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full touch-none select-none" style={{ background: "#fbfbf9" }}>
+          <PlanBackground background={background} />
           <rect x={CANVAS_WIDTH / 2 - 160} y={16} width={320} height={20} rx={4} fill="#1a1a18" />
           <text x={CANVAS_WIDTH / 2} y={30} textAnchor="middle" fontSize="10" letterSpacing="2" fill="#fff">
             ESCENARIO

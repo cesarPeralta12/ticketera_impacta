@@ -6,6 +6,7 @@ import { prisma } from "@ticketera/db";
 import { EVENT_STATUS } from "@/lib/labels";
 import { enterOrganizationAction } from "@/lib/actions/platform";
 import { ROLES, isGlobalView, isNightlife, requireStaff } from "@/lib/session";
+import { Help } from "@/components/help";
 
 export const metadata: Metadata = { title: "Eventos" };
 
@@ -50,12 +51,26 @@ export default async function EventsPage() {
       <div className="flex items-end justify-between gap-4">
         <div>
           <p className="eyebrow">{events.length} evento(s)</p>
-          <h1 className="text-2xl font-semibold tracking-tight">{isGlobalView(staff) ? "Eventos de Impacta" : isNightlife(staff) ? "Noches" : "Eventos"}</h1>
+          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+            {isGlobalView(staff) ? "Eventos de Impacta" : isNightlife(staff) ? "Noches" : "Eventos"}
+            <Help title="Cómo se arma un evento">
+              «+ Nuevo evento» abre el asistente: datos, lugar y fecha, entradas (con modelos General, VIP, Mesa, Free y
+              Preventa), revisar con la vista previa del comprador y publicar. Para un evento chico que se vende con entradas
+              impresas, «+ Evento pequeño» deja todo listo para imprimir en un paso.
+            </Help>
+          </h1>
         </div>
         {!staff.readOnly && (
-          <Link href="/eventos/nuevo" className="btn btn-primary">
-            {isNightlife(staff) ? "+ Nuevo boliche" : "+ Nuevo evento"}
-          </Link>
+          <div className="flex flex-wrap justify-end gap-2">
+            {!isNightlife(staff) && (
+              <Link href="/eventos/rapido" className="btn" title="Evento chico con entradas impresas para vender en mano">
+                + Evento pequeño
+              </Link>
+            )}
+            <Link href="/eventos/nuevo" className="btn btn-primary">
+              {isNightlife(staff) ? "+ Nuevo boliche" : "+ Nuevo evento"}
+            </Link>
+          </div>
         )}
       </div>
 

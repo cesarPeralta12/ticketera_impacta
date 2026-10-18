@@ -24,6 +24,11 @@ type Exported = {
     timezone: string;
     /** Plano del boliche (archivos viejos no lo traen). */
     mapItems?: unknown;
+    /** Archivos viejos no traen estos datos para el comprador. */
+    directions?: string | null;
+    mapUrl?: string | null;
+    parking?: string | null;
+    accessibility?: string | null;
     sections: {
       name: string;
       seatingMode: "GENERAL_ADMISSION" | "RESERVED";
@@ -33,7 +38,9 @@ type Exported = {
       layout: unknown;
       seats: { row: string; number: string; label: string; x: number | null; y: number | null }[];
     }[];
-    accessPoints: { name: string; sections: string[] }[];
+    /** Archivos viejos no traen zonas, dirección ni zona de las puertas. */
+    zones?: { name: string; level: number; capacity: number | null; color: string }[];
+    accessPoints: { name: string; sections: string[]; direction?: "IN" | "OUT" | "BOTH"; zone?: string | null }[];
   }[];
   events: {
     slug: string;
@@ -44,6 +51,14 @@ type Exported = {
     status: string;
     mode: "TICKETING" | "GUEST_LIST";
     transfersEnabled: boolean;
+    minAge?: number | null;
+    requiredDocument?: string | null;
+    dressCode?: string | null;
+    forbiddenItems?: string | null;
+    reentryPolicy?: string | null;
+    refundPolicy?: string | null;
+    contactPhone?: string | null;
+    contactEmail?: string | null;
     sessions: {
       venue: string;
       startsAt: string;
@@ -51,6 +66,8 @@ type Exported = {
       doorsOpenAt: string | null;
       /** Archivos viejos no la traen. */
       arrivalAt?: string | null;
+      lastEntryAt?: string | null;
+      program?: unknown;
       salesStartAt: string | null;
       salesEndAt: string | null;
       queueEnabled: boolean;
@@ -110,11 +127,23 @@ async function main() {
       });
 
       const sectionIds = new Map<string, string>(); // "recinto/sección" → id
+      const zoneIds = new Map<string, string>(); // "recinto/zona" → id
       const venueIds = new Map<string, string>();
       for (const v of data.venues) {
         const mapItems = mapItemsOf(v.mapItems);
         const venue = await tx.venue.create({
-          data: { organizationId: org.id, name: v.name, address: v.address, city: v.city, timezone: v.timezone, mapItems: mapItems.length ? mapItems : undefined },
+          data: {
+            organizationId: org.id,
+            name: v.name,
+            address: v.address,
+            city: v.city,
+            timezone: v.timezone,
+            mapItems: mapItems.length ? mapItems : undefined,
+            directions: v.directions ?? null,
+            mapUrl: v.mapUrl ?? null,
+            parking: v.parking ?? null,
+            accessibility: v.accessibility ?? null,
+          },
         });
         venueIds.set(v.name, venue.id);
         for (const s of v.sections) {
@@ -132,9 +161,19 @@ async function main() {
           });
           sectionIds.set(`${v.name}/${s.name}`, section.id);
         }
+        for (const z of v.zones ?? []) {
+          const zone = await tx.accessZone.create({ data: { venueId: venue.id, name: z.name, level: z.level, capacity: z.capacity, color: z.color } });
+          zoneIds.set(`${v.name}/${z.name}`, zone.id);
+        }
         for (const a of v.accessPoints) {
           await tx.accessPoint.create({
-            data: { venueId: venue.id, name: a.name, sections: { connect: a.sections.map((name) => ({ id: sectionIds.get(`${v.name}/${name}`)! })) } },
+            data: {
+              venueId: venue.id,
+              name: a.name,
+              direction: a.direction ?? "IN",
+              zoneId: a.zone ? (zoneIds.get(`${v.name}/${a.zone}`) ?? null) : null,
+              sections: { connect: a.sections.map((name) => ({ id: sectionIds.get(`${v.name}/${name}`)! })) },
+            },
           });
         }
       }
@@ -154,6 +193,14 @@ async function main() {
             publishedAt: e.status === "PUBLISHED" ? new Date() : null,
             mode: e.mode,
             transfersEnabled: e.transfersEnabled,
+            minAge: e.minAge ?? null,
+            requiredDocument: e.requiredDocument ?? null,
+            dressCode: e.dressCode ?? null,
+            forbiddenItems: e.forbiddenItems ?? null,
+            reentryPolicy: e.reentryPolicy ?? null,
+            refundPolicy: e.refundPolicy ?? null,
+            contactPhone: e.contactPhone ?? null,
+            contactEmail: e.contactEmail ?? null,
           },
         });
         eventIds.set(e.slug, event.id);
@@ -168,6 +215,8 @@ async function main() {
               endsAt: date(s.endsAt),
               doorsOpenAt: date(s.doorsOpenAt),
               arrivalAt: date(s.arrivalAt ?? null),
+              lastEntryAt: date(s.lastEntryAt ?? null),
+              program: Array.isArray(s.program) && s.program.length ? (s.program as object) : undefined,
               salesStartAt: date(s.salesStartAt),
               salesEndAt: date(s.salesEndAt),
               queueEnabled: s.queueEnabled,
@@ -194,6 +243,13 @@ async function main() {
                   peoplePerUnit: t.peoplePerUnit as number,
                   consumptionAmount: (t.consumptionAmount as number | null) ?? null,
                   entryUntil: date(t.entryUntil),
+                  maxEntries: (t.maxEntries as number | undefined) ?? 1,
+                  zones: {
+                    connect: ((t.zones as string[] | undefined) ?? []).flatMap((name) => {
+                      const id = zoneIds.get(`${s.venue}/${name}`);
+                      return id ? [{ id }] : [];
+                    }),
+                  },
                 })),
               },
             },

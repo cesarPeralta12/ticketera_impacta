@@ -12,10 +12,15 @@ import {
   parseMapItems,
   parseTables,
   parseZoneLayout,
+  safeMapUrl,
   tableName,
   type PlacedTable,
   type SectionShape,
   type ZoneShape,
+  parseSeatedTablesLayout,
+  seatedTableSeats,
+  templateSectionSeats,
+  venueTemplate,
 } from "@ticketera/core";
 import { Prisma, prisma } from "@ticketera/db";
 import { formObject, intField, zodErrors, type FormState } from "@/lib/forms";
@@ -47,6 +52,49 @@ export async function createVenueAction(_prev: FormState, formData: FormData): P
     data: { organizationId: staff.organization.id, ...parsed.data, accessPoints: { create: [{ name: "Puerta principal" }] } },
   });
   redirect(`/recintos/${venue.id}`);
+}
+
+const venueInfoSchema = venueSchema.extend({
+  venueId: z.string(),
+  directions: z.string().max(1000).optional(),
+  mapUrl: z
+    .string()
+    .max(500)
+    .optional()
+    .refine((v) => !v || safeMapUrl(v) !== null, "El enlace del mapa tiene que empezar con https:// (cópialo de Google Maps)."),
+  parking: z.string().max(500).optional(),
+  accessibility: z.string().max(500).optional(),
+});
+
+/** Datos del recinto: nombre, dirección, zona horaria y lo que el comprador necesita para llegar. */
+export async function updateVenueAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const parsed = venueInfoSchema.safeParse(formObject(formData));
+  if (!parsed.success) return zodErrors(parsed.error);
+  const { venueId, ...data } = parsed.data;
+  const venue = await ownedVenue(staff.organization.id, venueId);
+  if (!venue) return { error: "Recinto no encontrado." };
+  // Las horas de las funciones se guardan en UTC: cambiar la zona horaria movería la hora local de todas.
+  if (data.timezone !== venue.timezone && (await prisma.eventSession.count({ where: { venueId: venue.id } })) > 0) {
+    return { fieldErrors: { timezone: "Ya hay funciones en este recinto: la zona horaria no se puede cambiar." } };
+  }
+  await prisma.venue.update({
+    where: { id: venue.id },
+    data: {
+      name: data.name,
+      address: data.address ?? null,
+      city: data.city ?? null,
+      timezone: data.timezone,
+      directions: data.directions ?? null,
+      mapUrl: data.mapUrl ? safeMapUrl(data.mapUrl) : null,
+      parking: data.parking ?? null,
+      accessibility: data.accessibility ?? null,
+    },
+  });
+  await logAudit({ actorType: "staff", actorId: staff.id, action: "venue.update", entity: "Venue", entityId: venue.id });
+  revalidatePath(`/recintos/${venue.id}`);
+  revalidatePath("/recintos");
+  return { ok: true, message: "Datos del recinto guardados." };
 }
 
 const gaSectionSchema = z.object({
@@ -206,6 +254,155 @@ export async function addSeatSectionAction(_prev: FormState, formData: FormData)
   return { ok: true };
 }
 
+/**
+ * Recinto nuevo desde una plantilla (boliche, teatro, salón, aire libre): secciones, zonas, mesas, plano, zonas de
+ * acceso y puertas ya armados. Después se edita como cualquier recinto.
+ */
+export async function createVenueFromTemplateAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const template = venueTemplate(String(formData.get("template") ?? ""));
+  if (!template) return { error: "Elige una plantilla." };
+  const name = String(formData.get("name") ?? "").trim().slice(0, 120);
+  if (name.length < 2) return { fieldErrors: { name: "Ponle un nombre al recinto." } };
+  if (await prisma.venue.findFirst({ where: { organizationId: staff.organization.id, name } })) {
+    return { fieldErrors: { name: "Ya tienes un recinto con ese nombre." } };
+  }
+  const venue = await prisma.$transaction(async (tx) => {
+    const created = await tx.venue.create({
+      data: {
+        organizationId: staff.organization.id,
+        name,
+        address: String(formData.get("address") ?? "").trim().slice(0, 200) || null,
+        city: String(formData.get("city") ?? "").trim().slice(0, 80) || null,
+        mapItems: template.items,
+      },
+    });
+    for (const [i, section] of template.sections.entries()) {
+      const seats = templateSectionSeats(section);
+      const layout =
+        section.kind === "zone"
+          ? section.zone
+          : section.kind === "seats"
+            ? section.shape
+            : section.kind === "lounges"
+              ? { type: "tables" as const, radius: TABLE_RADIUS, prefix: section.prefix, shape: section.shape }
+              : section.layout;
+      await tx.section.create({
+        data: {
+          venueId: created.id,
+          name: section.name,
+          color: section.color,
+          seatingMode: section.kind === "zone" ? "GENERAL_ADMISSION" : "RESERVED",
+          capacity: section.kind === "zone" ? section.capacity : seats.length,
+          layout,
+          sortOrder: i,
+          ...(seats.length ? { seats: { createMany: { data: seats } } } : {}),
+        },
+      });
+    }
+    const zoneIds = new Map<string, string>();
+    for (const z of template.accessZones) {
+      zoneIds.set(z.name, (await tx.accessZone.create({ data: { venueId: created.id, name: z.name, level: z.level, color: z.color } })).id);
+    }
+    for (const g of template.gates) {
+      await tx.accessPoint.create({ data: { venueId: created.id, name: g.name, direction: g.direction, zoneId: g.zone ? (zoneIds.get(g.zone) ?? null) : null } });
+    }
+    return created;
+  });
+  await logAudit({ actorType: "staff", actorId: staff.id, action: "venue.create_from_template", entity: "Venue", entityId: venue.id, data: { template: template.key } });
+  redirect(`/recintos/${venue.id}`);
+}
+
+const PLAN_MAX_BYTES = 4_000_000;
+
+/** Tipo real de la imagen por sus primeros bytes (no por la extensión): PNG, JPG, WebP o SVG. */
+function planImageType(bytes: Uint8Array): string | null {
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP") return "image/webp";
+  const head = new TextDecoder().decode(bytes.slice(0, 512)).trimStart().toLowerCase();
+  if (head.startsWith("<svg") || (head.startsWith("<?xml") && head.includes("<svg"))) return "image/svg+xml";
+  return null;
+}
+
+/** Sube (o reemplaza) la imagen del plano real para calcar en los editores; o la quita; o cambia su opacidad. */
+export async function updatePlanImageAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const venue = await ownedVenue(staff.organization.id, String(formData.get("venueId")));
+  if (!venue) return { error: "Recinto no encontrado." };
+  const opacity = Math.min(100, Math.max(5, Math.round(Number(formData.get("opacity") ?? 40)) || 40));
+  if (formData.get("remove") === "1") {
+    await prisma.venuePlanImage.deleteMany({ where: { venueId: venue.id } });
+    revalidatePath(`/recintos/${venue.id}`);
+    return { ok: true, message: "Plano de fondo quitado." };
+  }
+  const file = formData.get("image");
+  if (file instanceof File && file.size > 0) {
+    if (file.size > PLAN_MAX_BYTES) return { fieldErrors: { image: "La imagen supera 4 MB." } };
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const type = planImageType(bytes);
+    if (!type) return { fieldErrors: { image: "Sube un PNG, JPG, WebP o SVG." } };
+    await prisma.venuePlanImage.upsert({
+      where: { venueId: venue.id },
+      create: { venueId: venue.id, data: bytes, mimeType: type, opacity },
+      update: { data: bytes, mimeType: type, opacity },
+    });
+    await logAudit({ actorType: "staff", actorId: staff.id, action: "venue.plan_image", entity: "Venue", entityId: venue.id, data: { type, bytes: bytes.length } });
+  } else {
+    const { count } = await prisma.venuePlanImage.updateMany({ where: { venueId: venue.id }, data: { opacity } });
+    if (count === 0) return { fieldErrors: { image: "Elige la imagen del plano." } };
+  }
+  revalidatePath(`/recintos/${venue.id}`);
+  return { ok: true, message: "Plano de fondo guardado." };
+}
+
+/** Mesas con sillas alrededor: una sección numerada donde cada silla es una butaca (ver seated-tables.ts). */
+export async function addSeatedTablesSectionAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const venue = await ownedVenue(staff.organization.id, String(formData.get("venueId")));
+  if (!venue) return { error: "Recinto no encontrado." };
+  const name = String(formData.get("name") ?? "").trim();
+  const color = String(formData.get("color") ?? "");
+  if (name.length < 2) return { error: "Ponle un nombre a la sección." };
+  if (!/^#[0-9a-fA-F]{6}$/.test(color)) return { error: "Color inválido." };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(String(formData.get("layout") ?? ""));
+  } catch {
+    return { error: "Las mesas no son válidas." };
+  }
+  const parsed = parseSeatedTablesLayout(raw);
+  if (!parsed.ok) return { error: parsed.error };
+  const seats = seatedTableSeats(parsed.layout);
+  try {
+    const section = await prisma.section.create({
+      data: {
+        venueId: venue.id,
+        name,
+        color,
+        seatingMode: "RESERVED",
+        capacity: seats.length,
+        layout: parsed.layout,
+        sortOrder: await prisma.section.count({ where: { venueId: venue.id } }),
+        seats: { createMany: { data: seats } },
+      },
+    });
+    await logAudit({
+      actorType: "staff",
+      actorId: staff.id,
+      action: "section.seated_tables",
+      entity: "Section",
+      entityId: section.id,
+      data: { tables: parsed.layout.tables.length, chairs: parsed.layout.chairs, mode: parsed.layout.mode },
+    });
+  } catch (error) {
+    if (isUnique(error)) return { error: "Ya existe una sección con ese nombre." };
+    throw error;
+  }
+  revalidatePath(`/recintos/${venue.id}`);
+  return { ok: true };
+}
+
 /** Entradas vendidas o reservadas (en cualquier estado) de una sección. */
 async function sectionSales(sectionId: string) {
   return prisma.orderItem.count({ where: { ticketType: { sectionId } } });
@@ -316,17 +513,79 @@ export async function updateAccessPointSectionsAction(_prev: FormState, formData
   if (!gate) return { error: "Puerta no encontrada." };
   const requested = formData.getAll("sectionIds").map(String);
   const sections = await prisma.section.findMany({ where: { id: { in: requested }, venueId: gate.venueId }, select: { id: true } });
+  // Dirección (entrada, salida o ambas) y zona a la que da la puerta.
+  const direction = (["IN", "OUT", "BOTH"] as const).find((d) => d === formData.get("direction")) ?? gate.direction;
+  const zoneId = String(formData.get("zoneId") ?? "");
+  const zone = zoneId ? await prisma.accessZone.findFirst({ where: { id: zoneId, venueId: gate.venueId }, select: { id: true } }) : null;
 
-  await prisma.accessPoint.update({ where: { id: gate.id }, data: { sections: { set: sections } } });
+  await prisma.accessPoint.update({ where: { id: gate.id }, data: { sections: { set: sections }, direction, zoneId: zone?.id ?? null } });
   await logAudit({
       actorType: "staff",
       actorId: staff.id,
       action: "access_point.sections",
       entity: "AccessPoint",
       entityId: gate.id,
-      data: { sections: sections.map((s) => s.id) },
+      data: { sections: sections.map((s) => s.id), direction, zoneId: zone?.id ?? null },
     });
   revalidatePath(`/recintos/${gate.venueId}`);
+  return { ok: true };
+}
+
+const zoneSchema = z.object({
+  name: z.string({ error: "Ingresa un nombre." }).trim().min(2, "Ingresa un nombre.").max(40),
+  level: intField(0, 9, "El nivel"),
+  capacity: intField(1, 200_000, "El aforo").optional(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Color inválido.").default("#2E9E6A"),
+});
+
+/** Zona de acceso del recinto (Exterior, General, VIP…): las puertas dan a una zona y cada tipo de entrada abre las suyas. */
+export async function addZoneAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const venue = await ownedVenue(staff.organization.id, String(formData.get("venueId")));
+  if (!venue) return { error: "Recinto no encontrado." };
+  const parsed = zoneSchema.safeParse(formObject(formData));
+  if (!parsed.success) return zodErrors(parsed.error);
+  try {
+    const zone = await prisma.accessZone.create({ data: { venueId: venue.id, ...parsed.data } });
+    await logAudit({ actorType: "staff", actorId: staff.id, action: "zone.create", entity: "AccessZone", entityId: zone.id });
+  } catch (error) {
+    if (isUnique(error)) return { fieldErrors: { name: "Ya existe una zona con ese nombre." } };
+    throw error;
+  }
+  revalidatePath(`/recintos/${venue.id}`);
+  return { ok: true };
+}
+
+export async function updateZoneAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const zone = await prisma.accessZone.findFirst({
+    where: { id: String(formData.get("zoneId")), venue: { organizationId: staff.organization.id } },
+  });
+  if (!zone) return { error: "Zona no encontrada." };
+  const parsed = zoneSchema.safeParse(formObject(formData));
+  if (!parsed.success) return zodErrors(parsed.error);
+  try {
+    await prisma.accessZone.update({ where: { id: zone.id }, data: { ...parsed.data, capacity: parsed.data.capacity ?? null } });
+  } catch (error) {
+    if (isUnique(error)) return { fieldErrors: { name: "Ya existe una zona con ese nombre." } };
+    throw error;
+  }
+  revalidatePath(`/recintos/${zone.venueId}`);
+  return { ok: true };
+}
+
+/** Borra una zona: sus puertas quedan como ingreso general y los tipos de entrada dejan de abrirla. */
+export async function deleteZoneAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const zone = await prisma.accessZone.findFirst({
+    where: { id: String(formData.get("zoneId")), venue: { organizationId: staff.organization.id } },
+    include: { _count: { select: { inside: true } } },
+  });
+  if (!zone) return { error: "Zona no encontrada." };
+  if (zone._count.inside > 0) return { error: `Hay ${zone._count.inside} persona(s) adentro de "${zone.name}" ahora: no se puede borrar.` };
+  await prisma.accessZone.delete({ where: { id: zone.id } });
+  await logAudit({ actorType: "staff", actorId: staff.id, action: "zone.delete", entity: "AccessZone", entityId: zone.id, data: { name: zone.name } });
+  revalidatePath(`/recintos/${zone.venueId}`);
   return { ok: true };
 }
 
@@ -344,7 +603,7 @@ export async function deleteAccessPointAction(_prev: FormState, formData: FormDa
   return { ok: true };
 }
 
-type PlanGroup = { sectionId?: string; name: string; color: string; prefix: string; tables: PlacedTable[] };
+type PlanGroup = { sectionId?: string; name: string; color: string; prefix: string; shape: "round" | "rect"; tables: PlacedTable[] };
 
 /** Lee y valida el plano que manda el editor de boliche. */
 function parsePlan(raw: string): { ok: true; items: NonNullable<ReturnType<typeof parseMapItems>>; groups: PlanGroup[] } | { ok: false; error: string } {
@@ -366,7 +625,8 @@ function parsePlan(raw: string): { ok: true; items: NonNullable<ReturnType<typeo
     if (!/^#[0-9a-fA-F]{6}$/.test(color)) return { ok: false, error: `Color inválido en "${name}".` };
     const tables = parseTables(g.tables, TABLE_RADIUS);
     if (!tables.ok) return { ok: false, error: `${name}: ${tables.error}` };
-    groups.push({ ...(typeof g.sectionId === "string" && g.sectionId ? { sectionId: g.sectionId } : {}), name, color, prefix, tables: tables.tables });
+    const shape = g.shape === "rect" ? ("rect" as const) : ("round" as const);
+    groups.push({ ...(typeof g.sectionId === "string" && g.sectionId ? { sectionId: g.sectionId } : {}), name, color, prefix, shape, tables: tables.tables });
   }
   if (new Set(groups.map((g) => g.name.toLowerCase())).size !== groups.length) return { ok: false, error: "Dos grupos de lounges tienen el mismo nombre." };
   return { ok: true, items, groups };
@@ -388,7 +648,7 @@ export async function saveClubPlanAction(venueId: string, planJson: string): Pro
     await prisma.$transaction(async (tx) => {
       await tx.venue.update({ where: { id: venue.id }, data: { mapItems: plan.items } });
       for (const group of plan.groups) {
-        const layout = { type: "tables" as const, radius: TABLE_RADIUS, prefix: group.prefix };
+        const layout = { type: "tables" as const, radius: TABLE_RADIUS, prefix: group.prefix, shape: group.shape };
         const seatData = (t: PlacedTable) => ({ row: "L", number: String(t.number), label: tableName(group.prefix, t.number), x: t.x, y: t.y });
 
         if (!group.sectionId) {

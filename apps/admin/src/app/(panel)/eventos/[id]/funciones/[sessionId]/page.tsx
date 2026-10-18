@@ -4,12 +4,17 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import {
   currentPrice,
+  effectiveSaleWindow,
   formatClock,
   formatDateTime,
   formatMoney,
+  inheritsSaleWindow,
+  isSeatedTablesLayout,
   isTablesLayout,
+  suggestedPresaleEnd,
   isZoneLayout,
   mapItemsOf,
+  parseProgram,
   saleState,
   sessionNoun,
   sessionTimesInput,
@@ -20,19 +25,23 @@ import {
 } from "@ticketera/core";
 import { getSessionAvailability, getZoneAvailability, prisma } from "@ticketera/db";
 import { AccessMethodsField } from "@/components/access-methods-field";
+import { TicketTypeForm } from "@/components/ticket-type-form";
 import { ActionForm } from "@/components/action-form";
 import { SeatMapPreview, positioned } from "@/components/seat-map-preview";
 import {
-  addTicketTypeAction,
   updateTicketTypeSalesAction,
   deleteSessionAction,
   deleteTicketTypeAction,
   duplicateSessionAction,
   setQrModeAction,
+  updateEntryRulesAction,
   updateAccessMethodsAction,
+  updateProgramAction,
   updateQueueSettingsAction,
   updateSessionAction,
 } from "@/lib/actions/events";
+import { ProgramEditor } from "@/components/program-editor";
+import { PrintedCard } from "./printed-card";
 import { SessionTimesFields } from "@/components/session-times-fields";
 import { seatingLabel } from "@/lib/labels";
 import { ROLES, requireStaff } from "@/lib/session";
@@ -56,17 +65,26 @@ export default async function SessionPage({ params }: Props) {
     where: { id: sessionId, eventId: id, event: { organizationId: staff.organization.id } },
     include: {
       event: true,
-      venue: { include: { sections: { orderBy: { sortOrder: "asc" }, include: { seats: { select: { x: true, y: true, number: true } } } } } },
-      ticketTypes: { orderBy: { sortOrder: "asc" }, include: { section: true, _count: { select: { orderItems: true } } } },
+      venue: {
+        include: {
+          sections: { orderBy: { sortOrder: "asc" }, include: { seats: { select: { x: true, y: true, number: true } } } },
+          zones: { orderBy: [{ level: "asc" }, { name: "asc" }], select: { id: true, name: true, color: true } },
+        },
+      },
+      ticketTypes: {
+        orderBy: { sortOrder: "asc" },
+        include: { section: true, zones: { select: { id: true } }, _count: { select: { orderItems: true } } },
+      },
     },
   });
   if (!session) notFound();
 
-  const [remaining, zones, guests, issued] = await Promise.all([
+  const [remaining, zones, guests, issued, held] = await Promise.all([
     getSessionAvailability(session.id),
     getZoneAvailability(session.id),
     prisma.ticket.count({ where: { sessionId: session.id, order: { channel: "GUEST" }, status: { in: ["VALID", "USED"] } } }),
     prisma.ticket.count({ where: { sessionId: session.id, status: { in: ["VALID", "USED"] } } }),
+    prisma.seatHoldSeat.count({ where: { sessionId: session.id } }),
   ]);
   const guestList = session.event.mode === "GUEST_LIST";
   const pricedSections = new Set(session.ticketTypes.map((t) => t.sectionId));
@@ -114,6 +132,19 @@ export default async function SessionPage({ params }: Props) {
         <span className="font-mono text-sm text-[var(--accent)]">Abrir →</span>
       </Link>
 
+      {(session.ticketTypes.some((t) => t.kind === "TABLE") || seatedSections.some((s) => isTablesLayout(s.layout) || isSeatedTablesLayout(s.layout))) && (
+        <Link
+          href={`/boleteria/${session.id}/mesas`}
+          className="card flex flex-wrap items-center justify-between gap-3 p-5 transition-colors hover:border-[var(--accent)]"
+        >
+          <span>
+            <span className="block font-medium">Mesas (anfitriones)</span>
+            <span className="text-sm text-[var(--ink-muted)]">Cada mesa en vivo: libre, vendida u ocupada, quién la compró, cuántos entraron y su consumo.</span>
+          </span>
+          <span className="font-mono text-sm text-[var(--accent)]">Abrir →</span>
+        </Link>
+      )}
+
       {nightlife && hasConsumption && (
         <Link
           href={`/barra/${session.id}`}
@@ -143,6 +174,23 @@ export default async function SessionPage({ params }: Props) {
         </span>
         <span className="font-mono text-sm text-[var(--accent)]">{guests} invitado(s) →</span>
       </Link>
+
+      {!guestList && seatedSections.length > 0 && (
+        <Link
+          href={`/eventos/${id}/funciones/${session.id}/retenciones`}
+          className="card flex flex-wrap items-center justify-between gap-3 p-5 transition-colors hover:border-[var(--accent)]"
+        >
+          <span>
+            <span className="block font-medium">Retenciones</span>
+            <span className="text-sm text-[var(--ink-muted)]">
+              Aparta butacas, mesas o sillas (prensa, artistas, producción) con un código para liberarlas.
+            </span>
+          </span>
+          <span className="font-mono text-sm text-[var(--accent)]">{held} apartada(s) →</span>
+        </Link>
+      )}
+
+      {!guestList && <PrintedCard session={session} organizationId={staff.organization.id} />}
 
       {zones.length > 0 && (
         <section className="card p-6">
@@ -194,6 +242,18 @@ export default async function SessionPage({ params }: Props) {
           )}
           <button type="submit" className="btn btn-dark w-fit">
             Guardar horarios
+          </button>
+        </ActionForm>
+      </section>
+
+      <section className="card p-6">
+        <h2 className="eyebrow mb-1">Programa</h2>
+        <p className="mb-4 text-sm text-[var(--ink-muted)]">Quién toca y a qué hora (opcional). Se muestra en la web y en la entrada.</p>
+        <ActionForm action={updateProgramAction} className="flex flex-col gap-3">
+          <input type="hidden" name="sessionId" value={session.id} />
+          <ProgramEditor initial={parseProgram(session.program)} />
+          <button type="submit" className="btn w-fit">
+            Guardar programa
           </button>
         </ActionForm>
       </section>
@@ -271,6 +331,41 @@ export default async function SessionPage({ params }: Props) {
                           </button>
                         </ActionForm>
                       )}
+                      <details className="mt-1 text-xs">
+                        <summary className="cursor-pointer text-[var(--accent)]">
+                          {t.maxEntries === 1 ? "Un ingreso" : t.maxEntries === 0 ? "Reingreso sin límite" : `Hasta ${t.maxEntries} ingresos`}
+                          {t.zones.length > 0 && ` · ${t.zones.length} zona(s)`}
+                        </summary>
+                        <ActionForm action={updateEntryRulesAction} successMessage="Guardado." className="mt-2 flex flex-col gap-2">
+                          <input type="hidden" name="ticketTypeId" value={t.id} />
+                          <label className="label">
+                            Ingresos permitidos
+                            <select name="maxEntries" defaultValue={t.maxEntries} className="field w-auto text-xs">
+                              <option value={1}>1 (sin reingreso)</option>
+                              <option value={2}>2 (un reingreso)</option>
+                              <option value={3}>3</option>
+                              <option value={5}>5</option>
+                              <option value={0}>Sin límite</option>
+                            </select>
+                          </label>
+                          {session.venue.zones.length > 0 && (
+                            <fieldset className="flex flex-wrap gap-x-3 gap-y-1">
+                              <legend className="mb-1 font-medium">Zonas que abre (ninguna = las de siempre)</legend>
+                              {session.venue.zones.map((z) => (
+                                <label key={z.id} className="flex items-center gap-1">
+                                  <input type="checkbox" name="zoneIds" value={z.id} defaultChecked={t.zones.some((x) => x.id === z.id)} />
+                                  <span className="h-2 w-2 rounded-full" style={{ background: z.color }} />
+                                  {z.name}
+                                </label>
+                              ))}
+                            </fieldset>
+                          )}
+                          <button type="submit" className="btn w-fit px-2 py-1 text-xs">
+                            Guardar reglas
+                          </button>
+                          <p className="text-[var(--ink-dim)]">Para reingresar hace falta una puerta de salida (se configura en el recinto).</p>
+                        </ActionForm>
+                      </details>
                       {t._count.orderItems === 0 && session.event.mode === "TICKETING" && (
                         <ActionForm action={setQrModeAction} successMessage="Guardado." className="mt-1">
                           <input type="hidden" name="ticketTypeId" value={t.id} />
@@ -282,16 +377,18 @@ export default async function SessionPage({ params }: Props) {
                       )}
                     </td>
                     <td className="py-2.5 pr-4 text-xs">
-                      <span className={`badge ${SALE_STATE[saleState(t)].className}`}>{SALE_STATE[saleState(t)].text}</span>
+                      <span className={`badge ${SALE_STATE[saleState(effectiveSaleWindow(t, session))].className}`}>
+                        {SALE_STATE[saleState(effectiveSaleWindow(t, session))].text}
+                      </span>
                       <span className="mt-1 block text-[var(--ink-muted)]">
-                        {t.salesStartAt || t.salesEndAt
-                          ? [
+                        {inheritsSaleWindow(t)
+                          ? "Igual que la función"
+                          : [
                               t.salesStartAt && `desde ${formatDateTime(t.salesStartAt, tz)}`,
                               t.salesEndAt && `hasta ${formatDateTime(t.salesEndAt, tz)}`,
                             ]
                               .filter(Boolean)
-                              .join(" · ")
-                          : "Sin fechas: siempre"}
+                              .join(" · ")}
                       </span>
                       <details className="mt-1">
                         <summary className="cursor-pointer text-[var(--accent)]">Editar fechas</summary>
@@ -400,129 +497,14 @@ export default async function SessionPage({ params }: Props) {
             .
           </p>
         ) : (
-          <ActionForm action={addTicketTypeAction} resetOnSuccess className="flex flex-wrap items-end gap-3">
-            <input type="hidden" name="sessionId" value={session.id} />
-            <label className="label">
-              Sección
-              <select name="sectionId" required className="field">
-                {sectionOptions.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} — {s.seatingMode === "RESERVED" ? `${s.seats.length} ${isTablesLayout(s.layout) ? "lounges" : "butacas"}` : `aforo ${s.capacity}`}
-                    {pricedSections.has(s.id) ? " (ya tiene precio)" : " (sin precio)"}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="label">
-              Nombre
-              <input name="name" required placeholder="General, VIP, Preventa…" className="field" />
-            </label>
-            <label className="label">
-              Precio (Bs)
-              <input name="price" required inputMode="decimal" placeholder="120" className="field w-28" />
-            </label>
-            <label className="label">
-              Cupo
-              <input name="capacity" type="number" min={1} placeholder="ej. 200" className="field w-28" />
-              <span className="text-xs font-normal text-[var(--ink-dim)]">En butacas y lounges, el del mapa.</span>
-            </label>
-            {nightlife && (
-              <div className="flex basis-full flex-wrap items-end gap-3 rounded-md border border-dashed border-[#c04bff]/50 bg-[#f3e8ff]/40 p-3">
-                <p className="basis-full text-sm font-medium">Boliche (opcional)</p>
-                <label className="flex items-center gap-2 self-center text-sm">
-                  <input type="checkbox" name="table" className="h-4 w-4" /> Es una mesa o lounge
-                </label>
-                <label className="label">
-                  Personas por mesa
-                  <input name="peoplePerUnit" type="number" min={2} max={50} placeholder="ej. 6" className="field w-28" />
-                </label>
-                <label className="label">
-                  Consumo incluido (Bs)
-                  <input name="consumption" inputMode="decimal" placeholder="ej. 1000" className="field w-32" />
-                </label>
-                <label className="label">
-                  Válida para entrar hasta
-                  <input name="entryUntil" type="time" className="field w-32" />
-                </label>
-                <ul className="basis-full space-y-0.5 text-xs text-[var(--ink-dim)]">
-                  <li>
-                    <strong>Mesa o lounge</strong>: marca la casilla, personas, consumo y el precio de la mesa. Con los
-                    lounges del plano, el comprador elige el suyo; en una zona sin mapa, pon en Cupo cuántas mesas hay.
-                  </li>
-                  <li>
-                    <strong>Entrada + trago</strong>: solo el consumo (ej. 25). <strong>Free hasta la 01:00</strong>: precio
-                    0 y &ldquo;Válida para entrar hasta&rdquo; 01:00.
-                  </li>
-                </ul>
-              </div>
-            )}
-            <details className="basis-full">
-              <summary className="cursor-pointer text-sm font-medium text-[var(--accent)]">
-                Más opciones: preventa, descuento, lectura en puerta, máximo por compra
-              </summary>
-              <div className="mt-3 flex flex-wrap items-end gap-3">
-                <label className="label">
-                  Máx. por compra
-                  <input name="maxPerOrder" type="number" min={1} max={10} defaultValue={10} className="field w-24" />
-                </label>
-                <div className="label">
-                  Lectura en puerta
-                  <div className="flex h-[38px] items-center">
-                    <AccessMethodsField />
-                  </div>
-                </div>
-                {session.event.mode === "TICKETING" && (
-                  <label className="flex items-center gap-2 self-center text-sm" title="El QR cambia cada 30 segundos y solo se lee con QR. Solo venta online (no boletería ni invitaciones).">
-                    <input type="checkbox" name="qrDynamic" className="h-4 w-4 accent-[var(--accent)]" /> QR dinámico
-                  </label>
-                )}
-                <div className="flex basis-full flex-wrap items-end gap-3 rounded-md border border-dashed border-[var(--border)] p-3">
-                  <label className="flex items-center gap-2 self-center text-sm">
-                    <input type="checkbox" name="presale" className="h-4 w-4" /> Es preventa
-                  </label>
-                  <label className="label">
-                    Venta desde (opcional)
-                    <input type="datetime-local" name="salesStartAt" className="field" />
-                  </label>
-                  <label className="label">
-                    Venta hasta {"(obligatorio en preventa)"}
-                    <input type="datetime-local" name="salesEndAt" className="field" />
-                  </label>
-                  <label className="flex items-center gap-2 self-center text-sm">
-                    <input type="checkbox" name="exclusive" defaultChecked className="h-4 w-4" /> Mientras dure la preventa, no
-                    vender las otras entradas de esta sección
-                  </label>
-                  <p className="basis-full text-xs text-[var(--ink-dim)]">
-                    Hora del recinto. Ejemplo: &ldquo;Preventa&rdquo; a Bs 70 hasta el 20/10 a las 23:59: ese momento la
-                    &ldquo;General&rdquo; de la misma sección empieza sola. En butacas numeradas siempre es así (un precio por
-                    butaca a la vez).
-                  </p>
-                </div>
-                <div className="flex basis-full flex-wrap items-end gap-3 rounded-md border border-dashed border-[var(--border)] p-3">
-                  <p className="basis-full text-sm font-medium">Descuento de preventa (opcional)</p>
-                  <label className="label">
-                    Porcentaje (%)
-                    <input name="discountPercent" inputMode="numeric" placeholder="ej. 20" className="field w-28" />
-                  </label>
-                  <label className="label">
-                    Desde (opcional)
-                    <input type="datetime-local" name="discountStartsAt" className="field" />
-                  </label>
-                  <label className="label">
-                    Hasta
-                    <input type="datetime-local" name="discountEndsAt" className="field" />
-                  </label>
-                  <p className="basis-full text-xs text-[var(--ink-dim)]">
-                    Misma entrada, mismo cupo: hasta la fecha se cobra el precio con ese porcentaje menos y después vuelve al
-                    precio normal solo. La web muestra el precio normal tachado y el descuento.
-                  </p>
-                </div>
-              </div>
-            </details>
-            <button type="submit" className="btn btn-dark">
-              Agregar
-            </button>
-          </ActionForm>
+          <TicketTypeForm
+            sessionId={session.id}
+            sectionOptions={sectionOptions}
+            pricedSections={pricedSections}
+            nightlife={nightlife}
+            ticketing={session.event.mode === "TICKETING"}
+            presaleEnd={suggestedPresaleEnd(utcToZonedInput(session.startsAt, tz).slice(0, 10), now, session.startsAt)}
+          />
         )}
         <p className="mt-3 text-xs text-[var(--ink-dim)]">
           Varios precios pueden compartir una sección general (ej. Preventa y General): juntos nunca superan su aforo.
@@ -558,7 +540,7 @@ export default async function SessionPage({ params }: Props) {
                 isTablesLayout(s.layout)
                   ? {
                       ...s,
-                      table: { radius: s.layout.radius },
+                      table: { radius: s.layout.radius, shape: s.layout.shape },
                       seats: s.seats.flatMap((seat) => (seat.x !== null && seat.y !== null ? [{ x: seat.x, y: seat.y, label: seat.number }] : [])),
                       muted: !pricedSections.has(s.id),
                     }

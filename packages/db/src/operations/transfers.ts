@@ -9,12 +9,43 @@
  * Mientras la oferta esté pendiente, la entrada sigue siendo del titular y puede usarla: si ingresa antes
  * de que la acepten, la oferta ya no se puede aceptar.
  */
-import { consumptionLeft, entranceText, isValidDocument, MAX_TRANSFER_REQUESTS_PER_HOUR, normalizeDocument, offerExpiry, randomCode, tableLabel, transferBlockReason, transferDeadline } from "@ticketera/core";
+import { consumptionLeft, entranceText, isValidDocument, MAX_TRANSFER_REQUESTS_PER_HOUR, normalizeDocument, offerExpiry, randomCode, tableLabel, transferBlockReason, transferDeadline, whenWhere, type WhenWhereInput } from "@ticketera/core";
 import { prisma } from "../client";
 import { DomainError, audit } from "./shared";
 
 const eventInclude = {
-  session: { include: { event: { select: { title: true, transfersEnabled: true } }, venue: { select: { name: true, timezone: true, accessPoints: { select: { name: true, sections: { select: { id: true } } } } } } } },
+  session: {
+    include: {
+      event: {
+        select: {
+          title: true,
+          transfersEnabled: true,
+          category: true,
+          minAge: true,
+          requiredDocument: true,
+          dressCode: true,
+          forbiddenItems: true,
+          reentryPolicy: true,
+          refundPolicy: true,
+          contactPhone: true,
+          contactEmail: true,
+        },
+      },
+      venue: {
+        select: {
+          name: true,
+          timezone: true,
+          address: true,
+          city: true,
+          directions: true,
+          mapUrl: true,
+          parking: true,
+          accessibility: true,
+          accessPoints: { select: { name: true, sections: { select: { id: true } } } },
+        },
+      },
+    },
+  },
   ticketType: { select: { name: true, accessMethods: true, qrMode: true, sectionId: true, kind: true, entryUntil: true } },
   seat: { include: { section: { select: { name: true } } } },
   // Boliche: la mesa de la entrada y su saldo de consumo.
@@ -34,10 +65,10 @@ function describe(ticket: {
   };
   seat: { label: string; section: { name: string } } | null;
   credit?: { tableNumber: number | null; amount: number; spent: number; currency: string; seat?: { label: string } | null } | null;
-  session: {
+  session: WhenWhereInput["session"] & {
     startsAt: Date;
-    event: { title: string };
-    venue: { name: string; timezone: string; accessPoints: { name: string; sections: { id: string }[] }[] };
+    event: WhenWhereInput["event"] & { title: string };
+    venue: WhenWhereInput["venue"] & { accessPoints: { name: string; sections: { id: string }[] }[] };
   };
 }) {
   return {
@@ -66,6 +97,8 @@ function describe(ticket: {
     startsAt: ticket.session.startsAt,
     venueName: ticket.session.venue.name,
     timezone: ticket.session.venue.timezone,
+    /** Cuándo y dónde: horarios, lugar, cómo llegar, condiciones, programa y contacto. */
+    whenWhere: whenWhere({ session: ticket.session, venue: ticket.session.venue, event: ticket.session.event }),
     /** Por qué puerta ingresa ("Ingreso por: Acceso norte"), o null si el recinto no tiene puertas cargadas. */
     entrance: entranceText(
       ticket.session.venue.accessPoints.map((g) => ({ name: g.name, sectionIds: g.sections.map((s) => s.id) })),

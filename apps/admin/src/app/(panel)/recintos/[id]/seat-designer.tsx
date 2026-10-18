@@ -1,5 +1,6 @@
 "use client";
 
+import { PlanBackground, type PlanBackgroundInfo } from "@/components/plan-background";
 /**
  * Editor visual de mapas de butacas — portado del prototipo del compañero.
  * Cambios: se diseña una vez por recinto (no por función), sin precio (el precio de cada
@@ -75,8 +76,11 @@ export function SeatDesigner({
   venueId,
   existingSections,
   zones = [],
+  background,
 }: {
   venueId: string;
+  /** Imagen del plano real para calcar (si se subió). */
+  background?: PlanBackgroundInfo;
   existingSections: DesignerSection[];
   /** Zonas de entrada general ya dibujadas: se ven de fondo para ubicar las butacas sin pisarlas. */
   zones?: { id: string; name: string; color: string; layout: ZoneShape }[];
@@ -271,6 +275,7 @@ export function SeatDesigner({
           className="w-full touch-none select-none"
           style={{ background: "#fbfbf9" }}
         >
+          <PlanBackground background={background} />
           <rect x={CANVAS_WIDTH / 2 - 160} y={16} width={320} height={20} rx={4} fill="#1a1a18" />
           <text x={CANVAS_WIDTH / 2} y={30} textAnchor="middle" fontSize="10" letterSpacing="2" fill="#fff">
             ESCENARIO

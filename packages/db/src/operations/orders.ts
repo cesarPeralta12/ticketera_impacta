@@ -1,7 +1,20 @@
-import { RESERVATION_MINUTES, checkoutSchema, currentPrice, findShortage, onlineSalesEnd, orderTotals, randomCode, remainingByType, type CheckoutInput } from "@ticketera/core";
+import {
+  RESERVATION_MINUTES,
+  checkTableSelection,
+  checkoutSchema,
+  currentPrice,
+  findShortage,
+  isSeatedTablesLayout,
+  onlineSalesEnd,
+  orderTotals,
+  randomCode,
+  remainingByType,
+  type CheckoutInput,
+} from "@ticketera/core";
 import { prisma } from "../client";
 import type { OrderChannel } from "../generated/prisma/client";
 import { completeTurn, hasActiveTurn } from "./queue";
+import { getHeldSeatIds } from "./holds";
 import { resolvePromo } from "./promos";
 import { TX_OPTIONS } from "./shared";
 import { DomainError, findTakenSeats, loadInventory, lockInventory } from "./shared";
@@ -56,9 +69,16 @@ export const BOX_OFFICE_HOURS_AFTER_START = 4;
  * Hasta cuándo se vende una función: online, hasta que empieza (o hasta el cierre de venta que tenga, que en un
  * boliche puede ser durante la noche); en boletería, también durante el evento (en puerta), hasta que termina.
  */
-export function salesCutoff(session: { startsAt: Date; endsAt: Date | null; salesEndAt?: Date | null }, channel: OrderChannel) {
-  if (channel !== "POS") return onlineSalesEnd({ startsAt: session.startsAt, salesEndAt: session.salesEndAt ?? null });
-  return session.endsAt ?? new Date(session.startsAt.getTime() + BOX_OFFICE_HOURS_AFTER_START * 60 * 60_000);
+export function salesCutoff(
+  session: { startsAt: Date; endsAt: Date | null; salesEndAt?: Date | null; lastEntryAt?: Date | null },
+  channel: OrderChannel,
+) {
+  const cutoff =
+    channel !== "POS"
+      ? onlineSalesEnd({ startsAt: session.startsAt, salesEndAt: session.salesEndAt ?? null })
+      : (session.endsAt ?? new Date(session.startsAt.getTime() + BOX_OFFICE_HOURS_AFTER_START * 60 * 60_000));
+  // Pasado el último ingreso nadie puede entrar: tampoco se vende (ni online ni en caja).
+  return session.lastEntryAt && session.lastEntryAt < cutoff ? session.lastEntryAt : cutoff;
 }
 
 /** Filtro de Prisma: funciones que todavía se venden online (las que se listan en el sitio). */
@@ -87,6 +107,8 @@ export async function createPendingOrder(
     issuedById?: string;
     /** Código promocional que escribió el comprador. Si no es válido, la compra se rechaza (no se cobra sin descuento en silencio). */
     promoCode?: string;
+    /** Código de una retención: habilita sus butacas apartadas (la boletería no lo necesita). */
+    holdCode?: string;
   } = {},
 ) {
   const now = options.now ?? new Date();
@@ -191,6 +213,37 @@ export async function createPendingOrder(
         if (item.seatIds?.some((id) => sectionOf.get(id) !== sectionId)) {
           throw new DomainError("INVALID_ITEMS", "Alguna butaca no corresponde a la sección elegida.");
         }
+      }
+      // Retenciones: lo apartado no se vende en la web, salvo con el código de su retención. La boletería sí lo vende.
+      if (channel !== "POS") {
+        const held = await getHeldSeatIds(tx, data.sessionId, options.holdCode, seatIds);
+        if (held.size > 0) {
+          throw new DomainError(
+            "SEAT_TAKEN",
+            held.size === 1
+              ? "Una de tus butacas está apartada y no está a la venta. Elige otra."
+              : `${held.size} de tus butacas están apartadas y no están a la venta. Elige otras.`,
+          );
+        }
+      }
+      // Mesas con sillas: completa, por silla o de N a M sillas de una misma mesa (según la sección).
+      for (const item of data.items) {
+        const type = byId.get(item.ticketTypeId)!;
+        const layout = type.section?.layout;
+        if (!item.seatIds || !isSeatedTablesLayout(layout)) continue;
+        const rows = await tx.seat.findMany({ where: { id: { in: item.seatIds } }, select: { row: true } });
+        let left: Map<string, number> | undefined;
+        if (layout.mode === "WHOLE") {
+          const tableSeats = await tx.seat.findMany({
+            where: { sectionId: type.sectionId!, row: { in: [...new Set(rows.map((r) => r.row))] } },
+            select: { id: true, row: true },
+          });
+          const takenChairs = new Set(await findTakenSeats(tx, data.sessionId, tableSeats.map((s) => s.id), now));
+          left = new Map();
+          for (const seat of tableSeats) if (!takenChairs.has(seat.id)) left.set(seat.row, (left.get(seat.row) ?? 0) + 1);
+        }
+        const problem = checkTableSelection(layout, rows.map((r) => r.row), left);
+        if (problem) throw new DomainError("INVALID_ITEMS", problem);
       }
       const taken = await findTakenSeats(tx, data.sessionId, seatIds, now);
       if (taken.length > 0) {

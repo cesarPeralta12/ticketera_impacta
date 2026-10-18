@@ -1,10 +1,25 @@
 "use client";
 
-import type { KeyboardEvent } from "react";
-import { CANVAS_HEIGHT, CANVAS_WIDTH, MAP_ITEM_COLOR, formatMoney, hasStage, zoneLabelPoint, zonePath, zoneSize, type MapItem, type ZoneShape } from "@ticketera/core";
+import type { KeyboardEvent, SVGProps } from "react";
+import {
+  CANVAS_HEIGHT,
+  CANVAS_WIDTH,
+  MAP_ITEM_COLOR,
+  formatMoney,
+  hasStage,
+  reservadoSize,
+  tableHeight,
+  zoneLabelPoint,
+  zonePath,
+  zoneSize,
+  type MapItem,
+  type SeatedTablesLayout,
+  type ZoneShape,
+} from "@ticketera/core";
 
 /** `short`: el número que va dentro de un lounge en círculo. */
-export type PickerSeat = { id: string; label: string; x: number; y: number; taken: boolean; short?: string };
+/** `group`: en mesas con sillas, la mesa de la silla. */
+export type PickerSeat = { id: string; label: string; x: number; y: number; taken: boolean; short?: string; group?: string };
 export type PickerSection = {
   ticketTypeId: string;
   name: string;
@@ -17,7 +32,9 @@ export type PickerSection = {
   discountPercent?: number | null;
   seats: PickerSeat[];
   /** Lounges o mesas en círculo: cada "butaca" es una mesa y se dibuja más grande, con su número. */
-  round?: { radius: number } | null;
+  round?: { radius: number; shape?: "round" | "rect" } | null;
+  /** Mesas con sillas: cómo se venden y dónde van las mesas (las sillas son las butacas). */
+  seatedTables?: Omit<SeatedTablesLayout, "type"> | null;
 };
 
 /** Zona de entrada general dibujada en el mapa: no se eligen butacas, la cantidad se elige en la lista. */
@@ -192,9 +209,37 @@ export function SeatPicker({
         ))}
 
         {sections.map((section) =>
+          section.seatedTables?.tables.map((t) => {
+            const st = section.seatedTables!;
+            const chosen = section.seats.some((seat) => seat.group === String(t.number) && selected.has(seat.id));
+            const free = section.seats.some((seat) => seat.group === String(t.number) && !seat.taken);
+            const fill = chosen ? "#f5b700" : free ? section.color : "#2a2a36";
+            return (
+              <g key={`${section.ticketTypeId}-${t.number}`} pointerEvents="none">
+                {st.shape === "round" ? (
+                  <circle cx={t.x} cy={t.y} r={st.size} fill={fill} fillOpacity={chosen ? 0.45 : 0.18} stroke={fill} strokeWidth={1.5} />
+                ) : (
+                  <rect x={t.x - st.size} y={t.y - tableHeight(st.size) / 2} width={st.size * 2} height={tableHeight(st.size)} rx={4} fill={fill} fillOpacity={chosen ? 0.45 : 0.18} stroke={fill} strokeWidth={1.5} />
+                )}
+                <text x={t.x} y={t.y + 4} textAnchor="middle" fontSize="11" fontWeight="800" fill={free ? "#f5f3ef" : "#6b687a"}>
+                  {t.number}
+                </text>
+              </g>
+            );
+          }),
+        )}
+
+        {sections.map((section) =>
           section.seats.map((seat) => {
             const isSelected = selected.has(seat.id);
-            const r = section.round ? section.round.radius : 7;
+            const r = section.round ? section.round.radius : section.seatedTables ? 6 : 7;
+            const rect = section.round?.shape === "rect";
+            // Accesibilidad: además del color, la butaca ocupada lleva × y la elegida ✓ (en lounges va el número).
+            const mark = !section.round && (seat.taken || isSelected) ? (
+              <text x={seat.x} y={seat.y + 3.5} textAnchor="middle" fontSize="10" fontWeight="900" fill={isSelected ? "#0b0b10" : "#6b687a"} pointerEvents="none" aria-hidden>
+                {isSelected ? "✓" : "×"}
+              </text>
+            ) : null;
             const number = section.round && seat.short ? (
               <text x={seat.x} y={seat.y + 5} textAnchor="middle" fontSize="13" fontWeight="800" fill={isSelected ? "#0b0b10" : seat.taken ? "#6b687a" : "#f5f3ef"} pointerEvents="none">
                 {seat.short}
@@ -203,16 +248,18 @@ export function SeatPicker({
             if (seat.taken) {
               return (
                 <g key={seat.id} aria-hidden>
-                  <circle cx={seat.x} cy={seat.y} r={r} fill="#2a2a36" />
+                  <Spot x={seat.x} y={seat.y} r={r} rect={rect} fill="#2a2a36" />
                   {number}
+                  {mark}
                 </g>
               );
             }
             return (
               <g key={seat.id}>
-              <circle
-                cx={seat.x}
-                cy={seat.y}
+              <Spot
+                x={seat.x}
+                y={seat.y}
+                rect={rect}
                 r={isSelected ? r + 2 : r}
                 fill={isSelected ? "#f5b700" : section.round ? `${section.color}33` : "transparent"}
                 stroke={isSelected ? "#f5b700" : section.color}
@@ -226,8 +273,9 @@ export function SeatPicker({
                 onKeyDown={(e) => onKey(e, section.ticketTypeId, seat.id)}
               >
                 <title>{`${section.name} · ${seat.label}`}</title>
-              </circle>
+              </Spot>
               {number}
+              {mark}
               </g>
             );
           }),
@@ -238,10 +286,10 @@ export function SeatPicker({
           <span className="h-3 w-3 rounded-full border-2 border-[var(--border-light)]" /> Libre
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded-full bg-[var(--accent)]" /> Tu selección
+          <span className="flex h-3 w-3 items-center justify-center rounded-full bg-[var(--accent)] text-[8px] font-black text-[#0b0b10]">✓</span> Tu selección
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded-full bg-[#2a2a36]" /> Ocupada
+          <span className="flex h-3 w-3 items-center justify-center rounded-full bg-[#2a2a36] text-[9px] font-black text-[#6b687a]">×</span> Ocupada
         </span>
         {zones.length > 0 && (
           <span className="flex items-center gap-1.5">
@@ -250,5 +298,22 @@ export function SeatPicker({
         )}
       </div>
     </div>
+  );
+}
+
+/** Un lounge (círculo) o un reservado (rectángulo) con centro en (x, y). */
+function Spot({ x, y, r, rect, children, ...rest }: { x: number; y: number; r: number; rect?: boolean } & Omit<SVGProps<SVGCircleElement>, "ref">) {
+  if (!rect) {
+    return (
+      <circle cx={x} cy={y} r={r} {...rest}>
+        {children}
+      </circle>
+    );
+  }
+  const { width, height } = reservadoSize(r);
+  return (
+    <rect x={x - width / 2} y={y - height / 2} width={width} height={height} rx={6} {...(rest as SVGProps<SVGRectElement>)}>
+      {children}
+    </rect>
   );
 }

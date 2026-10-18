@@ -18,7 +18,7 @@ export type SessionFormDefaults = SessionTimesInput & SalesInput;
 type Venue = { id: string; name: string; city: string | null; timezone: string };
 type Values = SessionFormDefaults & { venueId?: string };
 
-const FIELDS = ["venueId", "date", "start", "doors", "arrival", "end", "open", "openAt", "close", "closeHours", "closeAt"] as const;
+const FIELDS = ["venueId", "date", "start", "doors", "arrival", "end", "lastEntry", "open", "openAt", "close", "closeHours", "closeAt"] as const;
 
 function readValues(element: HTMLElement | null): Values {
   const form = element?.closest("form");
@@ -41,18 +41,21 @@ function readValues(element: HTMLElement | null): Values {
 export function SessionTimesFields({
   category,
   venues,
+  newVenueOption = false,
   timeZone,
   defaults = {},
 }: {
   category: string;
   /** Al crear: el recinto se elige aquí (y con él la zona horaria). */
   venues?: Venue[];
+  /** Asistente: la lista empieza con "un lugar nuevo" (sus datos van en otros campos del formulario). */
+  newVenueOption?: boolean;
   /** Al editar: la zona horaria del recinto de la función. */
   timeZone?: string;
   defaults?: SessionFormDefaults;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [values, setValues] = useState<Values>({ venueId: venues?.[0]?.id, open: "publish", close: "start", ...defaults });
+  const [values, setValues] = useState<Values>({ venueId: newVenueOption ? "" : venues?.[0]?.id, open: "publish", close: "start", ...defaults });
 
   // Los campos no son controlados (el formulario se limpia solo al guardar): se leen para el resumen.
   const read = () => setValues(readValues(ref.current));
@@ -80,6 +83,7 @@ export function SessionTimesFields({
     if (t.arrivalAt) dated.push({ label: "Llegada", date: t.arrivalAt });
     if (t.doorsOpenAt) dated.push({ label: "Puertas", date: t.doorsOpenAt });
     dated.push({ label: startLabel(category), date: t.startsAt });
+    if (t.lastEntryAt) dated.push({ label: "Último ingreso", date: t.lastEntryAt });
     if (t.endsAt) dated.push({ label: "Termina", date: t.endsAt });
     if (!sales.window.salesStartAt) steps.push({ label: "Abre la venta", at: "al publicar" });
     for (const d of dated.toSorted((a, b) => a.date.getTime() - b.date.getTime())) steps.push({ label: d.label, at: fmt(d.date) });
@@ -96,7 +100,8 @@ export function SessionTimesFields({
           {venues && (
             <label className="label">
               Recinto
-              <select name="venueId" required defaultValue={values.venueId} className="field">
+              <select name="venueId" required={!newVenueOption} defaultValue={values.venueId} className="field">
+                {newVenueOption && <option value="">Un lugar nuevo (lo escribo abajo)</option>}
                 {venues.map((v) => (
                   <option key={v.id} value={v.id}>
                     {v.name}
@@ -119,6 +124,12 @@ export function SessionTimesFields({
             defaultValue={defaults.end}
           />
           <Field name="arrival" label="Llegada recomendada (opcional)" help="Vacía = la de las puertas." defaultValue={defaults.arrival} />
+          <Field
+            name="lastEntry"
+            label="Último ingreso (opcional)"
+            help="Después ya no entra nadie. Las entradas con horario propio (la free) usan el suyo."
+            defaultValue={defaults.lastEntry}
+          />
         </div>
       </fieldset>
 
@@ -185,7 +196,7 @@ export function SessionTimesFields({
                 <p className="mt-2 text-[var(--ink-muted)]">
                   El comprador ve: <span className="text-[var(--ink)]">{when.day[0]!.toUpperCase() + when.day.slice(1)}</span>
                   {" · "}
-                  {[when.doors, when.start, when.end].filter(Boolean).join(" · ")}
+                  {[when.doors, when.start, when.lastEntry, when.end].filter(Boolean).join(" · ")}
                 </p>
               )}
             </>

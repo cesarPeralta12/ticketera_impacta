@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useState, useTransition, type FormEvent } from "react";
-import { MAX_TICKETS_PER_ORDER, RESERVATION_MINUTES, formatMoney, type MapItem } from "@ticketera/core";
+import { MAX_TICKETS_PER_ORDER, RESERVATION_MINUTES, bestAvailableSeats, formatMoney, orphanSeats, type MapItem, type PickSeat } from "@ticketera/core";
 import { createOrderAction, previewPromoAction, type CheckoutState, type PromoPreview } from "./actions";
 import { SeatPicker, type PickerSection, type PickerZone } from "./seat-picker";
 
@@ -51,6 +51,7 @@ export function CheckoutForm({
   zones = [],
   items = [],
   buyer,
+  holdCode,
 }: {
   sessionId: string;
   general: GeneralType[];
@@ -60,6 +61,8 @@ export function CheckoutForm({
   /** Plano del boliche (escenario, barras…). */
   items?: MapItem[];
   buyer: { name: string; email: string; document: string };
+  /** Código de una retención (del enlace): habilita sus butacas apartadas. */
+  holdCode?: string;
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState<CheckoutState, FormData>(createOrderAction, {});
@@ -150,6 +153,22 @@ export function CheckoutForm({
     setNotice(null);
     const type = seated.find((t) => t.ticketTypeId === ticketTypeId)!;
     const current = seats[ticketTypeId] ?? [];
+    // Mesa completa: tocar una silla elige (o suelta) todas las de su mesa.
+    if (type.seatedTables?.mode === "WHOLE") {
+      const group = type.seats.find((s) => s.id === seatId)?.group;
+      const table = type.seats.filter((s) => s.group === group);
+      const name = `${type.seatedTables.prefix} ${group}`;
+      if (table.some((s) => current.includes(s.id))) {
+        setPicked({ ...seats, [ticketTypeId]: current.filter((id) => !table.some((s) => s.id === id)) });
+      } else if (table.some((s) => s.taken)) {
+        setNotice(`${name} ya tiene sillas vendidas: elige otra mesa.`);
+      } else if (current.length + table.length > type.maxPerOrder || totalTickets + table.length > MAX_TICKETS_PER_ORDER) {
+        setNotice(`Con ${name} (${table.length} sillas) pasarías el máximo de ${Math.min(type.maxPerOrder, MAX_TICKETS_PER_ORDER)} entradas por compra.`);
+      } else {
+        setPicked({ ...seats, [ticketTypeId]: [...current, ...table.map((s) => s.id)] });
+      }
+      return;
+    }
     if (current.includes(seatId)) {
       setPicked({ ...seats, [ticketTypeId]: current.filter((id) => id !== seatId) });
     } else if (current.length >= type.maxPerOrder) {
@@ -161,9 +180,34 @@ export function CheckoutForm({
     }
   }
 
+  /** Butacas comunes (no mesas ni lounges): las que admiten "mejor disponible" y el aviso de asiento suelto. */
+  const plainSeated = seated.filter((t) => !t.round && !t.seatedTables);
+  const pickSeats = (t: SeatedType): PickSeat[] => t.seats.map((s) => ({ id: s.id, row: s.group ?? "", number: s.short ?? "", x: s.x, y: s.y, taken: s.taken }));
+  const [bestCount, setBestCount] = useState<Record<string, number>>({});
+
+  /** "Mejores lugares": los N juntos más adelante y al centro, sin dejar uno suelto (reemplaza lo elegido de ese tipo). */
+  function pickBest(t: SeatedType) {
+    setNotice(null);
+    const count = bestCount[t.ticketTypeId] ?? 2;
+    const others = totalTickets - (seats[t.ticketTypeId]?.length ?? 0);
+    if (count > t.maxPerOrder || others + count > MAX_TICKETS_PER_ORDER) {
+      setNotice(`Máximo ${Math.min(t.maxPerOrder, MAX_TICKETS_PER_ORDER - others)} butacas de ${t.name} en esta compra.`);
+      return;
+    }
+    const best = bestAvailableSeats(pickSeats(t), count);
+    if (!best) {
+      setNotice(`No quedan ${count} butacas juntas en ${t.name}: elígelas en el mapa.`);
+      return;
+    }
+    setPicked({ ...seats, [t.ticketTypeId]: best.map((s) => s.id) });
+  }
+
   // onSubmit (y no <form action>) para que React no borre los campos si hay un error.
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Un asiento suelto entre lo elegido y lo vendido después no lo compra nadie: se avisa (sin impedir la compra).
+    const loose = plainSeated.flatMap((t) => orphanSeats(pickSeats(t), new Set(seats[t.ticketTypeId] ?? [])).map((s) => `${t.name} ${s.row}-${s.number}`));
+    if (loose.length > 0 && !window.confirm(`Con lo que elegiste queda un asiento suelto (${loose.slice(0, 3).join(", ")}) que difícilmente se venda. ¿Seguir igual?`)) return;
     const data = new FormData(event.currentTarget);
     startTransition(() => formAction(data));
   }
@@ -172,6 +216,7 @@ export function CheckoutForm({
     <form onSubmit={onSubmit} className="space-y-6">
       <input type="hidden" name="sessionId" value={sessionId} />
       <input type="hidden" name="promo" value={promo?.code ?? ""} />
+      {holdCode && <input type="hidden" name="holdCode" value={holdCode} />}
       {Object.entries(seats).map(([type, ids]) =>
         ids.length ? <input key={type} type="hidden" name={`seats:${type}`} value={ids.join(",")} /> : null,
       )}
@@ -182,6 +227,30 @@ export function CheckoutForm({
             {seated.length > 0 ? (seated.every((t) => t.table) ? "1. Elige tu mesa en el mapa" : "1. Elige tus butacas") : "Mapa del recinto"}
           </h2>
           <SeatPicker sections={seated} selected={selected} onToggle={toggleSeat} zones={zones} zoneCounts={zoneCounts} onZoneClick={goToZone} items={items} />
+          {plainSeated.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+              <span className="text-[var(--ink-muted)]">Mejores lugares disponibles:</span>
+              {plainSeated.map((t) => (
+                <span key={t.ticketTypeId} className="flex items-center gap-1.5">
+                  <select
+                    aria-label={`Cuántas butacas en ${t.name}`}
+                    value={bestCount[t.ticketTypeId] ?? 2}
+                    onChange={(e) => setBestCount({ ...bestCount, [t.ticketTypeId]: Number(e.target.value) })}
+                    className="rounded-md border border-[var(--border)] bg-[var(--bg-raised)] px-2 py-1"
+                  >
+                    {Array.from({ length: Math.min(t.maxPerOrder, MAX_TICKETS_PER_ORDER) }, (_, i) => i + 1).map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={() => pickBest(t)} className="rounded-md border border-[var(--border)] px-2 py-1 hover:border-[var(--accent)]">
+                    en {t.name}
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <ul className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-[var(--ink-muted)]">
             {seated.map((t) => (
               <li key={t.ticketTypeId} className="flex items-center gap-2">
@@ -204,6 +273,18 @@ export function CheckoutForm({
               </li>
             ))}
           </ul>
+          {seated
+            .filter((t) => t.seatedTables && t.seatedTables.mode !== "SEAT")
+            .map((t) => (
+              <p key={t.ticketTypeId} className="text-sm text-[var(--ink-muted)]">
+                <strong className="text-[var(--ink)]">{t.name}:</strong>{" "}
+                {t.seatedTables!.mode === "WHOLE"
+                  ? `toca una mesa para llevarte sus ${t.seatedTables!.chairs} sillas (${formatMoney(t.unitAmount * t.seatedTables!.chairs, t.currency)} la mesa).`
+                  : t.seatedTables!.min === t.seatedTables!.max
+                    ? `elige ${t.seatedTables!.min} sillas de cada mesa.`
+                    : `elige de ${t.seatedTables!.min} a ${t.seatedTables!.max} sillas de cada mesa.`}
+              </p>
+            ))}
           {notice && <p className="text-sm text-[var(--accent-2)]">{notice}</p>}
         </section>
       )}

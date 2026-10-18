@@ -25,7 +25,7 @@ export const ROLE_LABEL = {
 
 export const MODE_LABEL = { TICKETING: "Venta de entradas", GUEST_LIST: "Lista de invitados" } as const;
 
-export const CHANNEL_LABEL = { ONLINE: "Online", POS: "Boletería", GUEST: "Invitaciones" } as const;
+export const CHANNEL_LABEL = { ONLINE: "Online", POS: "Boletería", GUEST: "Invitaciones", PRINTED: "Impresas", IMPORT: "Importadas" } as const;
 
 export const SCAN_LABEL = {
   ACCEPTED: "Aceptada",
@@ -39,7 +39,20 @@ export const SCAN_LABEL = {
   QR_EXPIRED: "QR vencido (captura)",
   STATIC_NOT_ALLOWED: "Exige QR dinámico",
   OUT_OF_HOURS: "Fuera de horario",
+  NOT_ACTIVATED: "Impresa sin vender (no activada)",
+  NOT_INSIDE: "Salida sin haber entrado",
 } as const;
+
+/** Qué hizo una lectura aceptada (ver PresenceMovement). Vacío en las lecturas de antes de las zonas: ingreso. */
+export const MOVEMENT_LABEL = {
+  ENTRY: "Ingreso",
+  REENTRY: "Reingreso",
+  EXIT: "Salida",
+  ZONE_CHANGE: "Cambio de zona",
+  MANUAL: "Corrección manual",
+} as const;
+
+export const DIRECTION_LABEL = { IN: "Entrada", OUT: "Salida", BOTH: "Entrada y salida" } as const;
 
 export const ACCESS_METHOD_LABEL = { QR: "QR", BARCODE: "Código de barras", NFC: "NFC" } as const;
 
@@ -47,4 +60,11 @@ export const TICKET_STATUS = {
   VALID: { text: "Válida", className: "bg-[var(--accent-soft)] text-[var(--accent)]" },
   USED: { text: "Ingresó", className: "bg-[var(--surface-2)] text-[var(--ink)]" },
   CANCELLED: { text: "Anulada", className: "bg-[var(--danger-soft)] text-[var(--danger)]" },
+} as const;
+
+export const IMPORT_STATUS = {
+  DRAFT: { text: "Por confirmar", className: "bg-[var(--warn-soft)] text-[var(--warn)]" },
+  CONFIRMED: { text: "Importada", className: "bg-[var(--accent-soft)] text-[var(--accent)]" },
+  UNDONE: { text: "Deshecha", className: "bg-[var(--danger-soft)] text-[var(--danger)]" },
+  DISCARDED: { text: "Descartada", className: "bg-[var(--surface-2)] text-[var(--ink-dim)]" },
 } as const;

@@ -1,5 +1,5 @@
 import QRCode from "qrcode";
-import { entranceText, signTicketPayload, TRANSFER_OFFER_HOURS } from "@ticketera/core";
+import { entranceText, signTicketPayload, TRANSFER_OFFER_HOURS, whenWhere, type WhenWhere } from "@ticketera/core";
 import {
   RESET_PASSWORD_MINUTES,
   VERIFY_EMAIL_HOURS,
@@ -96,6 +96,7 @@ export async function sendTicketsEmail(orderCode: string): Promise<boolean> {
       orderCode: order.code,
       orderUrl: `${baseUrl()}/orden/${order.code}`,
       tickets,
+      whenWhere: whenWhere({ session, venue: session.venue, event: session.event }),
     }),
   );
 }
@@ -111,6 +112,7 @@ type TransferTicket = {
   venueName: string;
   timezone: string;
   entrance?: string | null;
+  whenWhere?: WhenWhere;
 };
 
 /** Avisa a la persona a quien le ofrecieron una entrada. */
@@ -155,6 +157,7 @@ export async function sendTransferAcceptedEmails(done: {
       timezone: done.ticket.timezone,
       venueName: done.ticket.venueName,
       orderUrl: `${baseUrl()}/mis-entradas`,
+      whenWhere: done.ticket.whenWhere,
       tickets: [
         {
           code: done.ticket.code,

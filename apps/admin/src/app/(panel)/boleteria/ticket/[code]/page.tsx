@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { code128Svg, entranceText, formatCode, formatClock, formatDateTime, formatMoney, tableLabel } from "@ticketera/core";
+import { code128Svg, entranceText, formatCode, formatClock, formatDateTime, formatMoney, tableLabel, whenWhere } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, getOrderByCode, prisma } from "@ticketera/db";
 import { PrintButton } from "@/components/print-button";
 import { ticketQrSvg } from "@/lib/qr";
@@ -46,6 +46,7 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
     : null;
   const payment = order.payments.find((p) => p.status === "APPROVED");
   const tz = session.venue.timezone;
+  const ww = whenWhere({ session, venue: session.venue, event: session.event });
   const tickets = await Promise.all(
     order.tickets.map(async (t) => ({
       ...t,
@@ -107,7 +108,10 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
             <p className="font-mono text-[10px] uppercase tracking-[0.2em]">{staff.organization.name}</p>
             <p className="mt-1 text-base font-bold leading-tight">{session.event.title}</p>
             <p className="text-xs">{formatDateTime(session.startsAt, tz)}</p>
+            {(ww.when.doors || ww.when.lastEntry) && <p className="text-[10px]">{[ww.when.doors, ww.when.lastEntry].filter(Boolean).join(" · ")}</p>}
             <p className="text-xs">{session.venue.name}</p>
+            {ww.place.address && <p className="text-[10px]">{ww.place.address}</p>}
+            {ww.conditions.length > 0 && <p className="text-[10px] font-semibold">{ww.conditions.slice(0, 2).join(" · ")}</p>}
             <div className="my-2 border-t border-dashed border-[#14181b]" />
             <p className="text-sm font-semibold">{t.ticketType.name}</p>
             {t.seat && (

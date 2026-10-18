@@ -2,21 +2,29 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { TABLE_RADIUS, isTablesLayout, isZoneLayout, mapItemsOf, type SectionShape, type ZoneShape } from "@ticketera/core";
+import { TABLE_RADIUS, isSeatedTablesLayout, isTablesLayout, isZoneLayout, mapItemsOf, type SectionShape, type ZoneShape } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import {
   addAccessPointAction,
+  addZoneAction,
   deleteAccessPointAction,
+  deleteZoneAction,
+  updatePlanImageAction,
+  updateZoneAction,
   deleteSectionAction,
   updateAccessPointSectionsAction,
+  updateVenueAction,
 } from "@/lib/actions/venues";
+import { TIMEZONES } from "@/lib/timezones";
 import { SeatMapPreview, positioned } from "@/components/seat-map-preview";
 import { seatingLabel } from "@/lib/labels";
 import { ROLES, isNightlife, requireStaff } from "@/lib/session";
 import { ClubMapDesigner, type DesignerTableGroup } from "./club-map-designer";
 import { SeatDesigner, type DesignerSection } from "./seat-designer";
+import { SeatedTablesDesigner } from "./seated-tables-designer";
 import { ZoneDesigner, type DesignerZone } from "./zone-designer";
+import { Help } from "@/components/help";
 
 export const metadata: Metadata = { title: "Recinto" };
 
@@ -36,6 +44,8 @@ export default async function VenuePage({ params }: Props) {
         },
       },
       accessPoints: { orderBy: { name: "asc" }, include: { sections: { select: { id: true } }, _count: { select: { scans: true } } } },
+      zones: { orderBy: [{ level: "asc" }, { name: "asc" }], include: { _count: { select: { inside: true, gates: true } } } },
+      planImage: { select: { opacity: true, mimeType: true, updatedAt: true } },
     },
   });
   if (!venue) notFound();
@@ -54,6 +64,7 @@ export default async function VenuePage({ params }: Props) {
       name: s.name,
       color: s.color,
       prefix: isTablesLayout(s.layout) ? s.layout.prefix : "Lounge",
+      shape: isTablesLayout(s.layout) && s.layout.shape === "rect" ? ("rect" as const) : ("round" as const),
       tables: s.seats.flatMap((seat) =>
         seat.x !== null && seat.y !== null
           ? [{ id: seat.id, number: Number(seat.number), x: seat.x, y: seat.y, sold: seat._count.orderItems > 0 }]
@@ -62,7 +73,7 @@ export default async function VenuePage({ params }: Props) {
     }));
   const mapItems = mapItemsOf(venue.mapItems);
   const seated: DesignerSection[] = sections
-    .filter((s) => s.seatingMode === "RESERVED" && !isTablesLayout(s.layout))
+    .filter((s) => s.seatingMode === "RESERVED" && !isTablesLayout(s.layout) && !isSeatedTablesLayout(s.layout))
     .map((s) => ({
       id: s.id,
       name: s.name,
@@ -77,6 +88,8 @@ export default async function VenuePage({ params }: Props) {
   const zones: DesignerZone[] = sections
     .filter((s) => s.seatingMode === "GENERAL_ADMISSION")
     .map((s) => ({ id: s.id, name: s.name, color: s.color, capacity: s.capacity, layout: isZoneLayout(s.layout) ? (s.layout as ZoneShape) : null }));
+  // Plano real de fondo para calcar (lo ve solo el panel).
+  const plan = venue.planImage ? { url: `/recintos/${venue.id}/fondo?v=${venue.planImage.updatedAt.getTime()}`, opacity: venue.planImage.opacity } : null;
   const backgroundSeats = sections.flatMap((s) => (s.seatingMode === "RESERVED" ? positioned(s.seats).map((p) => ({ ...p, color: s.color })) : []));
 
   return (
@@ -90,6 +103,58 @@ export default async function VenuePage({ params }: Props) {
           {[venue.address, venue.city].filter(Boolean).join(", ")} · {venue.timezone}
         </p>
       </div>
+
+      <details className="card p-6" open={!venue.directions && !venue.mapUrl && !staff.readOnly}>
+        <summary className="cursor-pointer text-sm font-medium">
+          Datos del recinto y cómo llegar{" "}
+          <span className="font-normal text-[var(--ink-dim)]">· lo ve el comprador en la web, la entrada y el correo</span>
+        </summary>
+        <ActionForm action={updateVenueAction} className="mt-5 grid gap-4 sm:grid-cols-2">
+          <input type="hidden" name="venueId" value={venue.id} />
+          <label className="label">
+            Nombre
+            <input name="name" required defaultValue={venue.name} className="field" />
+          </label>
+          <label className="label">
+            Dirección
+            <input name="address" defaultValue={venue.address ?? ""} placeholder="Av. Principal 123" className="field" />
+          </label>
+          <label className="label">
+            Ciudad
+            <input name="city" defaultValue={venue.city ?? ""} placeholder="Santa Cruz de la Sierra" className="field" />
+          </label>
+          <label className="label">
+            Zona horaria
+            <select name="timezone" defaultValue={venue.timezone} className="field">
+              {TIMEZONES.map((tz) => (
+                <option key={tz} value={tz}>
+                  {tz}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="label sm:col-span-2">
+            Cómo llegar y por dónde entrar
+            <textarea name="directions" rows={2} maxLength={1000} defaultValue={venue.directions ?? ""} placeholder="Frente a la plaza; el ingreso es por la puerta lateral." className="field" />
+          </label>
+          <label className="label sm:col-span-2">
+            Enlace del mapa
+            <input name="mapUrl" type="url" defaultValue={venue.mapUrl ?? ""} placeholder="https://maps.app.goo.gl/…" className="field" />
+            <span className="text-xs font-normal text-[var(--ink-dim)]">En Google Maps: Compartir → Copiar vínculo.</span>
+          </label>
+          <label className="label">
+            Estacionamiento y transporte
+            <input name="parking" maxLength={500} defaultValue={venue.parking ?? ""} placeholder="Parqueo propio con cupo limitado." className="field" />
+          </label>
+          <label className="label">
+            Accesibilidad
+            <input name="accessibility" maxLength={500} defaultValue={venue.accessibility ?? ""} placeholder="Rampa en la entrada principal y baño adaptado." className="field" />
+          </label>
+          <button type="submit" className="btn btn-dark w-fit">
+            Guardar datos
+          </button>
+        </ActionForm>
+      </details>
 
       <section className="card p-6">
         <h2 className="eyebrow mb-4">Secciones</h2>
@@ -161,6 +226,38 @@ export default async function VenuePage({ params }: Props) {
         </section>
       ) : (
         <>
+        <details className="card p-6" open={!plan}>
+          <summary className="cursor-pointer text-sm font-medium">
+            Plano de fondo para calcar <span className="font-normal text-[var(--ink-dim)]">· {plan ? "cargado" : "opcional"}; el comprador no lo ve</span>
+          </summary>
+          <p className="mt-3 text-sm text-[var(--ink-muted)]">
+            Sube una foto o el plano del local (PNG, JPG, WebP o SVG, hasta 4 MB): aparece de fondo en los editores de abajo para
+            ubicar butacas, mesas, zonas y lounges encima, a escala.
+          </p>
+          <ActionForm action={updatePlanImageAction} className="mt-3 flex flex-wrap items-end gap-3">
+            <input type="hidden" name="venueId" value={venue.id} />
+            <label className="label">
+              Imagen
+              <input name="image" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="field" />
+            </label>
+            <label className="label">
+              Opacidad (%)
+              <input name="opacity" type="number" min={5} max={100} defaultValue={plan?.opacity ?? 40} className="field w-24" />
+            </label>
+            <button type="submit" className="btn btn-dark">
+              {plan ? "Guardar" : "Subir plano"}
+            </button>
+          </ActionForm>
+          {plan && (
+            <ActionForm action={updatePlanImageAction} confirm="¿Quitar el plano de fondo?" className="mt-2">
+              <input type="hidden" name="venueId" value={venue.id} />
+              <input type="hidden" name="remove" value="1" />
+              <button type="submit" className="text-xs text-[var(--danger)] hover:underline">
+                Quitar plano de fondo
+              </button>
+            </ActionForm>
+          )}
+        </details>
         {isNightlife(staff) && (
           <section className="card space-y-3 p-6">
             <h2 className="eyebrow">Plano del boliche</h2>
@@ -176,6 +273,7 @@ export default async function VenuePage({ params }: Props) {
               groups={tableGroups}
               zones={zones.flatMap((z) => (z.layout ? [{ id: z.id, name: z.name, color: z.color, layout: z.layout }] : []))}
               seats={sections.flatMap((s) => (s.seatingMode === "RESERVED" && !isTablesLayout(s.layout) ? positioned(s.seats).map((p) => ({ ...p, color: s.color })) : []))}
+              background={plan}
             />
           </section>
         )}
@@ -185,22 +283,117 @@ export default async function VenuePage({ params }: Props) {
             Cada zona se dibuja en el mapa con la forma que elijas (rectángulo, óvalo, trapecio o arco) y su aforo. El comprador la ve en el mismo
             mapa de las butacas y elige cuántas entradas quiere de la lista de abajo.
           </p>
-          <ZoneDesigner venueId={venue.id} zones={zones} seats={backgroundSeats} />
+          <ZoneDesigner venueId={venue.id} zones={zones} seats={backgroundSeats} background={plan} />
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="eyebrow">Mesas con sillas</h2>
+          <p className="text-sm text-[var(--ink-muted)]">
+            Para cenas, galas o shows con mesas: cada silla es un lugar numerado. Elige si la mesa se vende completa, por silla
+            o de N a M sillas. Las secciones de mesas que ya creaste aparecen en &ldquo;Secciones&rdquo;.
+          </p>
+          <SeatedTablesDesigner venueId={venue.id} background={backgroundSeats} plan={plan} />
         </section>
 
         <section className="space-y-3">
           <h2 className="eyebrow">Mapa de butacas numeradas</h2>
-          <SeatDesigner venueId={venue.id} existingSections={seated} zones={zones.flatMap((z) => (z.layout ? [{ id: z.id, name: z.name, color: z.color, layout: z.layout }] : []))} />
+          <SeatDesigner venueId={venue.id} background={plan} existingSections={seated} zones={zones.flatMap((z) => (z.layout ? [{ id: z.id, name: z.name, color: z.color, layout: z.layout }] : []))} />
         </section>
         </>
       )}
 
       <section className="card p-6">
-        <h2 className="eyebrow mb-2">Puertas de acceso</h2>
+        <h2 className="eyebrow mb-2 flex items-center gap-2">
+          Zonas de acceso
+          <Help title="Zonas de acceso">
+            Sirven para controlar áreas aparte (VIP, Súper VIP). Cada puerta «da a» una zona; en el precio de cada entrada eliges
+            qué zonas abre y cuántas veces puede entrar. En «Ingreso en vivo» ves cuánta gente hay en cada zona.
+          </Help>
+        </h2>
+        <p className="mb-4 text-sm text-[var(--ink-muted)]">
+          Opcional. Para recintos con áreas que se controlan aparte (Exterior, General, VIP, Súper VIP): cada puerta da a una
+          zona, cada tipo de entrada dice qué zonas abre y en vivo ves cuántas personas hay en cada una. El nivel ordena de
+          afuera (0) hacia adentro.
+        </p>
+        {venue.zones.length > 0 && (
+          <ul className="mb-5 flex flex-col gap-2">
+            {venue.zones.map((zone) => (
+              <li key={zone.id} className="rounded-md border border-[var(--border)] p-3">
+                <ActionForm action={updateZoneAction} successMessage="Guardado." className="flex flex-wrap items-end gap-3">
+                  <input type="hidden" name="zoneId" value={zone.id} />
+                  <label className="label">
+                    Nombre
+                    <input name="name" required defaultValue={zone.name} maxLength={40} className="field w-40" />
+                  </label>
+                  <label className="label">
+                    Nivel
+                    <input name="level" type="number" min={0} max={9} defaultValue={zone.level} className="field w-20" />
+                  </label>
+                  <label className="label">
+                    Aforo
+                    <input name="capacity" type="number" min={1} defaultValue={zone.capacity ?? ""} placeholder="sin tope" className="field w-28" />
+                  </label>
+                  <label className="label">
+                    Color
+                    <input name="color" type="color" defaultValue={zone.color} className="h-[38px] w-14 cursor-pointer rounded border border-[var(--border)]" />
+                  </label>
+                  <button type="submit" className="btn text-xs">
+                    Guardar
+                  </button>
+                  <span className="text-xs text-[var(--ink-dim)]">
+                    {zone._count.gates} puerta(s){zone._count.inside ? ` · ${zone._count.inside} adentro ahora` : ""}
+                  </span>
+                </ActionForm>
+                {zone._count.inside === 0 && (
+                  <ActionForm action={deleteZoneAction} confirm={`¿Borrar la zona "${zone.name}"? Sus puertas quedan como ingreso general.`} className="mt-2">
+                    <input type="hidden" name="zoneId" value={zone.id} />
+                    <button type="submit" className="text-xs text-[var(--danger)] hover:underline">
+                      Borrar zona
+                    </button>
+                  </ActionForm>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        <ActionForm action={addZoneAction} resetOnSuccess className="flex flex-wrap items-end gap-3">
+          <input type="hidden" name="venueId" value={venue.id} />
+          <label className="label">
+            Nombre
+            <input name="name" required maxLength={40} placeholder="General, VIP, Súper VIP…" className="field" />
+          </label>
+          <label className="label">
+            Nivel
+            <input name="level" type="number" min={0} max={9} defaultValue={venue.zones.length + 1} className="field w-20" />
+          </label>
+          <label className="label">
+            Aforo (opcional)
+            <input name="capacity" type="number" min={1} placeholder="ej. 80" className="field w-28" />
+          </label>
+          <label className="label">
+            Color
+            <input name="color" type="color" defaultValue="#2E9E6A" className="h-[38px] w-14 cursor-pointer rounded border border-[var(--border)]" />
+          </label>
+          <button type="submit" className="btn">
+            Agregar zona
+          </button>
+        </ActionForm>
+      </section>
+
+      <section className="card p-6">
+        <h2 className="eyebrow mb-2 flex items-center gap-2">
+          Puertas de acceso
+          <Help title="Puertas">
+            Cada teléfono de la app de puerta trabaja en una puerta. «Entrada» deja pasar, «Salida» registra que la persona
+            salió (para poder volver a entrar si su entrada lo permite) y «Entrada y salida» decide sola según si la persona
+            está adentro.
+          </Help>
+        </h2>
         <p className="mb-4 text-sm text-[var(--ink-muted)]">
           Marca qué secciones entran por cada puerta. Una puerta sin secciones marcadas acepta todas. Con secciones
           asignadas, una entrada solo vale en sus puertas: así, aunque se corte internet, dos puertas nunca aceptan la
-          misma entrada.
+          misma entrada. <strong>Dirección</strong>: una puerta de salida registra que la persona salió (para reingresar,
+          si su entrada lo permite); una de &ldquo;entrada y salida&rdquo; decide sola según si la persona está adentro.
         </p>
         {venue.accessPoints.length === 0 ? (
           <p className="mb-4 text-sm text-[var(--ink-dim)]">Sin puertas cargadas.</p>
@@ -221,6 +414,21 @@ export default async function VenuePage({ params }: Props) {
                       </label>
                     ))}
                     <span className="text-xs text-[var(--ink-dim)]">{assigned.size === 0 ? "(acepta todas)" : ""}</span>
+                    <select name="direction" defaultValue={gate.direction} aria-label={`Dirección de ${gate.name}`} className="field w-auto text-sm">
+                      <option value="IN">Entrada</option>
+                      <option value="OUT">Salida</option>
+                      <option value="BOTH">Entrada y salida</option>
+                    </select>
+                    {venue.zones.length > 0 && (
+                      <select name="zoneId" defaultValue={gate.zoneId ?? ""} aria-label={`Zona de ${gate.name}`} className="field w-auto text-sm">
+                        <option value="">Ingreso general</option>
+                        {venue.zones.map((z) => (
+                          <option key={z.id} value={z.id}>
+                            Da a: {z.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     <button type="submit" className="btn ml-auto text-xs">
                       Guardar
                     </button>

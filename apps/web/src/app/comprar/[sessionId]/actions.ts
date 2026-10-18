@@ -59,10 +59,11 @@ export async function createOrderAction(_prev: CheckoutState, formData: FormData
 
   const queueToken = (await cookies()).get(queueCookieName(sessionId))?.value;
   const promoCode = String(formData.get("promo") ?? "").trim() || undefined;
+  const holdCode = String(formData.get("holdCode") ?? "").trim() || undefined;
 
   let code: string;
   try {
-    ({ code } = await createPendingOrder(parsed.data, { queueToken, customerId: customer.id, promoCode }));
+    ({ code } = await createPendingOrder(parsed.data, { queueToken, customerId: customer.id, promoCode, holdCode }));
   } catch (error) {
     if (error instanceof DomainError) {
       if (error.code === "QUEUE_REQUIRED") redirect(`/comprar/${sessionId}/espera`);

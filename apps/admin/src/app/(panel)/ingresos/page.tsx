@@ -5,7 +5,7 @@ import { formatCode, formatDateTime } from "@ticketera/core";
 import { prisma, type Prisma } from "@ticketera/db";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { startOfToday } from "@/lib/dates";
-import { SCAN_LABEL } from "@/lib/labels";
+import { MOVEMENT_LABEL, SCAN_LABEL } from "@/lib/labels";
 import { ROLES, eventScope, isGlobalView, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Ingresos en puerta" };
@@ -53,7 +53,9 @@ export default async function EntriesPage({ searchParams }: Props) {
         operator: { select: { name: true } },
       },
     }),
-    prisma.accessScan.count({ where: { ...scope, result: "ACCEPTED", scannedAt: { gte: since } } }),
+    prisma.accessScan.count({
+      where: { ...scope, result: "ACCEPTED", scannedAt: { gte: since }, OR: [{ movement: null }, { movement: { in: ["ENTRY", "REENTRY"] } }] },
+    }),
     prisma.accessScan.count({ where: { ...scope, result: { not: "ACCEPTED" }, scannedAt: { gte: since } } }),
     global ? prisma.organization.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }) : [],
   ]);
@@ -113,7 +115,7 @@ export default async function EntriesPage({ searchParams }: Props) {
       </form>
 
       <div className="card overflow-x-auto">
-        <table className="w-full text-left text-sm">
+        <table className="table-cards w-full text-left text-sm">
           <thead className="eyebrow border-b border-[var(--border)]">
             <tr>
               <th className="px-4 py-3 font-normal">Hora</th>
@@ -135,11 +137,11 @@ export default async function EntriesPage({ searchParams }: Props) {
               const tz = s.session.venue.timezone;
               return (
                 <tr key={s.id} className="align-top">
-                  <td className="px-4 py-2.5 font-mono text-xs">
+                  <td data-label="Hora" className="px-4 py-2.5 font-mono text-xs">
                     {formatDateTime(s.scannedAt, tz)}
                     {s.offline && <span className="block text-[var(--warn)]">sin conexión</span>}
                   </td>
-                  <td className="px-4 py-2.5">
+                  <td data-label="Persona" className="px-4 py-2.5">
                     {s.ticket ? (
                       <>
                         <p>{s.ticket.holderName ?? s.ticket.order.buyerName}</p>
@@ -152,7 +154,7 @@ export default async function EntriesPage({ searchParams }: Props) {
                       <p className="text-[var(--ink-dim)]">QR no reconocido</p>
                     )}
                   </td>
-                  <td className="px-4 py-2.5">
+                  <td data-label="Evento" className="px-4 py-2.5">
                     <p>
                       <Link
                         href={`/eventos/${s.session.event.id}/funciones/${s.session.id}/en-vivo`}
@@ -164,16 +166,16 @@ export default async function EntriesPage({ searchParams }: Props) {
                     </p>
                     {global && <p className="text-xs font-medium text-[var(--ink-muted)]">{s.session.event.organization.name}</p>}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-[var(--ink-muted)]">
+                  <td data-label="Puerta" className="px-4 py-2.5 text-xs text-[var(--ink-muted)]">
                     {s.accessPoint?.name ?? "Sin puerta"}
                     {s.deviceId && <span className="block">{s.deviceId}</span>}
                     {s.operator && <span className="block">{s.operator.name}</span>}
                   </td>
-                  <td className="px-4 py-2.5">
+                  <td data-label="Resultado" className="px-4 py-2.5">
                     <span
                       className={`badge ${s.result === "ACCEPTED" ? "bg-[var(--accent-soft)] text-[var(--accent)]" : "bg-[var(--danger-soft)] text-[var(--danger)]"}`}
                     >
-                      {SCAN_LABEL[s.result]}
+                      {s.result === "ACCEPTED" && s.movement && s.movement !== "ENTRY" ? MOVEMENT_LABEL[s.movement] : SCAN_LABEL[s.result]}
                     </span>
                   </td>
                 </tr>

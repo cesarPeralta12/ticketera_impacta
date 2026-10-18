@@ -7,7 +7,7 @@ import type { OrderChannel, ScanResult } from "../generated/prisma/client";
 
 const ISSUED = ["VALID", "USED"] as const;
 
-export type ChannelLine = { channel: OrderChannel; tickets: number; revenue: number };
+export type ChannelLine = { channel: OrderChannel; tickets: number; revenue: number; /** Solo impresas: cuántas se vendieron. */ sold?: number };
 
 export async function getEventReport(eventId: string) {
   const event = await prisma.event.findUnique({
@@ -30,7 +30,7 @@ export async function getEventReport(eventId: string) {
     await Promise.all([
       prisma.ticket.findMany({
         where: { ...bySession, status: { in: [...ISSUED] } },
-        select: { order: { select: { channel: true } } },
+        select: { printState: true, order: { select: { channel: true } } },
       }),
       prisma.order.groupBy({
         by: ["channel"],
@@ -57,12 +57,17 @@ export async function getEventReport(eventId: string) {
       prisma.order.count({ where: { channel: "ONLINE", status: "PAID", items: { some: { ticketType: bySession } } } }),
     ]);
 
-  const channels: OrderChannel[] = ["ONLINE", "POS", "GUEST"];
-  const byChannel: ChannelLine[] = channels.map((channel) => ({
-    channel,
-    tickets: ticketsByChannel.filter((t) => t.order.channel === channel).length,
-    revenue: revenueByChannel.find((r) => r.channel === channel)?._sum.totalAmount ?? 0,
-  }));
+  const channels: OrderChannel[] = ["ONLINE", "POS", "GUEST", "PRINTED", "IMPORT"];
+  const byChannel: ChannelLine[] = channels
+    .map((channel) => ({
+      channel,
+      tickets: ticketsByChannel.filter((t) => t.order.channel === channel).length,
+      revenue: revenueByChannel.find((r) => r.channel === channel)?._sum.totalAmount ?? 0,
+      // Impresas: emitidas (ocupan cupo) y, de ellas, las vendidas (las que suman a la recaudación).
+      ...(channel === "PRINTED" ? { sold: ticketsByChannel.filter((t) => t.order.channel === channel && t.printState === "SOLD").length } : {}),
+    }))
+    // Impresas e importadas solo aparecen en los eventos que las usan.
+    .filter((c) => (c.channel !== "PRINTED" && c.channel !== "IMPORT") || c.tickets > 0);
   const issued = byChannel.reduce((sum, c) => sum + c.tickets, 0);
 
   // Boletería: por cajero y medio de pago.

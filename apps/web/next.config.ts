@@ -31,13 +31,33 @@ const securityHeaders = [
   ...(isProd ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }] : []),
 ];
 
+/**
+ * La vista previa de un evento se muestra dentro del panel (escritorio y celular): solo esa ruta, y solo dentro del
+ * panel (ADMIN_URL). Sin ADMIN_URL nadie la puede enmarcar, igual que el resto del sitio (se abre en otra pestaña).
+ */
+const adminOrigin = (() => {
+  try {
+    return process.env.ADMIN_URL ? new URL(process.env.ADMIN_URL).origin : null;
+  } catch {
+    return null;
+  }
+})();
+const previewHeaders = [
+  { key: "Content-Security-Policy", value: csp.replace("frame-ancestors 'none'", `frame-ancestors ${adminOrigin ?? "'none'"}`) },
+  { key: "X-Frame-Options", value: adminOrigin ? "SAMEORIGIN" : "DENY" },
+];
+
 // Las variables de entorno se cargan desde el .env de la raíz vía dotenv-cli (ver package.json).
 const nextConfig: NextConfig = {
   transpilePackages: ["@ticketera/core", "@ticketera/db", "@ticketera/mail"],
   poweredByHeader: false,
   experimental: { serverActions: { bodySizeLimit: "1mb" } },
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    // La segunda regla pisa a la primera en las mismas cabeceras (CSP y X-Frame-Options de la vista previa).
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      { source: "/vista-previa/:path*", headers: previewHeaders },
+    ];
   },
 };
 

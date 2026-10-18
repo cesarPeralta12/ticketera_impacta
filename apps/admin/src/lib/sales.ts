@@ -22,6 +22,8 @@ export function salesWhere(staff: Staff, filters: SalesFilters): Prisma.OrderWhe
     isGlobalView(staff) && filters.org ? { organizationId: filters.org } : eventScope(staff);
   return {
     items: { some: { ticketType: { session: { event: eventFilter } } } },
+    // Las entradas impresas son ventas recién cuando se marcan vendidas.
+    NOT: { channel: "PRINTED", paidAt: null },
     ...(ORDER_STATUSES.includes(filters.estado as OrderStatus) ? { status: filters.estado as OrderStatus } : {}),
     ...(term
       ? {

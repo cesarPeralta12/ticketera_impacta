@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractTicketCode, parseTicketPayload, signTicketPayload } from "./qr";
+import { extractTicketCode, parseTicketPayload, signPreviewToken, signTicketPayload, verifyPreviewToken } from "./qr";
 
 const SECRET = "secreto-de-prueba";
 
@@ -45,5 +45,24 @@ describe("extractTicketCode (puerta sin conexión)", () => {
     expect(extractTicketCode(" k7q3m-xpa2b ")).toBe("K7Q3MXPA2B");
     expect(extractTicketCode("https://otra-cosa.com")).toBeNull();
     expect(extractTicketCode("TK1.K7Q3MXPA2B")).toBeNull();
+  });
+});
+
+describe("enlace de vista previa", () => {
+  const secret = "secreto-de-prueba";
+  const later = new Date(Date.now() + 86_400_000);
+  it("vale para su evento hasta que vence", async () => {
+    const token = await signPreviewToken("cmva1kxtk000dz47ktcvke49z", secret, later);
+    expect(await verifyPreviewToken(token, secret)).toBe("cmva1kxtk000dz47ktcvke49z");
+    expect(await verifyPreviewToken(token, secret, new Date(later.getTime() + 1000))).toBeNull();
+  });
+  it("no se puede cambiar el evento, la fecha ni usar otro secreto", async () => {
+    const token = await signPreviewToken("cmva1kxtk000dz47ktcvke49z", secret, later);
+    const [, expires, signature] = token.split(".");
+    expect(await verifyPreviewToken(`cmotroevento0000000000000.${expires}.${signature}`, secret)).toBeNull();
+    expect(await verifyPreviewToken(`cmva1kxtk000dz47ktcvke49z.${Number(expires) + 99999}.${signature}`, secret)).toBeNull();
+    expect(await verifyPreviewToken(token, "otro-secreto")).toBeNull();
+    // La firma de un QR no sirve como vista previa.
+    expect(await verifyPreviewToken("TK1.ABCD.xyz", secret)).toBeNull();
   });
 });

@@ -115,6 +115,17 @@ export default async function MyTicketsPage({ searchParams }: Props) {
               <p className="text-xs text-[#6b687a]">
                 {formatDateTime(t.startsAt, t.timezone)} · {t.venueName}
               </p>
+              {(t.whenWhere.when.doors || t.whenWhere.when.end) && (
+                <p className="text-xs text-[#6b687a]">
+                  {[t.whenWhere.when.doors, t.whenWhere.when.lastEntry, t.whenWhere.when.end].filter(Boolean).join(" · ")}
+                </p>
+              )}
+              {t.whenWhere.conditions.length > 0 && <p className="text-xs font-semibold text-[#b35c00]">{t.whenWhere.conditions.slice(0, 2).join(" · ")}</p>}
+              {t.whenWhere.place.mapUrl && (
+                <a href={t.whenWhere.place.mapUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0f8a6b] underline">
+                  Cómo llegar
+                </a>
+              )}
               <p className="mt-1 font-semibold">{t.typeName}</p>
               {t.seat && <p className="text-sm font-semibold">{t.seat}</p>}
               {t.entrance && <p className="mt-1 text-sm font-bold text-[#0f8a6b]">{t.entrance}</p>}

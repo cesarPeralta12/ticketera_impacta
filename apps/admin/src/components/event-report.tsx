@@ -42,7 +42,9 @@ export function EventReport({ report, csvHref }: { report: Report; csvHref: stri
               {report.byChannel.map((c) => (
                 <tr key={c.channel}>
                   <td className="py-2">{CHANNEL_LABEL[c.channel]}</td>
-                  <td className="py-2 text-right font-mono">{c.tickets} entradas</td>
+                  <td className="py-2 text-right font-mono">
+                    {c.tickets} entradas{c.sold !== undefined && <span className="block text-xs text-[var(--ink-dim)]">{c.sold} vendidas</span>}
+                  </td>
                   <td className="py-2 text-right font-mono">{money(c.revenue)}</td>
                 </tr>
               ))}

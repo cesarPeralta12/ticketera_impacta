@@ -3,12 +3,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import QRCode from "qrcode";
-import { code128Svg, consumptionLeft, entranceText, formatCode, formatDateTime, formatMoney, formatClock, signTicketPayload, tableLabel, type GateInfo } from "@ticketera/core";
+import { code128Svg, consumptionLeft, entranceText, formatCode, formatDateTime, formatMoney, formatClock, signTicketPayload, tableLabel, whenWhere, type GateInfo } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, expireStaleOrders, getOrderByCode, requireEnv } from "@ticketera/db";
 import { payOrderAction } from "./actions";
 import { auth } from "@/lib/auth";
 import { AutoRefresh, Countdown } from "./live";
 import { ResendTickets } from "./resend-button";
+import { WhenWhereBlock } from "@/components/when-where";
 
 export const metadata: Metadata = { title: "Tu orden", robots: { index: false } };
 
@@ -47,6 +48,8 @@ export default async function OrderPage({ params }: Props) {
           </p>
         )}
       </header>
+
+      {session && order.status === "PAID" && <WhenWhereBlock data={whenWhere({ session, venue: session.venue, event: session.event })} />}
 
       {order.status === "PENDING_PAYMENT" && (
         <section className="space-y-4 rounded-xl border border-[var(--accent)]/40 bg-[var(--accent)]/10 p-5">

@@ -5,6 +5,7 @@ import { ActionForm } from "@/components/action-form";
 import { createEventAction } from "@/lib/actions/events";
 import { redirect } from "next/navigation";
 import { ROLES, allowedCategories, isNightlife, requireStaff } from "@/lib/session";
+import { WizardSteps } from "@/components/wizard-steps";
 import { EventFields } from "../event-fields";
 
 export const metadata: Metadata = { title: "Nuevo evento" };
@@ -28,9 +29,11 @@ export default async function NewEventPage() {
         </Link>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">{isNightlife(staff) ? "Nuevo boliche (noches)" : "Nuevo evento"}</h1>
         <p className="text-sm text-[var(--ink-muted)]">
-          Se crea como borrador. Después agregas funciones (fecha, hora y recinto) y sus entradas.
+          Se crea como borrador. Después el asistente te lleva por el lugar y la fecha, las entradas, una revisión con la
+          vista previa del comprador y la publicación.
         </p>
       </div>
+      <WizardSteps current="datos" />
       {quota?.limit != null && (
         <p
           role="status"

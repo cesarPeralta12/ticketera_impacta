@@ -70,6 +70,18 @@ export function PosForm({
     setNotice(null);
     const type = seated.find((t) => t.ticketTypeId === ticketTypeId)!;
     const current = seats[ticketTypeId] ?? [];
+    // Mesa completa: una silla elige (o suelta) todas las de su mesa.
+    if (type.wholeTable) {
+      const group = type.seats.find((s) => s.id === seatId)?.group;
+      const table = type.seats.filter((s) => s.group === group);
+      const name = `${type.wholeTable.prefix} ${group}`;
+      if (table.some((s) => current.includes(s.id))) setPicked({ ...seats, [ticketTypeId]: current.filter((id) => !table.some((s) => s.id === id)) });
+      else if (table.some((s) => s.taken)) setNotice(`${name} ya tiene sillas vendidas: elige otra mesa.`);
+      else if (current.length + table.length > type.maxPerOrder || totalTickets + table.length > MAX_TICKETS_PER_ORDER) {
+        setNotice(`Con ${name} (${table.length} sillas) pasas el máximo de entradas por venta: cobra estas y haz otra venta.`);
+      } else setPicked({ ...seats, [ticketTypeId]: [...current, ...table.map((s) => s.id)] });
+      return;
+    }
     if (current.includes(seatId)) {
       setPicked({ ...seats, [ticketTypeId]: current.filter((id) => id !== seatId) });
     } else if (current.length >= type.maxPerOrder) {

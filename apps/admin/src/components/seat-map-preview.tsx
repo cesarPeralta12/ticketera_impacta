@@ -1,4 +1,4 @@
-import { CANVAS_HEIGHT, CANVAS_WIDTH, zoneLabelPoint, zonePath, type MapItem, type ZoneShape } from "@ticketera/core";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, reservadoSize, zoneLabelPoint, zonePath, type MapItem, type ZoneShape } from "@ticketera/core";
 import { MapDecor } from "./map-decor";
 
 export type PreviewSection = {
@@ -8,7 +8,7 @@ export type PreviewSection = {
   /** En lounges en círculo, `label` es el número que va dentro del círculo. */
   seats: { x: number; y: number; label?: string }[];
   /** Lounges o mesas en círculo (cada "butaca" es una mesa): círculos más grandes con su número. */
-  table?: { radius: number } | null;
+  table?: { radius: number; shape?: "round" | "rect" } | null;
   /** Zona de entrada general dibujada como forma (en vez de butacas). */
   zone?: ZoneShape | null;
   /** Texto bajo el nombre de la zona (por ejemplo "Quedan 120"). */
@@ -51,7 +51,21 @@ export function SeatMapPreview({ sections, items }: { sections: PreviewSection[]
           {s.table
             ? s.seats.map((seat, i) => (
                 <g key={i}>
-                  <circle cx={seat.x} cy={seat.y} r={s.table!.radius} fill={s.color} fillOpacity={0.4} stroke={s.color} strokeWidth={2} />
+                  {s.table!.shape === "rect" ? (
+                    <rect
+                      x={seat.x - reservadoSize(s.table!.radius).width / 2}
+                      y={seat.y - reservadoSize(s.table!.radius).height / 2}
+                      width={reservadoSize(s.table!.radius).width}
+                      height={reservadoSize(s.table!.radius).height}
+                      rx={6}
+                      fill={s.color}
+                      fillOpacity={0.4}
+                      stroke={s.color}
+                      strokeWidth={2}
+                    />
+                  ) : (
+                    <circle cx={seat.x} cy={seat.y} r={s.table!.radius} fill={s.color} fillOpacity={0.4} stroke={s.color} strokeWidth={2} />
+                  )}
                   {seat.label && (
                     <text x={seat.x} y={seat.y + 5} textAnchor="middle" fontSize="13" fontWeight="800" fill="#1a1a18">
                       {seat.label}

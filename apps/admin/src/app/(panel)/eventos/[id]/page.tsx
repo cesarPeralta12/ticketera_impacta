@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import {
   CATEGORY_LABEL,
   DEFAULT_TIMEZONE,
+  formatMoney,
   MAX_REPEAT_WEEKS,
   WEEKDAY_SHORT,
   formatClock,
@@ -14,8 +15,10 @@ import {
   suggestedTimes,
   utcToZonedInput,
 } from "@ticketera/core";
-import { clientAccessOpen, defaultClientAccessUntil, prisma } from "@ticketera/db";
+import { clientAccessOpen, defaultClientAccessUntil, getEventReport, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
+import { EventChecklist } from "@/components/event-checklist";
+import { EventReport } from "@/components/event-report";
 import { updateClientAccessAction } from "@/lib/actions/clients";
 import { repeatNightsAction } from "@/lib/actions/nightlife";
 import {
@@ -26,17 +29,29 @@ import {
   updateEventAction,
 } from "@/lib/actions/events";
 import { SessionTimesFields } from "@/components/session-times-fields";
+import { eventChecks } from "@/lib/event-checklist";
 import { EVENT_STATUS, MODE_LABEL } from "@/lib/labels";
+import { buyerPreviewUrl } from "@/lib/preview";
 import { ROLES, allowedCategories, requireStaff } from "@/lib/session";
 import { EventFields } from "../event-fields";
 
 export const metadata: Metadata = { title: "Evento" };
 
-type Props = { params: Promise<{ id: string }> };
+type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> };
 
-export default async function EventDetailPage({ params }: Props) {
+const TABS = [
+  { key: "resumen", label: "Resumen" },
+  { key: "funciones", label: "Funciones" },
+  { key: "ventas", label: "Ventas" },
+  { key: "configuracion", label: "Configuración" },
+] as const;
+type Tab = (typeof TABS)[number]["key"];
+
+export default async function EventDetailPage({ params, searchParams }: Props) {
   await connection();
   const staff = await requireStaff(ROLES.manage);
+  const requested = (await searchParams).tab;
+  const tab: Tab = TABS.some((t) => t.key === requested) ? (requested as Tab) : "resumen";
   const event = await prisma.event.findFirst({
     where: { id: (await params).id, organizationId: staff.organization.id },
     include: {
@@ -86,33 +101,15 @@ export default async function EventDetailPage({ params }: Props) {
     : undefined;
 
   // Lo que falta para publicar: lo obligatorio frena el botón; lo recomendado solo avisa.
-  const missingPrices = event.sessions.find((s) => s.ticketTypes.length === 0);
-  const missingEnd = event.sessions.find((s) => !s.endsAt);
+  const checks = eventChecks(event, venues.length);
   const sessionHref = (id: string) => `/eventos/${event.id}/funciones/${id}`;
-  const checks = [
-    { done: venues.length > 0, required: true, text: "Un recinto", href: "/recintos", action: "Crear recinto" },
-    { done: event.sessions.length > 0, required: true, text: `${noun.One} con día y hora`, href: "#funciones", action: `Agregar ${noun.one}` },
-    {
-      done: event.sessions.length > 0 && !missingPrices,
-      required: true,
-      text: guestList ? `Invitados en cada ${noun.one}` : `Precios en cada ${noun.one}`,
-      href: missingPrices ? `${sessionHref(missingPrices.id)}${guestList ? "/invitados" : ""}` : "#funciones",
-      action: guestList ? "Cargar invitados" : "Cargar precios",
-    },
-    ...(guestList
-      ? []
-      : [
-          { done: Boolean(event.imageUrl), required: false, text: "Imagen del evento", href: "#datos", action: "Agregar" },
-          { done: Boolean(event.description?.trim()), required: false, text: "Descripción", href: "#datos", action: "Escribir" },
-        ]),
-    {
-      done: event.sessions.length > 0 && !missingEnd,
-      required: false,
-      text: `Hora de fin de cada ${noun.one}`,
-      href: missingEnd ? `${sessionHref(missingEnd.id)}#horarios` : "#funciones",
-      action: "Ponerla",
-    },
-  ];
+  const tabHref = (key: Tab) => `/eventos/${event.id}${key === "resumen" ? "" : `?tab=${key}`}`;
+  // Siguiente paso del asistente para un borrador: lugar y fecha, entradas o revisar.
+  const wizardStep = event.sessions.length === 0 ? "lugar" : !ready ? "entradas" : "revisar";
+  const [report, previewUrl] = await Promise.all([
+    tab === "resumen" || tab === "ventas" ? getEventReport(event.id) : null,
+    event.mode === "TICKETING" ? buyerPreviewUrl(event.id) : null,
+  ]);
   const doneCount = checks.filter((c) => c.done).length;
 
   return (
@@ -134,7 +131,17 @@ export default async function EventDetailPage({ params }: Props) {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {previewUrl && (
+            <a href={previewUrl} target="_blank" rel="noreferrer" className="btn text-xs" title="La página del evento como la ve el comprador (aunque esté en borrador)">
+              Vista previa ↗
+            </a>
+          )}
+          {!staff.readOnly && event.sessions.length > 0 && (
+            <Link href={`/eventos/${event.id}/importar`} className="btn text-xs" title="Cargar entradas vendidas por otro medio o cortesías desde una planilla">
+              Importar Excel
+            </Link>
+          )}
           <Link href={`/eventos/${event.id}/reporte`} className="btn text-xs">
             Reporte
           </Link>
@@ -150,8 +157,105 @@ export default async function EventDetailPage({ params }: Props) {
         </div>
       )}
 
+      <nav aria-label="Secciones del evento" className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">
+        {TABS.map((t) => (
+          <Link
+            key={t.key}
+            href={tabHref(t.key)}
+            aria-current={tab === t.key ? "page" : undefined}
+            className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2 text-sm ${
+              tab === t.key ? "border-[var(--accent)] font-semibold text-[var(--ink)]" : "border-transparent text-[var(--ink-muted)] hover:text-[var(--ink)]"
+            }`}
+          >
+            {t.label}
+          </Link>
+        ))}
+      </nav>
+
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 space-y-6">
+          {tab === "resumen" && report && (
+            <>
+              {event.status === "DRAFT" && !staff.readOnly && (
+                <Link
+                  href={`/eventos/${event.id}/asistente/${wizardStep}`}
+                  className="card flex flex-wrap items-center justify-between gap-3 border-[var(--accent)] p-5 transition-colors hover:bg-[var(--accent-soft)]"
+                >
+                  <span>
+                    <span className="block font-medium">Sigue armándolo con el asistente</span>
+                    <span className="text-sm text-[var(--ink-muted)]">
+                      Lugar y fecha → entradas → revisar (con la vista previa del comprador) → publicar.
+                    </span>
+                  </span>
+                  <span className="font-mono text-sm text-[var(--accent)]">Continuar →</span>
+                </Link>
+              )}
+              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="card p-4">
+                  <dt className="text-xs text-[var(--ink-dim)]">{noun.Many}</dt>
+                  <dd className="mt-1 text-2xl font-semibold">{event.sessions.length}</dd>
+                </div>
+                <div className="card p-4">
+                  <dt className="text-xs text-[var(--ink-dim)]">Entradas emitidas</dt>
+                  <dd className="mt-1 text-2xl font-semibold">{report.issued}</dd>
+                </div>
+                <div className="card p-4">
+                  <dt className="text-xs text-[var(--ink-dim)]">Ya ingresaron</dt>
+                  <dd className="mt-1 text-2xl font-semibold">{report.used}</dd>
+                </div>
+                <div className="card p-4">
+                  <dt className="text-xs text-[var(--ink-dim)]">Recaudación</dt>
+                  <dd className="mt-1 text-2xl font-semibold">{formatMoney(report.revenue, report.currency)}</dd>
+                </div>
+              </dl>
+              <section className="card p-6">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2 className="eyebrow">{noun.Many}</h2>
+                  <Link href={tabHref("funciones")} className="text-sm text-[var(--accent)] hover:underline">
+                    Administrar →
+                  </Link>
+                </div>
+                {event.sessions.length === 0 ? (
+                  <p className="text-sm text-[var(--ink-muted)]">Todavía no hay {noun.many}.</p>
+                ) : (
+                  <ul className="space-y-2 text-sm">
+                    {event.sessions.map((s) => (
+                      <li key={s.id}>
+                        <Link href={sessionHref(s.id)} className="flex flex-wrap justify-between gap-2 rounded-md border border-[var(--border)] px-4 py-2.5 hover:border-[var(--accent)]">
+                          <span>
+                            <span className="font-mono">{formatDateTime(s.startsAt, s.venue.timezone)}</span>
+                            <span className="text-[var(--ink-muted)]"> · {s.venue.name}</span>
+                          </span>
+                          <span className={s.ticketTypes.length ? "text-[var(--accent)]" : "text-[var(--warn)]"}>
+                            {s.ticketTypes.length ? `${s._count.tickets} / ${sellableCapacity(s.ticketTypes)}` : guestList ? "sin invitados" : "sin precios"}
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </>
+          )}
+
+          {tab === "ventas" && report && (
+            <>
+              {!staff.readOnly && event.sessions.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  <Link href={`/eventos/${event.id}/importar`} className="btn text-xs">
+                    Importar entradas desde Excel
+                  </Link>
+                  <Link href={`/eventos/${event.id}/reporte`} className="btn text-xs">
+                    Reporte para imprimir
+                  </Link>
+                </div>
+              )}
+              <EventReport report={report} csvHref={`/eventos/${event.id}/reporte/csv`} />
+            </>
+          )}
+
+          {tab === "funciones" && (
+          <>
           <section id="funciones" className="card scroll-mt-6 p-6">
             <h2 className="eyebrow mb-4">{noun.Many}</h2>
             {event.sessions.length === 0 ? (
@@ -283,7 +387,11 @@ export default async function EventDetailPage({ params }: Props) {
               </ActionForm>
             </section>
           )}
+          </>
+          )}
 
+          {tab === "configuracion" && (
+          <>
           {clientMode && (
             <section className="card p-6">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -340,6 +448,8 @@ export default async function EventDetailPage({ params }: Props) {
               </button>
             </ActionForm>
           </section>
+          </>
+          )}
         </div>
         <aside className="space-y-4 lg:sticky lg:top-6">
           <section className="card p-5">
@@ -347,41 +457,9 @@ export default async function EventDetailPage({ params }: Props) {
             <p className="mb-3 text-xs text-[var(--ink-muted)]">
               {doneCount} de {checks.length} listos
             </p>
-            <ul className="mb-4 space-y-2 text-sm">
-              {checks.map((c) => (
-                <li key={c.text} className="flex items-start gap-2">
-                  <span
-                    aria-hidden
-                    className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-                      c.done
-                        ? "bg-[var(--accent)] text-white"
-                        : c.required
-                          ? "border border-[var(--warn)] text-[var(--warn)]"
-                          : "border border-[var(--border)] text-[var(--ink-dim)]"
-                    }`}
-                  >
-                    {c.done ? "✓" : c.required ? "!" : ""}
-                  </span>
-                  <span className="flex-1">
-                    <span className={c.done ? "text-[var(--ink-muted)]" : ""}>{c.text}</span>
-                    {!c.done && (
-                      <>
-                        <span className="text-xs text-[var(--ink-dim)]"> · {c.required ? "falta" : "recomendado"}</span>
-                        {/* Una cuenta de solo lectura ve qué falta, pero lo completa Impacta. */}
-                        {!staff.readOnly && (
-                          <>
-                            <span className="text-xs text-[var(--ink-dim)]"> · </span>
-                            <Link href={c.href} className="text-xs text-[var(--accent)] hover:underline">
-                              {c.action}
-                            </Link>
-                          </>
-                        )}
-                      </>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <div className="mb-4">
+              <EventChecklist checks={checks} readOnly={staff.readOnly} />
+            </div>
             {event.status === "PENDING_REVIEW" ? (
               <div className="flex flex-col gap-3">
                 <p className="text-sm text-[var(--ink-muted)]">

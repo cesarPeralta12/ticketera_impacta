@@ -54,6 +54,8 @@ export async function audit(
     entity: string;
     entityId: string;
     data?: Prisma.InputJsonValue;
+    /** "warn" para lo que conviene revisar en Seguridad (anulaciones, reimpresiones, diferencias de dinero). */
+    severity?: "info" | "warn";
   },
 ) {
   await db.auditLog.create({ data: entry });

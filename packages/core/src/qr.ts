@@ -87,3 +87,27 @@ export function extractTicketCode(raw: string): string | null {
   const manual = input.replace(/-/g, "").toUpperCase();
   return isValidCode(manual) ? manual : null;
 }
+
+// ─────────────── Vista previa de un evento sin publicar ───────────────
+
+/** Cuánto dura el enlace de vista previa que arma el panel. */
+export const PREVIEW_TOKEN_DAYS = 7;
+const PREVIEW_CONTEXT = "vista-previa";
+
+/**
+ * Enlace firmado para ver un evento como lo verá el comprador aunque siga en borrador: "<evento>.<vence>.<firma>".
+ * Lo firma el panel con el mismo secreto que los QR (con otro contexto, así una firma no sirve para la otra).
+ */
+export async function signPreviewToken(eventId: string, secret: string, expiresAt: Date): Promise<string> {
+  const body = `${eventId}.${Math.floor(expiresAt.getTime() / 1000)}`;
+  return `${body}.${toBase64Url(await hmac(secret, `${PREVIEW_CONTEXT}.${body}`))}`;
+}
+
+/** El evento de un enlace de vista previa válido y vigente, o null. */
+export async function verifyPreviewToken(token: string, secret: string, now: Date = new Date()): Promise<string | null> {
+  const [eventId, expires, signature, ...rest] = token.split(".");
+  if (rest.length > 0 || !eventId || !expires || !signature || !/^[a-z0-9]{10,40}$/.test(eventId) || !/^\d{9,12}$/.test(expires)) return null;
+  if (Number(expires) * 1000 <= now.getTime()) return null;
+  const expected = toBase64Url(await hmac(secret, `${PREVIEW_CONTEXT}.${eventId}.${expires}`));
+  return constantTimeEqual(signature, expected) ? eventId : null;
+}

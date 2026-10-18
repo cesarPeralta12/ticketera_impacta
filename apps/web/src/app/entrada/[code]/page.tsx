@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { formatDateTime } from "@ticketera/core";
 import { listCustomerTickets } from "@ticketera/db";
 import { auth } from "@/lib/auth";
+import { WhenWhereBlock } from "@/components/when-where";
 import { DynamicTicket } from "./dynamic-ticket";
 
 export const metadata: Metadata = { title: "Mi entrada", robots: { index: false }, manifest: "/manifest.webmanifest" };
@@ -42,6 +43,7 @@ export default async function TicketPage({ params }: Props) {
         entrance={ticket.entrance}
         initialStatus={ticket.status === "USED" ? "USED" : "VALID"}
       />
+      <WhenWhereBlock data={ticket.whenWhere} />
     </main>
   );
 }
