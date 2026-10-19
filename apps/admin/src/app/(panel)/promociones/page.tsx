@@ -117,7 +117,7 @@ export default async function PromosPage() {
         )}
       </section>
 
-      <section className="card p-6">
+      <section data-tour="crear-codigo" className="card p-6">
         <h2 className="eyebrow mb-4">Nuevo código</h2>
         <ActionForm action={createPromoAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <label className="label">

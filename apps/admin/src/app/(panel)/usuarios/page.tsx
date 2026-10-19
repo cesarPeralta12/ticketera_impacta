@@ -95,7 +95,7 @@ export default async function UsersPage() {
         </table>
       </div>
 
-      <section className="card p-6">
+      <section data-tour="crear-cuenta" className="card p-6">
         <h2 className="eyebrow mb-4">Nueva cuenta</h2>
         <ActionForm action={createStaffAction} resetOnSuccess successMessage="Cuenta creada." className="flex flex-wrap items-end gap-3">
           <label className="label">

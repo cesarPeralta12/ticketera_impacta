@@ -332,11 +332,57 @@ table tbody tr:hover {
   }
 }
 
-/* Recorrido guiado: la sección del menú del paso actual. */
-.tour-target {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 0.5rem;
+/* Recorrido guiado: oscurece la página y deja a la vista lo que se explica, con un anillo que late. */
+.tour-spot {
+  position: fixed;
+  z-index: 60;
+  border-radius: 0.75rem;
+  /* 150vmax cubre siempre la pantalla (una sombra de miles de píxeles Chrome a veces no la dibuja). */
+  box-shadow: 0 0 0 150vmax rgb(12 9 22 / 0.55);
+  outline: 2px solid var(--brand-yellow);
+  pointer-events: none;
+  transition: top 0.35s ease, left 0.35s ease, width 0.35s ease, height 0.35s ease;
+}
+.tour-spot::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  border: 2px solid var(--brand-yellow);
+  animation: tour-ring 1.6s ease-out infinite;
+}
+.tour-dim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgb(12 9 22 / 0.45);
+  pointer-events: none;
+  animation: fade-in 0.3s ease-out both;
+}
+.tour-card {
+  transition: top 0.35s ease, left 0.35s ease, right 0.35s ease, bottom 0.35s ease;
+  animation: fade-up 0.35s ease-out both;
+}
+.tour-step {
+  animation: fade-up 0.3s ease-out both;
+}
+@keyframes tour-ring {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.08);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* Números del resumen: cada tarjeta con su color de marca (borde superior, rótulo y un brillo en la esquina). */

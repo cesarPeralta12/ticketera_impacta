@@ -75,7 +75,7 @@ export default async function BoxOfficePage() {
         </p>
       </div>
 
-      <section className="space-y-2">
+      <section data-tour="funciones-venta" className="space-y-2">
         <h2 className="eyebrow">{isNightlife(staff) ? "Noches a la venta" : "Funciones a la venta"}</h2>
         {sessions.length === 0 ? (
           <p className="card p-5 text-sm text-[var(--ink-muted)]">No hay funciones publicadas a la venta.</p>

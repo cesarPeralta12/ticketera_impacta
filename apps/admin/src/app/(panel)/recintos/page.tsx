@@ -109,7 +109,7 @@ export default async function VenuesPage() {
 
       {!staff.readOnly && (
         <>
-          <section className="card space-y-4 p-6">
+          <section data-tour="plantillas" className="card space-y-4 p-6">
             <div>
               <h2 className="eyebrow">Nuevo recinto desde una plantilla</h2>
               <p className="text-sm text-[var(--ink-muted)]">

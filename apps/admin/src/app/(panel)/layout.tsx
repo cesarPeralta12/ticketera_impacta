@@ -92,35 +92,162 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
   ];
 }
 
-/** Pasos del recorrido guiado de la primera vez (según lo que la cuenta puede hacer). */
+/** Pasos del recorrido guiado: abre cada sección e ilumina lo importante (según lo que la cuenta puede hacer). */
 function tourSteps(staff: Staff): TourStep[] {
   const nightlife = isNightlife(staff);
+  const events = nightlife ? "Noches" : "Eventos";
+  const welcome: TourStep = {
+    title: "Bienvenido al panel de Impacta",
+    href: "/",
+    target: ".stats",
+    text: staff.readOnly
+      ? "Este es tu resumen en vivo. Te mostramos dónde ver tus eventos, ventas e ingresos."
+      : "Este es tu resumen en vivo. En unos pasos te llevamos por cada sección y te mostramos lo principal.",
+    points: ["Los números se actualizan solos cada 30 segundos.", "Toca una tarjeta para ir al detalle."],
+  };
+  const search: TourStep = {
+    title: "Buscar",
+    target: 'aside input[name="q"]',
+    text: "Desde cualquier pantalla encuentras lo que necesites, sin navegar.",
+    points: ["Un evento por su nombre.", "Una orden o una entrada por su código (ej. 7SQYG-DMUYB).", "Un comprador por nombre, correo o carnet."],
+  };
+  const done: TourStep = {
+    title: "¡Listo!",
+    target: '[data-tour="replay"]',
+    text: "Ya conoces lo principal. Para repasar, toca «Ver el recorrido» abajo del menú (en la computadora). Y en cada pantalla, el «?» junto al título explica esa parte.",
+  };
+
+  if (staff.readOnly) {
+    return [
+      welcome,
+      {
+        title: events,
+        href: "/eventos",
+        target: '[data-tour="lista-eventos"]',
+        text: "Tus eventos con sus funciones, cuánto se vendió y quién entró.",
+        points: ["Abre uno para ver sus pestañas: resumen, funciones y ventas.", "El reporte se imprime o se descarga."],
+      },
+      {
+        title: "Ventas",
+        href: "/ordenes",
+        target: '[data-tour="filtros-ventas"]',
+        text: "Todas las ventas con su estado, en vivo.",
+        points: ["Busca por código, nombre, correo o carnet.", "Exporta a Excel."],
+      },
+      {
+        title: "Ingresos en puerta",
+        href: "/ingresos",
+        target: '[data-tour="filtros-ingresos"]',
+        text: "Cada lectura de las puertas: quién entró, por dónde y a qué hora.",
+      },
+      search,
+      done,
+    ];
+  }
+
   return [
+    welcome,
     {
-      title: "Bienvenido al panel de Impacta",
-      text: staff.readOnly
-        ? "Aquí ves en vivo tus eventos, ventas, compradores e ingresos. Te mostramos dónde está cada cosa en 4 pasos."
-        : "Desde aquí armas tus eventos, vendes en boletería y controlas la puerta. Te mostramos lo principal en unos pasos.",
-    },
-    {
-      title: nightlife ? "Noches" : "Eventos",
+      title: nightlife ? "Crear una noche" : "Crear un evento",
       href: "/eventos",
-      text: staff.readOnly
-        ? "Cada evento con sus funciones, cuánto se vendió y quién entró."
-        : "Crea un evento y el asistente te lleva paso a paso: lugar y fecha, entradas (con modelos), revisión con la vista previa del comprador y publicar. Para eventos chicos con entradas impresas, usa '+ Evento pequeño'.",
+      target: '[data-tour="nuevo-evento"]',
+      text: "Con este botón empieza todo. El asistente te lleva paso a paso y puedes salir y volver cuando quieras.",
+      points: [
+        "Datos: título, categoría, imagen y condiciones (edad, documento, vestimenta).",
+        "Lugar y fecha: recinto, horarios y cuándo abre y cierra la venta online.",
+        "Entradas: modelos listos (General, VIP, Mesa, Free, Preventa).",
+        "Revisar con la vista previa del comprador y publicar.",
+      ],
+    },
+    ...(!nightlife
+      ? [
+          {
+            title: "Evento pequeño",
+            href: "/eventos",
+            target: '[data-tour="evento-pequeno"]',
+            text: "Para peñas, recitales u obras chicas que se venden en mano: todo en una sola pantalla.",
+            points: [
+              "Nombre, fecha, lugar y hasta 4 tipos de entrada.",
+              "Quedan lotes numerados listos para imprimir (PDF).",
+              "Se activan al marcarse vendidas: una fotocopia no entra.",
+              "Al publicarlo sale en «Eventos pequeños» de la web.",
+            ],
+          },
+        ]
+      : []),
+    {
+      title: `Dentro de cada ${nightlife ? "noche" : "evento"}`,
+      href: "/eventos",
+      target: '[data-tour="lista-eventos"] > li:first-child',
+      text: "Al abrirlo lo ves ordenado en pestañas.",
+      points: [
+        "Resumen: ventas, ingresos y lo que falta para publicar.",
+        "Funciones: precios, retenciones, entradas impresas e ingreso en vivo.",
+        "Ventas y Configuración: datos, condiciones y «Evento pequeño».",
+        "Arriba: Vista previa, Importar Excel y Reporte.",
+      ],
     },
     {
       title: "Recintos",
       href: "/recintos",
-      text: "El lugar y su mapa: zonas de pie, butacas, mesas con sillas, lounges, puertas y zonas de acceso. Empieza desde una plantilla (boliche, teatro, salón o aire libre).",
+      target: '[data-tour="plantillas"]',
+      text: "El lugar y su mapa. No empieces de cero: elige una plantilla y después cambia lo que haga falta.",
+      points: [
+        "Plantillas: boliche, teatro, salón con mesas o aire libre.",
+        "Editor: butacas, mesas con sillas, zonas de pie y lounges.",
+        "Sube el plano del local de fondo para calcarlo.",
+        "Puertas de entrada y salida y zonas de acceso (VIP).",
+      ],
     },
-    { title: "Ventas", href: "/ordenes", text: "Todas las ventas (web, boletería, invitaciones, impresas e importadas), con su estado. Se exportan a Excel." },
-    { title: "Ingresos en puerta", href: "/ingresos", text: "Cada lectura de las puertas en vivo: quién entró, por dónde y los rechazos." },
     {
-      title: "Buscar",
-      target: 'aside input[name="q"]',
-      text: "Arriba del menú buscas cualquier cosa: un evento, una orden o una entrada por su código, o un comprador por nombre, correo o carnet.",
+      title: "Ventas",
+      href: "/ordenes",
+      target: '[data-tour="filtros-ventas"]',
+      text: "Todas las ventas juntas: web, boletería, invitaciones, impresas e importadas.",
+      points: ["Filtra por estado o busca por código, nombre, correo o carnet.", "Abre una orden para reenviar entradas o anularla.", "Exporta a Excel."],
     },
+    {
+      title: "Ingresos en puerta",
+      href: "/ingresos",
+      target: '[data-tour="filtros-ingresos"]',
+      text: "Cada lectura de las puertas en vivo.",
+      points: [
+        "Quién entró, por qué puerta y a qué hora.",
+        "Los rechazos con su motivo (ya usada, puerta equivocada…).",
+        "En cada función, «Ingreso en vivo» muestra el mapa y cuántos hay adentro.",
+      ],
+    },
+    {
+      title: nightlife ? "Promociones y RRPP" : "Promociones",
+      href: "/promociones",
+      target: '[data-tour="crear-codigo"]',
+      text: "Códigos de descuento para campañas, convenios o promotores.",
+      points: ["Porcentaje o monto fijo, con cupo y fechas.", "Asigna un promotor (RRPP) y su comisión."],
+    },
+    ...(can(staff, ROLES.pos)
+      ? [
+          {
+            title: "Boletería",
+            href: "/boleteria",
+            target: '[data-tour="funciones-venta"]',
+            text: "Para vender en la puerta o en un punto de venta.",
+            points: ["Elige la función, las butacas o cantidades y cobra (efectivo, QR o tarjeta).", "Imprime el ticket en térmica de 80 mm, A4 o carta."],
+          },
+        ]
+      : []),
+    ...(staff.platform
+      ? [
+          {
+            title: "Usuarios y porteros",
+            href: "/usuarios",
+            target: '[data-tour="crear-cuenta"]',
+            text: "Las cuentas del equipo, cada una con su rol.",
+            points: ["Dueño, administrador, cajero, portero o cliente (solo lectura).", "A cada portero le asignas su función y su puerta."],
+          },
+        ]
+      : []),
+    search,
+    done,
   ];
 }
 

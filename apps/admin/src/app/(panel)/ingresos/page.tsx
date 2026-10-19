@@ -83,7 +83,7 @@ export default async function EntriesPage({ searchParams }: Props) {
         </div>
       </div>
 
-      <form className="card flex flex-wrap items-end gap-3 p-4">
+      <form data-tour="filtros-ingresos" className="card flex flex-wrap items-end gap-3 p-4">
         <label className="label">
           Mostrar
           <select name="solo" defaultValue={solo} className="field">

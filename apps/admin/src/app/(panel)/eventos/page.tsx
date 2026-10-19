@@ -63,11 +63,11 @@ export default async function EventsPage() {
         {!staff.readOnly && (
           <div className="flex flex-wrap justify-end gap-2">
             {!isNightlife(staff) && (
-              <Link href="/eventos/rapido" className="btn" title="Evento chico con entradas impresas para vender en mano">
+              <Link href="/eventos/rapido" data-tour="evento-pequeno" className="btn" title="Evento chico con entradas impresas para vender en mano">
                 + Evento pequeño
               </Link>
             )}
-            <Link href="/eventos/nuevo" className="btn btn-primary">
+            <Link href="/eventos/nuevo" data-tour="nuevo-evento" className="btn btn-primary">
               {isNightlife(staff) ? "+ Nuevo boliche" : "+ Nuevo evento"}
             </Link>
           </div>
@@ -89,7 +89,7 @@ export default async function EventsPage() {
           )}
         </div>
       ) : (
-        <ul className="flex flex-col gap-2.5">
+        <ul data-tour="lista-eventos" className="flex flex-col gap-2.5">
           {events.map((event) => {
             const [first] = event.sessions;
             const capacity = event.sessions.reduce((sum, s) => sum + sellableCapacity(s.ticketTypes), 0);
