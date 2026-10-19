@@ -269,7 +269,7 @@ export async function createSmallEventAction(_prev: FormState, formData: FormDat
   }
   await logAudit({ actorType: "staff", actorId: staff.id, action: "event.small.create", entity: "Event", entityId: event.id, data: { types: types.length, total } });
   revalidatePath("/eventos");
-  redirect(`/eventos/${event.id}/funciones/${session.id}#impresas`);
+  redirect(`/eventos/${event.id}/funciones/${session.id}?tab=impresas`);
 }
 
 async function uniqueEventSlug(title: string) {

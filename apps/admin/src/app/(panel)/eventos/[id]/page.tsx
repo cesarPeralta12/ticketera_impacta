@@ -157,7 +157,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
         </div>
       )}
 
-      <nav aria-label="Secciones del evento" className="flex gap-1 overflow-x-auto border-b border-[var(--border)]">
+      <nav aria-label="Secciones del evento" className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-[var(--border)]">
         {TABS.map((t) => (
           <Link
             key={t.key}

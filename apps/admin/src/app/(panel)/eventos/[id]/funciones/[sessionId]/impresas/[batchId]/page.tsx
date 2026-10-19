@@ -51,7 +51,7 @@ export default async function PrintBatchPage({ params }: Props) {
   return (
     <div className="space-y-8">
       <div>
-        <Link href={`/eventos/${id}/funciones/${sessionId}`} className="text-sm text-[var(--ink-dim)] hover:text-[var(--ink)]">
+        <Link href={`/eventos/${id}/funciones/${sessionId}?tab=impresas`} className="text-sm text-[var(--ink-dim)] hover:text-[var(--ink)]">
           ← {batch.session.event.title} · {formatDateTime(batch.session.startsAt, tz)}
         </Link>
         <p className="eyebrow mt-2">Entradas impresas</p>
