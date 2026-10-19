@@ -111,19 +111,69 @@ Future<ScanOutcome> validateScan({
     );
   }
 
-  switch (ticket.status) {
-    case TicketStatus.cancelled:
-      return ScanOutcome(verdict: ScanVerdict.cancelled, ticket: ticket);
-    case TicketStatus.used:
-      final at = ticket.usedAt;
-      return ScanOutcome(
-        verdict: ScanVerdict.alreadyUsed,
-        ticket: ticket,
-        detail: at == null ? 'Ya ingresó antes.' : 'Ingresó a las ${_hhmm(at)}',
-      );
-    case TicketStatus.valid:
-      return ScanOutcome(verdict: ScanVerdict.accepted, ticket: ticket);
+  if (ticket.status == TicketStatus.cancelled) {
+    return ScanOutcome(
+      verdict: ScanVerdict.cancelled,
+      ticket: ticket,
+      // Una impresa que todavía no se marcó vendida baja anulada: se aclara para que el portero no piense que es falsa.
+      detail: 'Si es una entrada impresa, puede que todavía no esté marcada como vendida.',
+    );
   }
+
+  final gate = meta.gate;
+  final direction = gate?.direction ?? GateDirection.inward;
+  final inside = ticket.isInside;
+  // Una puerta de salida, o de ida y vuelta con la persona adentro: es una salida (sin zonas ni reingreso).
+  final exiting = direction == GateDirection.outward || (direction == GateDirection.both && inside);
+  if (exiting) {
+    if (inside) return ScanOutcome(verdict: ScanVerdict.accepted, ticket: ticket, movement: Movement.exit, gateName: gate?.name);
+    return ScanOutcome(
+      verdict: ScanVerdict.notInside,
+      ticket: ticket,
+      detail: ticket.hasEntered ? 'Ya había salido.' : 'Esta entrada todavía no ingresó.',
+    );
+  }
+
+  // Una puerta que da a una zona (VIP) solo acepta las entradas que abren esa zona.
+  final gateZone = gate?.zoneId;
+  if (gateZone != null && ticket.zoneIds.isNotEmpty && !ticket.zoneIds.contains(gateZone)) {
+    final others = meta.gatesForZones(ticket.zoneIds);
+    return ScanOutcome(
+      verdict: ScanVerdict.wrongGate,
+      ticket: ticket,
+      detail: others.isEmpty ? 'Esta entrada no abre esta zona.' : 'No abre esta zona. Debe entrar por: ${others.join(', ')}',
+    );
+  }
+
+  if (inside) {
+    // Ya está adentro: si la puerta da a otra zona que su entrada abre, pasa de zona; si no, ya está usada.
+    if (gateZone != null && ticket.zoneId != gateZone) {
+      return ScanOutcome(verdict: ScanVerdict.accepted, ticket: ticket, movement: Movement.zoneChange, gateName: gate?.name);
+    }
+    final at = ticket.usedAt;
+    return ScanOutcome(
+      verdict: ScanVerdict.alreadyUsed,
+      ticket: ticket,
+      detail: at == null ? 'Ya está adentro.' : 'Ingresó a las ${_hhmm(at)} y no salió.',
+    );
+  }
+  if (ticket.hasEntered) {
+    // Salió: vuelve a entrar solo si le quedan ingresos.
+    if (ticket.canReenter || ticket.status == TicketStatus.valid) {
+      return ScanOutcome(verdict: ScanVerdict.accepted, ticket: ticket, movement: Movement.reentry, gateName: gate?.name);
+    }
+    final n = ticket.entryCount;
+    return ScanOutcome(
+      verdict: ScanVerdict.alreadyUsed,
+      ticket: ticket,
+      detail: ticket.maxEntries == 1 ? 'Ya ingresó y su entrada es de un solo ingreso.' : 'Ya usó sus $n ingreso(s).',
+    );
+  }
+  if (ticket.status == TicketStatus.used) {
+    final at = ticket.usedAt;
+    return ScanOutcome(verdict: ScanVerdict.alreadyUsed, ticket: ticket, detail: at == null ? 'Ya ingresó antes.' : 'Ingresó a las ${_hhmm(at)}');
+  }
+  return ScanOutcome(verdict: ScanVerdict.accepted, ticket: ticket, movement: Movement.entry, gateName: gate?.name);
 }
 
 /// Entradas de QR dinámico: solo valen con una prueba vigente. Devuelve el rechazo y su explicación, o null si pasa.

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../app_services.dart';
 import '../door_service.dart';
+import '../ui/tokens.dart';
+import '../ui/widgets.dart';
 
 /// Primera vez con contraseña temporal: hay que elegir una propia antes de usar la app.
 class ChangePasswordScreen extends StatefulWidget {
@@ -19,6 +22,13 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   final _repeat = TextEditingController();
   bool _busy = false;
   String? _error;
+  int _shake = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _next.addListener(() => setState(() {}));
+  }
 
   @override
   void dispose() {
@@ -28,15 +38,17 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     super.dispose();
   }
 
+  void _fail(String message) {
+    setState(() {
+      _error = message;
+      _shake++;
+    });
+    AppServices.of(context).feedback.fail();
+  }
+
   Future<void> _submit() async {
-    if (_next.text.length < 8) {
-      setState(() => _error = 'La contraseña nueva debe tener al menos 8 caracteres.');
-      return;
-    }
-    if (_next.text != _repeat.text) {
-      setState(() => _error = 'Las contraseñas nuevas no coinciden.');
-      return;
-    }
+    if (_next.text.length < 8) return _fail('La contraseña nueva debe tener al menos 8 caracteres.');
+    if (_next.text != _repeat.text) return _fail('Las contraseñas nuevas no coinciden.');
     setState(() {
       _busy = true;
       _error = null;
@@ -44,48 +56,92 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     try {
       await widget.service.changePassword(current: _current.text, next: _next.text);
     } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) _fail(e.message);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
+  /// 0 a 4: largo, mayúscula, número y símbolo.
+  int get _strength {
+    final p = _next.text;
+    var s = 0;
+    if (p.length >= 8) s++;
+    if (p.length >= 12) s++;
+    if (RegExp(r'[A-Z]').hasMatch(p) && RegExp(r'[a-z]').hasMatch(p)) s++;
+    if (RegExp(r'\d').hasMatch(p) && RegExp(r'[^A-Za-z0-9]').hasMatch(p)) s++;
+    return s;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final strength = _strength;
+    final color = [Brand.red, Brand.red, Brand.amber, Brand.green, Brand.green][strength];
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Cambia tu contraseña'),
-        actions: [TextButton(onPressed: () => widget.service.logout(), child: const Text('Salir'))],
-      ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(26, 18, 26, 30),
           children: [
-            Text(
-              'Tu cuenta tiene una contraseña temporal. Elige una propia para continuar.',
-              style: TextStyle(color: scheme.onSurfaceVariant),
+            Row(
+              children: [
+                const BrandMark(size: 28),
+                const Spacer(),
+                TextButton(onPressed: () => widget.service.logout(), child: const Text('Salir')),
+              ],
             ),
-            const SizedBox(height: 20),
-            TextField(controller: _current, obscureText: true, decoration: const InputDecoration(labelText: 'Contraseña temporal')),
+            const SizedBox(height: 28),
+            const StaggerIn(
+              child: Icon(Icons.lock_reset_rounded, size: 54, color: Brand.yellow),
+            ),
             const SizedBox(height: 14),
-            TextField(controller: _next, obscureText: true, decoration: const InputDecoration(labelText: 'Contraseña nueva (mínimo 8)')),
+            const StaggerIn(index: 1, child: Text('ELIGE TU CONTRASEÑA', style: Type.title)),
+            const SizedBox(height: 8),
+            const StaggerIn(index: 1, child: Text('Tu cuenta tiene una contraseña temporal. Elige una propia para continuar.', style: Type.muted)),
+            const SizedBox(height: 26),
+            StaggerIn(index: 2, child: AppField(controller: _current, label: 'Contraseña temporal', icon: Icons.key_outlined, obscure: true)),
             const SizedBox(height: 14),
-            TextField(
-              controller: _repeat,
-              obscureText: true,
-              onSubmitted: (_) => _submit(),
-              decoration: const InputDecoration(labelText: 'Repite la contraseña nueva'),
+            StaggerIn(index: 3, child: AppField(controller: _next, label: 'Contraseña nueva (mínimo 8)', icon: Icons.lock_outline, obscure: true)),
+            const SizedBox(height: 10),
+            // Barra de seguridad de la contraseña.
+            Row(
+              children: [
+                for (var i = 0; i < 4; i++)
+                  Expanded(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      height: 5,
+                      margin: EdgeInsets.only(right: i == 3 ? 0 : 6),
+                      decoration: BoxDecoration(color: i < strength ? color : Brand.surface3, borderRadius: BorderRadius.circular(3)),
+                    ),
+                  ),
+              ],
             ),
-            if (_error != null) ...[
-              const SizedBox(height: 14),
-              Text(_error!, style: TextStyle(color: scheme.error)),
-            ],
-            const SizedBox(height: 22),
-            FilledButton(
-              onPressed: _busy ? null : _submit,
-              child: _busy ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5)) : const Text('Guardar y continuar'),
+            const SizedBox(height: 14),
+            StaggerIn(
+              index: 4,
+              child: AppField(controller: _repeat, label: 'Repite la contraseña nueva', icon: Icons.lock_outline, obscure: true, onSubmitted: (_) => _submit()),
             ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+              child: _error == null
+                  ? const SizedBox(width: double.infinity)
+                  : Shake(
+                      trigger: _shake,
+                      child: Container(
+                        margin: const EdgeInsets.only(top: 14),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Brand.red.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Brand.red.withValues(alpha: 0.4)),
+                        ),
+                        child: Text(_error!, style: Type.body.copyWith(color: const Color(0xFFFFC2C8), fontSize: 15)),
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 24),
+            PrimaryButton(label: 'GUARDAR Y CONTINUAR', icon: Icons.check_rounded, loading: _busy, onPressed: _submit),
           ],
         ),
       ),

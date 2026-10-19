@@ -26,18 +26,23 @@ class SessionStore {
   Future<String?> get email => _s.read(key: 'email');
   Future<String?> get name => _s.read(key: 'name');
 
+  /// Rol de la cuenta (OWNER, ADMIN, OPERATOR): decide si ve el grabador de pulseras.
+  Future<String?> get role => _s.read(key: 'role');
+
   Future<void> save({
     required String server,
     required String token,
     required String refreshToken,
     required String email,
     required String name,
+    String? role,
   }) async {
     await _s.write(key: 'server', value: server);
     await _s.write(key: 'token', value: token);
     await _s.write(key: 'refreshToken', value: refreshToken);
     await _s.write(key: 'email', value: email);
     await _s.write(key: 'name', value: name);
+    if (role != null) await _s.write(key: 'role', value: role);
   }
 
   /// Guarda el par nuevo tras renovar la sesión.
@@ -53,6 +58,7 @@ class SessionStore {
     await _s.delete(key: 'token');
     await _s.delete(key: 'refreshToken');
     await _s.delete(key: 'name');
+    await _s.delete(key: 'role');
   }
 
   /// Clave con la que se cifran las llaves de las entradas dinámicas en la base local. Vive en el almacenamiento
@@ -96,12 +102,22 @@ class DoorDb implements TicketLookup {
   static Future<DoorDb> open(Uint8List key) async {
     final db = await openDatabase(
       p.join(await getDatabasesPath(), 'puerta.db'),
-      version: 3,
+      version: 4,
       onUpgrade: (db, oldVersion, _) async {
         if (oldVersion < 2) await db.execute('ALTER TABLE tickets ADD COLUMN document TEXT');
         if (oldVersion < 3) {
           await db.execute('ALTER TABLE tickets ADD COLUMN qr_dynamic INTEGER NOT NULL DEFAULT 0');
           await db.execute('ALTER TABLE tickets ADD COLUMN qr_key TEXT');
+        }
+        if (oldVersion < 4) {
+          // Presencia: adentro o afuera, cuántas veces entró, cuántas puede, qué zonas abre y en cuál quedó.
+          await db.execute('ALTER TABLE tickets ADD COLUMN inside INTEGER');
+          await db.execute('ALTER TABLE tickets ADD COLUMN entries INTEGER');
+          await db.execute('ALTER TABLE tickets ADD COLUMN max_entries INTEGER NOT NULL DEFAULT 1');
+          await db.execute("ALTER TABLE tickets ADD COLUMN zone_ids TEXT NOT NULL DEFAULT ''");
+          await db.execute('ALTER TABLE tickets ADD COLUMN zone_id TEXT');
+          await db.execute('ALTER TABLE scans ADD COLUMN movement TEXT');
+          await db.execute('ALTER TABLE scans ADD COLUMN zone_id TEXT');
         }
       },
       onCreate: (db, _) async {
@@ -109,13 +125,15 @@ class DoorDb implements TicketLookup {
           CREATE TABLE tickets (
             session_id TEXT NOT NULL, code TEXT NOT NULL, status TEXT NOT NULL, section_id TEXT,
             mine INTEGER NOT NULL, holder TEXT, document TEXT, type TEXT, seat TEXT, methods TEXT NOT NULL DEFAULT '',
-            used_at INTEGER, qr_dynamic INTEGER NOT NULL DEFAULT 0, qr_key TEXT, PRIMARY KEY (session_id, code)
+            used_at INTEGER, qr_dynamic INTEGER NOT NULL DEFAULT 0, qr_key TEXT,
+            inside INTEGER, entries INTEGER, max_entries INTEGER NOT NULL DEFAULT 1, zone_ids TEXT NOT NULL DEFAULT '', zone_id TEXT,
+            PRIMARY KEY (session_id, code)
           )''');
         await db.execute('''
           CREATE TABLE scans (
             id TEXT PRIMARY KEY, session_id TEXT NOT NULL, gate_id TEXT, code TEXT, raw TEXT NOT NULL,
             method TEXT NOT NULL, scanned_at INTEGER NOT NULL, verdict TEXT NOT NULL,
-            synced INTEGER NOT NULL DEFAULT 0, server_result TEXT
+            synced INTEGER NOT NULL DEFAULT 0, server_result TEXT, movement TEXT, zone_id TEXT
           )''');
         await db.execute('CREATE INDEX scans_pending ON scans (synced, scanned_at)');
         await db.execute('CREATE TABLE meta (session_id TEXT PRIMARY KEY, json TEXT NOT NULL)');
@@ -145,6 +163,11 @@ class DoorDb implements TicketLookup {
         'used_at': t.usedAt?.millisecondsSinceEpoch,
         'qr_dynamic': t.qrDynamic ? 1 : 0,
         'qr_key': t.key == null ? null : base64Url.encode(_xorKey(sessionId, t.code, keyFromBase64(t.key!))),
+        'inside': t.inside == null ? null : (t.inside! ? 1 : 0),
+        'entries': t.entries,
+        'max_entries': t.maxEntries,
+        'zone_ids': t.zoneIds.join(','),
+        'zone_id': t.zoneId,
       };
 
   static TicketRow _fromRow(Map<String, Object?> r) => TicketRow(
@@ -159,6 +182,11 @@ class DoorDb implements TicketLookup {
         methods: (r['methods'] as String).isEmpty ? const [] : (r['methods'] as String).split(','),
         usedAt: r['used_at'] == null ? null : DateTime.fromMillisecondsSinceEpoch(r['used_at'] as int),
         qrDynamic: (r['qr_dynamic'] as int? ?? 0) == 1,
+        inside: r['inside'] == null ? null : (r['inside'] as int) == 1,
+        entries: r['entries'] as int?,
+        maxEntries: r['max_entries'] as int? ?? 1,
+        zoneIds: (r['zone_ids'] as String? ?? '').isEmpty ? const [] : (r['zone_ids'] as String).split(','),
+        zoneId: r['zone_id'] as String?,
       );
 
   // ── Datos sueltos (por ejemplo, la última lista de funciones, para abrir la app sin internet) ──
@@ -220,12 +248,26 @@ class DoorDb implements TicketLookup {
     }
   }
 
-  /// Una lectura aceptada aquí y aún sin subir manda sobre lo que diga la descarga.
-  Future<void> _reapplyPending(DatabaseExecutor db, String sessionId) => db.rawUpdate('''
-    UPDATE tickets SET status = 'U',
-      used_at = (SELECT MIN(scanned_at) FROM scans s WHERE s.session_id = tickets.session_id AND s.code = tickets.code AND s.verdict = 'ACCEPTED')
-    WHERE session_id = ? AND status = 'V' AND EXISTS (
-      SELECT 1 FROM scans s WHERE s.session_id = tickets.session_id AND s.code = tickets.code AND s.verdict = 'ACCEPTED')''', [sessionId]);
+  /// Las lecturas aceptadas aquí y aún sin subir mandan sobre lo que diga la descarga: se vuelven a aplicar en orden
+  /// (ingreso, salida, reingreso, cambio de zona) para que el estado local sea el real.
+  Future<void> _reapplyPending(DatabaseExecutor db, String sessionId) async {
+    final rows = await db.query(
+      'scans',
+      where: "session_id = ? AND synced = 0 AND verdict = 'ACCEPTED' AND code IS NOT NULL",
+      whereArgs: [sessionId],
+      orderBy: 'scanned_at ASC',
+    );
+    for (final r in rows) {
+      await _applyMovement(
+        db,
+        sessionId,
+        r['code'] as String,
+        Movement.fromApi(r['movement'] as String?) ?? Movement.entry,
+        DateTime.fromMillisecondsSinceEpoch(r['scanned_at'] as int),
+        r['zone_id'] as String?,
+      );
+    }
+  }
 
   @override
   Future<TicketRow?> find(String sessionId, String code) async {
@@ -240,12 +282,47 @@ class DoorDb implements TicketLookup {
     return stored == null ? null : _xorKey(sessionId, code, keyFromBase64(stored));
   }
 
-  Future<void> markUsed(String sessionId, String code, DateTime at) => _db.update(
-        'tickets',
-        {'status': TicketStatus.used.code, 'used_at': at.millisecondsSinceEpoch},
-        where: 'session_id = ? AND code = ?',
-        whereArgs: [sessionId, code],
-      );
+  /// Entradas válidas de esta puerta cuyo tipo admite NFC, filtradas por nombre, carnet o código (para grabar pulseras).
+  Future<List<TicketRow>> searchNfcCandidates(String sessionId, String query, {int limit = 60}) async {
+    final q = query.trim();
+    final code = q.replaceAll('-', '').toUpperCase();
+    final rows = await _db.query(
+      'tickets',
+      where: "session_id = ? AND mine = 1 AND status = 'V' AND (',' || methods || ',') LIKE '%,NFC,%'"
+          "${q.isEmpty ? '' : ' AND (holder LIKE ? OR document LIKE ? OR code LIKE ?)'}",
+      whereArgs: [sessionId, if (q.isNotEmpty) ...['%$q%', '%$q%', '%$code%']],
+      orderBy: 'holder COLLATE NOCASE ASC, code ASC',
+      limit: limit,
+    );
+    return [for (final r in rows) _fromRow(r)];
+  }
+
+  /// Aplica a una entrada lo que pasó con ella en este teléfono: entró, salió, reingresó o cambió de zona.
+  Future<void> applyMovement(String sessionId, String code, Movement movement, DateTime at, {String? zoneId}) =>
+      _applyMovement(_db, sessionId, code, movement, at, zoneId);
+
+  Future<void> _applyMovement(DatabaseExecutor db, String sessionId, String code, Movement movement, DateTime at, String? zoneId) async {
+    final rows = await db.query('tickets', where: 'session_id = ? AND code = ?', whereArgs: [sessionId, code]);
+    if (rows.isEmpty) return;
+    final t = _fromRow(rows.first);
+    final values = <String, Object?>{};
+    switch (movement) {
+      case Movement.entry:
+      case Movement.reentry:
+        values.addAll({
+          'status': TicketStatus.used.code,
+          'inside': 1,
+          'entries': t.entryCount + 1,
+          'zone_id': zoneId,
+          'used_at': t.usedAt?.millisecondsSinceEpoch ?? at.millisecondsSinceEpoch,
+        });
+      case Movement.exit:
+        values.addAll({'status': TicketStatus.used.code, 'inside': 0, 'zone_id': null});
+      case Movement.zoneChange:
+        values['zone_id'] = zoneId;
+    }
+    await db.update('tickets', values, where: 'session_id = ? AND code = ?', whereArgs: [sessionId, code]);
+  }
 
   Future<void> upsertTicket(String sessionId, TicketRow t) =>
       _db.insert('tickets', _row(sessionId, t), conflictAlgorithm: ConflictAlgorithm.replace);
@@ -261,6 +338,8 @@ class DoorDb implements TicketLookup {
         'method': scan.method,
         'scanned_at': scan.scannedAt.millisecondsSinceEpoch,
         'verdict': scan.verdict.api,
+        'movement': scan.movement?.api,
+        'zone_id': scan.zoneId,
       });
 
   Future<List<PendingScan>> pending(String sessionId, {int limit = 200}) async {
@@ -281,6 +360,8 @@ class DoorDb implements TicketLookup {
           method: r['method'] as String,
           scannedAt: DateTime.fromMillisecondsSinceEpoch(r['scanned_at'] as int, isUtc: true),
           verdict: ScanVerdict.values.firstWhere((v) => v.api == r['verdict'], orElse: () => ScanVerdict.invalid),
+          movement: Movement.fromApi(r['movement'] as String?),
+          zoneId: r['zone_id'] as String?,
         ),
     ];
   }
@@ -304,19 +385,33 @@ class DoorDb implements TicketLookup {
       )) ??
       0;
 
-  /// Entradas de esta puerta: cuántas hay y cuántas ya entraron.
-  Future<({int total, int used})> gateCounts(String sessionId) async {
-    final total = Sqflite.firstIntValue(await _db.rawQuery(
-          "SELECT COUNT(*) FROM tickets WHERE session_id = ? AND mine = 1 AND status != 'C'",
-          [sessionId],
-        )) ??
-        0;
-    final used = Sqflite.firstIntValue(await _db.rawQuery(
-          "SELECT COUNT(*) FROM tickets WHERE session_id = ? AND mine = 1 AND status = 'U'",
-          [sessionId],
-        )) ??
-        0;
-    return (total: total, used: used);
+  /// Entradas de esta puerta: cuántas hay, cuántas ya entraron alguna vez y cuántas están adentro ahora.
+  Future<({int total, int used, int inside})> gateCounts(String sessionId) async {
+    Future<int> count(String where) async =>
+        Sqflite.firstIntValue(await _db.rawQuery('SELECT COUNT(*) FROM tickets WHERE session_id = ? AND mine = 1 AND $where', [sessionId])) ?? 0;
+    final total = await count("status != 'C'");
+    final used = await count("(status = 'U' OR COALESCE(entries, 0) > 0)");
+    final inside = await count("status != 'C' AND COALESCE(inside, CASE WHEN status = 'U' THEN 1 ELSE 0 END) = 1");
+    return (total: total, used: used, inside: inside);
+  }
+
+  /// Últimas lecturas de esta función (para la lista de la pantalla de lectura).
+  Future<List<RecentScan>> recentScans(String sessionId, {int limit = 30}) async {
+    final rows = await _db.rawQuery('''
+      SELECT s.scanned_at, s.verdict, s.movement, s.code, t.holder, t.type
+      FROM scans s LEFT JOIN tickets t ON t.session_id = s.session_id AND t.code = s.code
+      WHERE s.session_id = ? ORDER BY s.scanned_at DESC LIMIT ?''', [sessionId, limit]);
+    return [
+      for (final r in rows)
+        RecentScan(
+          at: DateTime.fromMillisecondsSinceEpoch(r['scanned_at'] as int),
+          verdict: ScanVerdict.fromApi(r['verdict'] as String) ?? ScanVerdict.invalid,
+          movement: Movement.fromApi(r['movement'] as String?),
+          holder: r['holder'] as String?,
+          type: r['type'] as String?,
+          code: r['code'] as String?,
+        ),
+    ];
   }
 
   /// Borra todo lo descargado (al cerrar sesión o terminar el evento).

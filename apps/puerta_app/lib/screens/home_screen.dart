@@ -3,9 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../app_services.dart';
 import '../door_service.dart';
 import '../models.dart';
+import '../ui/tokens.dart';
+import '../ui/widgets.dart';
+import 'account_sheet.dart';
+import 'bracelet_screen.dart';
 import 'scan_screen.dart';
+
+typedef Counts = ({int total, int used, int inside});
 
 /// Después del login: elige la función y la puerta, descarga los datos y elige cómo leer
 /// (solo aparecen los métodos que admiten las entradas de esa función).
@@ -27,7 +34,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Assignment? _selected;
   String? _gateId;
   SessionMeta? _meta;
-  ({int total, int used}) _counts = (total: 0, used: 0);
+  Counts _counts = (total: 0, used: 0, inside: 0);
   Timer? _timer;
 
   @override
@@ -57,7 +64,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _load() async {
     setState(() {
-      _loading = true;
+      _loading = _selected == null;
       _error = null;
     });
     try {
@@ -110,6 +117,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (_meta != null) await _s.sync(a.sessionId);
       _meta = await _s.download(a, gate);
       _counts = await _s.gateCounts(a.sessionId);
+      if (mounted) AppServices.of(context).feedback.done();
     } on ApiException catch (e) {
       _error = e.offline ? 'Sin conexión. Conéctate a internet para descargar los datos.' : e.message;
     }
@@ -124,80 +132,180 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String _date(DateTime d) {
     final t = d.toLocal();
     const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-    return '${t.day} ${months[t.month - 1]} · ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    const days = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
+    return '${days[t.weekday - 1]} ${t.day} ${months[t.month - 1]} · ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
   }
 
-  Future<void> _logout() async {
-    final pending = _selected == null ? 0 : _s.pendingCount;
-    final ok = await showDialog<bool>(
+  Future<void> _openAccount() async {
+    await showAccountSheet(context, service: _s, pending: _selected == null ? 0 : _s.pendingCount);
+  }
+
+  Future<void> _pickSession() async {
+    final list = _s.assignments;
+    final chosen = await showModalBottomSheet<Assignment>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Cerrar sesión'),
-        content: Text(
-          pending > 0
-              ? 'Hay $pending lectura(s) sin subir. Si cierras sesión se borrarán de este teléfono. ¿Cerrar igual?'
-              : 'Se borrarán las entradas descargadas de este teléfono.',
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          children: [
+            const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('ELIGE EL EVENTO', style: Type.title)),
+            for (final a in list)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: PressScale(
+                  onTap: () => Navigator.pop(context, a),
+                  child: SoftCard(
+                    borderColor: a.sessionId == _selected?.sessionId ? Brand.yellow : null,
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(a.title, style: Type.heading, maxLines: 2, overflow: TextOverflow.ellipsis),
+                              const SizedBox(height: 3),
+                              Text('${_date(a.startsAt)} · ${a.venue}', style: Type.muted),
+                            ],
+                          ),
+                        ),
+                        if (a.sessionId == _selected?.sessionId) const Icon(Icons.check_circle, color: Brand.yellow),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), style: FilledButton.styleFrom(minimumSize: const Size(100, 44)), child: const Text('Cerrar sesión')),
-        ],
       ),
     );
-    if (ok == true) await _s.logout();
+    if (chosen != null) await _select(chosen);
+  }
+
+  void _openScan(Assignment a, SessionMeta meta, AccessMethod m) {
+    Navigator.of(context)
+        .push(PageRouteBuilder<void>(
+          transitionDuration: const Duration(milliseconds: 380),
+          reverseTransitionDuration: const Duration(milliseconds: 260),
+          pageBuilder: (_, _, _) => ScanScreen(service: _s, meta: meta, method: m, assignment: a),
+          transitionsBuilder: (_, animation, _, child) => FadeTransition(
+            opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+            child: ScaleTransition(scale: Tween(begin: 0.96, end: 1.0).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)), child: child),
+          ),
+        ))
+        .then((_) => _backgroundSync());
   }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final a = _selected;
     final meta = _meta;
     // Los datos descargados son de otra puerta que la elegida: hay que volver a descargar.
     final gateChanged = meta != null && (meta.gateId ?? '') != (_gateId ?? '') && !_downloading;
     final ready = meta != null && !gateChanged;
+    final name = (_s.staffName ?? 'portero').trim();
+    final first = name.split(' ').first;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Impacta Puerta'),
-        actions: [
-          IconButton(tooltip: 'Actualizar funciones', onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh)),
-          IconButton(tooltip: 'Cerrar sesión', onPressed: _logout, icon: const Icon(Icons.logout)),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                Text('Hola, ${_s.staffName ?? 'portero'}', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: scheme.onSurfaceVariant)),
-                const SizedBox(height: 16),
-                if (_error != null) ...[
-                  Card(color: scheme.errorContainer, child: Padding(padding: const EdgeInsets.all(14), child: Text(_error!, style: TextStyle(color: scheme.onErrorContainer)))),
-                  const SizedBox(height: 12),
-                ],
-                if (a == null)
-                  const _EmptyState()
-                else ...[
-                  _SessionCard(
-                    assignments: _s.assignments,
-                    selected: a,
-                    onChanged: (v) => _select(v),
-                    dateLabel: _date(a.startsAt),
-                  ),
-                  if (a.gates.length > 1) ...[
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: _gateId,
-                      decoration: const InputDecoration(labelText: 'Puerta'),
-                      items: [for (final g in a.gates) DropdownMenuItem(value: g.id, child: Text(g.name))],
-                      onChanged: (v) => setState(() => _gateId = v),
+      body: SafeArea(
+        bottom: false,
+        child: RefreshIndicator(
+          color: Brand.yellow,
+          backgroundColor: Brand.surface3,
+          onRefresh: _load,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 36),
+            children: [
+              Row(
+                children: [
+                  const BrandMark(size: 28, suffix: 'PUERTA'),
+                  const Spacer(),
+                  PressScale(
+                    onTap: _openAccount,
+                    scale: 0.92,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          width: 46,
+                          height: 46,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: const LinearGradient(colors: [Color(0xFFFFD34D), Brand.yellow]),
+                            boxShadow: [BoxShadow(color: Brand.yellow.withValues(alpha: 0.3), blurRadius: 14)],
+                          ),
+                          child: Text(first.isEmpty ? 'P' : first.characters.first.toUpperCase(), style: const TextStyle(fontFamily: Fonts.display, fontSize: 22, color: Brand.yellowInk)),
+                        ),
+                        // Lecturas guardadas que todavía no se subieron.
+                        if (_s.pendingCount > 0)
+                          Positioned(
+                            right: -4,
+                            top: -4,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: Brand.amber, borderRadius: BorderRadius.circular(99), border: Border.all(color: Brand.ink, width: 2)),
+                              child: Text('${_s.pendingCount}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Brand.ink)),
+                            ),
+                          ),
+                      ],
                     ),
-                  ] else if (a.gates.length == 1) ...[
-                    const SizedBox(height: 10),
-                    Text('Puerta: ${a.gates.first.name}', style: TextStyle(color: scheme.onSurfaceVariant)),
-                  ],
-                  const SizedBox(height: 16),
-                  _DataCard(
+                  ),
+                ],
+              ),
+              const SizedBox(height: 22),
+              StaggerIn(
+                child: Text('Hola, $first', style: Type.heading.copyWith(fontSize: 26)),
+              ),
+              const SizedBox(height: 2),
+              const StaggerIn(index: 1, child: Text('Esto es lo que tienes para hoy.', style: Type.muted)),
+              const SizedBox(height: 20),
+              if (_error != null) ...[
+                StaggerIn(
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(color: Brand.red.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(16), border: Border.all(color: Brand.red.withValues(alpha: 0.4))),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.wifi_off_rounded, color: Brand.red, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(child: Text(_error!, style: Type.body.copyWith(color: const Color(0xFFFFC2C8), fontSize: 15))),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
+              if (_loading)
+                const _LoadingState()
+              else if (a == null)
+                const _EmptyState()
+              else ...[
+                StaggerIn(
+                  index: 2,
+                  child: _EventHero(assignment: a, dateLabel: _date(a.startsAt), canChange: _s.assignments.length > 1, onChange: _pickSession),
+                ),
+                if (a.gates.isNotEmpty) ...[
+                  const SizedBox(height: 22),
+                  StaggerIn(index: 3, child: SectionLabel(a.gates.length > 1 ? 'Elige tu puerta' : 'Tu puerta')),
+                  const SizedBox(height: 10),
+                  StaggerIn(
+                    index: 3,
+                    child: _GatePicker(
+                      // Si ya descargó, las puertas traen su dirección y su zona; antes, solo el nombre.
+                      gates: [for (final g in a.gates) meta?.gates.where((m) => m.id == g.id).firstOrNull ?? g],
+                      selectedId: _gateId,
+                      onChanged: (id) => setState(() => _gateId = id),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 22),
+                StaggerIn(
+                  index: 4,
+                  child: _DataCard(
                     meta: gateChanged ? null : meta,
                     counts: _counts,
                     downloading: _downloading,
@@ -207,28 +315,58 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     onDownload: _download,
                     refresh: meta != null && !gateChanged,
                   ),
-                  const SizedBox(height: 20),
-                  if (!ready)
-                    Text(
-                      'Descarga los datos para empezar a leer entradas.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: scheme.onSurfaceVariant),
-                    )
-                  else if (a.methods.isEmpty)
-                    Text('Las entradas de esta función no tienen un método de lectura configurado.', style: TextStyle(color: scheme.error))
-                  else
-                    for (final m in a.methods) ...[
-                      _MethodButton(
-                        method: m,
-                        onTap: () => Navigator.of(context)
-                            .push(MaterialPageRoute<void>(builder: (_) => ScanScreen(service: _s, meta: meta, method: m, assignment: a)))
-                            .then((_) => _backgroundSync()),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
+                ),
+                const SizedBox(height: 22),
+                if (!ready)
+                  StaggerIn(
+                    index: 5,
+                    child: Text('Descarga los datos para empezar a leer entradas.', textAlign: TextAlign.center, style: Type.muted.copyWith(fontSize: 15)),
+                  )
+                else if (a.methods.isEmpty)
+                  Text('Las entradas de esta función no tienen un método de lectura configurado.', style: Type.body.copyWith(color: Brand.red))
+                else ...[
+                  const StaggerIn(index: 5, child: SectionLabel('Empezar a leer')),
+                  const SizedBox(height: 10),
+                  for (final (i, m) in a.methods.indexed)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: StaggerIn(index: 6 + i, child: _MethodTile(method: m, onTap: () => _openScan(a, meta, m))),
+                    ),
+                ],
+                if (ready && _s.canWriteBracelets) ...[
+                  const SizedBox(height: 4),
+                  StaggerIn(
+                    index: 9,
+                    child: GhostButton(
+                      label: 'Grabar pulseras NFC',
+                      icon: Icons.nfc,
+                      onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => BraceletScreen(service: _s, meta: meta, assignment: a))),
+                    ),
+                  ),
                 ],
               ],
-            ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoadingState extends StatelessWidget {
+  const _LoadingState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 60),
+      child: Column(
+        children: [
+          const SizedBox(width: 36, height: 36, child: CircularProgressIndicator(strokeWidth: 3.5, color: Brand.yellow)),
+          const SizedBox(height: 16),
+          Text('Buscando tus eventos…', style: Type.muted.copyWith(fontSize: 15)),
+        ],
+      ),
     );
   }
 }
@@ -238,19 +376,83 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 48),
+    return StaggerIn(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        child: Column(
+          children: [
+            Container(
+              width: 112,
+              height: 112,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Brand.surface2,
+                border: Border.all(color: Brand.stroke),
+              ),
+              child: const Icon(Icons.event_busy_rounded, size: 52, color: Brand.muted),
+            ),
+            const SizedBox(height: 22),
+            const Text('NO TIENES EVENTOS ASIGNADOS', textAlign: TextAlign.center, style: Type.title),
+            const SizedBox(height: 10),
+            Text(
+              'Pídele al administrador que te asigne una función en el panel y desliza hacia abajo para actualizar.',
+              textAlign: TextAlign.center,
+              style: Type.muted.copyWith(fontSize: 15),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EventHero extends StatelessWidget {
+  const _EventHero({required this.assignment, required this.dateLabel, required this.canChange, required this.onChange});
+
+  final Assignment assignment;
+  final String dateLabel;
+  final bool canChange;
+  final VoidCallback onChange;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: Brand.yellow.withValues(alpha: 0.28)),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Brand.yellow.withValues(alpha: 0.16), const Color(0xFF12161C)],
+        ),
+      ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.event_busy, size: 56, color: scheme.onSurfaceVariant),
-          const SizedBox(height: 12),
-          Text('No tienes eventos asignados', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 6),
-          Text(
-            'Pídele al administrador que te asigne una función en el panel y toca actualizar.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: scheme.onSurfaceVariant),
+          Row(
+            children: [
+              const PulseDot(color: Brand.green, size: 8),
+              const SizedBox(width: 4),
+              Text('EVENTO EN CURSO', style: Type.label.copyWith(color: Brand.yellow)),
+              const Spacer(),
+              if (canChange)
+                PressScale(
+                  onTap: onChange,
+                  child: const Pill('Cambiar', icon: Icons.unfold_more_rounded, color: Brand.text, small: true),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(assignment.title.toUpperCase(), style: Type.hero.copyWith(fontSize: 34), maxLines: 3, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Pill(dateLabel, icon: Icons.schedule_rounded, color: Brand.text),
+              Pill(assignment.venue, icon: Icons.place_outlined, color: Brand.text),
+            ],
           ),
         ],
       ),
@@ -258,42 +460,75 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-class _SessionCard extends StatelessWidget {
-  const _SessionCard({required this.assignments, required this.selected, required this.onChanged, required this.dateLabel});
+class _GatePicker extends StatelessWidget {
+  const _GatePicker({required this.gates, required this.selectedId, required this.onChanged});
 
-  final List<Assignment> assignments;
-  final Assignment selected;
-  final ValueChanged<Assignment?> onChanged;
-  final String dateLabel;
+  final List<Gate> gates;
+  final String? selectedId;
+  final ValueChanged<String> onChanged;
+
+  static Color _tone(Gate g) => g.directionKnown ? _color(g.direction) : Brand.muted;
+
+  static Color _color(GateDirection d) => switch (d) {
+        GateDirection.inward => Brand.green,
+        GateDirection.outward => Brand.amber,
+        GateDirection.both => Brand.blue,
+      };
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('EVENTO', style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant, letterSpacing: 1)),
-            const SizedBox(height: 4),
-            if (assignments.length > 1)
-              DropdownButton<Assignment>(
-                isExpanded: true,
-                value: selected,
-                underline: const SizedBox.shrink(),
-                items: [
-                  for (final x in assignments) DropdownMenuItem(value: x, child: Text(x.title, overflow: TextOverflow.ellipsis)),
-                ],
-                onChanged: onChanged,
-              )
-            else
-              Text(selected.title, style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 4),
-            Text('$dateLabel · ${selected.venue}', style: TextStyle(color: scheme.onSurfaceVariant)),
-          ],
-        ),
-      ),
+    return Column(
+      children: [
+        for (final g in gates)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: PressScale(
+              onTap: gates.length > 1 ? () => onChanged(g.id) : null,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: g.id == selectedId ? _tone(g).withValues(alpha: 0.10) : Brand.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: g.id == selectedId ? _tone(g).withValues(alpha: 0.7) : Brand.stroke, width: g.id == selectedId ? 1.6 : 1),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(color: _tone(g).withValues(alpha: 0.16), borderRadius: BorderRadius.circular(14)),
+                      child: Icon(g.directionKnown ? g.direction.icon : Icons.meeting_room_outlined, color: _tone(g)),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(g.name, style: Type.heading.copyWith(fontSize: 18)),
+                          const SizedBox(height: 2),
+                          Text(
+                            !g.directionKnown ? 'Puerta' : (g.zoneId != null ? '${g.direction.label} · da a una zona' : g.direction.label),
+                            style: Type.muted.copyWith(fontSize: 13.5),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (gates.length > 1)
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
+                        child: g.id == selectedId
+                            ? Icon(Icons.check_circle_rounded, key: const ValueKey('on'), color: _tone(g))
+                            : const Icon(Icons.radio_button_unchecked, key: ValueKey('off'), color: Brand.faint),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -311,7 +546,7 @@ class _DataCard extends StatelessWidget {
   });
 
   final SessionMeta? meta;
-  final ({int total, int used}) counts;
+  final Counts counts;
   final bool downloading;
   final int pending;
   final int conflicts;
@@ -321,75 +556,231 @@ class _DataCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (meta == null)
-              Text('Datos sin descargar', style: Theme.of(context).textTheme.titleMedium)
-            else ...[
-              Row(
-                children: [
-                  Icon(Icons.check_circle, color: scheme.primary, size: 20),
-                  const SizedBox(width: 8),
-                  Text('${counts.total} entradas en esta puerta', style: Theme.of(context).textTheme.titleMedium),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text('Ingresaron ${counts.used} · actualizado $syncedAt', style: TextStyle(color: scheme.onSurfaceVariant)),
-              if (pending > 0) Text('$pending lectura(s) por subir', style: TextStyle(color: scheme.tertiary)),
-              if (conflicts > 0)
-                Text('$conflicts entrada(s) ya habían ingresado por otro lector', style: TextStyle(color: scheme.error)),
-            ],
-            const SizedBox(height: 12),
-            downloading
-                ? const LinearProgressIndicator()
-                : (refresh
-                    ? OutlinedButton.icon(onPressed: onDownload, icon: const Icon(Icons.sync), label: const Text('Descargar de nuevo'))
-                    : FilledButton.icon(onPressed: onDownload, icon: const Icon(Icons.download), label: const Text('Descargar datos'))),
+    final total = counts.total;
+    final ratio = total == 0 ? 0.0 : counts.used / total;
+    return SoftCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (meta == null)
+            Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(color: Brand.surface3, borderRadius: BorderRadius.circular(14)),
+                  child: const Icon(Icons.cloud_download_outlined, color: Brand.yellow),
+                ),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Datos sin descargar', style: Type.heading),
+                      SizedBox(height: 2),
+                      Text('Se guardan en el teléfono para leer sin internet.', style: Type.muted),
+                    ],
+                  ),
+                ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                RingGauge(
+                  value: ratio,
+                  size: 112,
+                  stroke: 11,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AnimatedNumber(value: counts.used, style: Type.number.copyWith(fontSize: 30)),
+                      Text('de $total', style: Type.muted.copyWith(fontSize: 12.5)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _Stat(icon: Icons.login_rounded, color: Brand.green, label: 'Adentro ahora', value: counts.inside),
+                      const SizedBox(height: 12),
+                      _Stat(icon: Icons.confirmation_number_outlined, color: Brand.yellow, label: 'Entradas de tu puerta', value: total),
+                      if (syncedAt != null) ...[
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            PulseDot(color: pending > 0 ? Brand.amber : Brand.green, size: 7, pulsing: pending > 0 || downloading),
+                            const SizedBox(width: 2),
+                            Text('Actualizado $syncedAt', style: Type.muted.copyWith(fontSize: 12.5)),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          if (pending > 0 || conflicts > 0) ...[
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (pending > 0) Pill('$pending lectura(s) por subir', icon: Icons.cloud_upload_outlined, color: Brand.amber),
+                if (conflicts > 0) Pill('$conflicts ya habían ingresado por otro lector', icon: Icons.warning_amber_rounded, color: Brand.red),
+              ],
+            ),
           ],
-        ),
+          const SizedBox(height: 16),
+          _SyncButton(downloading: downloading, refresh: refresh, onTap: onDownload),
+        ],
       ),
     );
   }
 }
 
-class _MethodButton extends StatelessWidget {
-  const _MethodButton({required this.method, required this.onTap});
+class _Stat extends StatelessWidget {
+  const _Stat({required this.icon, required this.color, required this.label, required this.value});
+
+  final IconData icon;
+  final Color color;
+  final String label;
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(color: color.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(10)),
+          child: Icon(icon, size: 17, color: color),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AnimatedNumber(value: value, style: Type.number.copyWith(fontSize: 22, height: 1)),
+              Text(label, style: Type.muted.copyWith(fontSize: 12.5), maxLines: 1, overflow: TextOverflow.ellipsis),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SyncButton extends StatefulWidget {
+  const _SyncButton({required this.downloading, required this.refresh, required this.onTap});
+
+  final bool downloading;
+  final bool refresh;
+  final VoidCallback onTap;
+
+  @override
+  State<_SyncButton> createState() => _SyncButtonState();
+}
+
+class _SyncButtonState extends State<_SyncButton> with SingleTickerProviderStateMixin {
+  late final AnimationController _spin = AnimationController(vsync: this, duration: const Duration(milliseconds: 1000));
+
+  @override
+  void didUpdateWidget(_SyncButton old) {
+    super.didUpdateWidget(old);
+    if (widget.downloading && !_spin.isAnimating) _spin.repeat();
+    if (!widget.downloading && _spin.isAnimating) _spin.stop();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.downloading) _spin.repeat();
+  }
+
+  @override
+  void dispose() {
+    _spin.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final label = widget.downloading ? 'Descargando…' : (widget.refresh ? 'Descargar de nuevo' : 'Descargar datos');
+    final icon = RotationTransition(turns: _spin, child: Icon(widget.refresh || widget.downloading ? Icons.sync_rounded : Icons.download_rounded, size: 22));
+    final child = Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IconTheme(data: IconThemeData(color: widget.refresh ? Brand.text : Brand.yellowInk), child: icon),
+        const SizedBox(width: 10),
+        Text(label, style: TextStyle(fontFamily: Fonts.body, fontWeight: FontWeight.w800, fontSize: 16.5, color: widget.refresh ? Brand.text : Brand.yellowInk)),
+      ],
+    );
+    return PressScale(
+      onTap: widget.downloading ? null : widget.onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 240),
+        height: 54,
+        decoration: BoxDecoration(
+          color: widget.refresh ? Brand.surface2 : Brand.yellow,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: widget.refresh ? Brand.stroke : Colors.transparent),
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _MethodTile extends StatelessWidget {
+  const _MethodTile({required this.method, required this.onTap});
 
   final AccessMethod method;
   final VoidCallback onTap;
 
+  Color get _color => switch (method) {
+        AccessMethod.qr => Brand.yellow,
+        AccessMethod.barcode => Brand.blue,
+        AccessMethod.nfc => Brand.violet,
+      };
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.primaryContainer,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
-          child: Row(
-            children: [
-              Icon(method.icon, size: 38, color: scheme.onPrimaryContainer),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(method.label, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: scheme.onPrimaryContainer)),
-                    Text(method.hint, style: TextStyle(color: scheme.onPrimaryContainer.withValues(alpha: 0.8))),
-                  ],
-                ),
+    return PressScale(
+      onTap: onTap,
+      scale: 0.97,
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: _color.withValues(alpha: 0.4)),
+          gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [_color.withValues(alpha: 0.18), _color.withValues(alpha: 0.04)]),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(color: _color, borderRadius: BorderRadius.circular(18), boxShadow: [BoxShadow(color: _color.withValues(alpha: 0.35), blurRadius: 18, offset: const Offset(0, 6))]),
+              child: Icon(method.icon, size: 32, color: Brand.ink),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(method.label.toUpperCase(), style: Type.title.copyWith(fontSize: 24)),
+                  const SizedBox(height: 2),
+                  Text(method.hint, style: Type.muted.copyWith(fontSize: 14)),
+                ],
               ),
-              Icon(Icons.chevron_right, color: scheme.onPrimaryContainer),
-            ],
-          ),
+            ),
+            Icon(Icons.arrow_forward_rounded, color: _color),
+          ],
         ),
       ),
     );

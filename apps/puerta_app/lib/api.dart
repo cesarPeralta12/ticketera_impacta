@@ -32,7 +32,7 @@ class ApiException implements Exception {
 }
 
 /// Versión de la app: viaja en cada petición para que el panel muestre qué versión tiene cada teléfono.
-const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.1.1');
+const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.3.0');
 
 /// Par de tokens: el de acceso es corto; el de renovación lo cambia por uno nuevo (y él mismo se renueva).
 class TokenPair {
@@ -145,6 +145,14 @@ class ApiClient {
     );
     final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     return TokenPair(token: body['token'] as String, refreshToken: body['refreshToken'] as String);
+  }
+
+  /// Avisa al servidor que se grabó una pulsera (queda en el registro: quién, qué entrada y desde qué teléfono).
+  Future<void> reportBraceletWrite({required String sessionId, required String code, required bool locked}) async {
+    await _send(
+      () => _http.post(_uri('/nfc-writes'), headers: _headers, body: jsonEncode({'sessionId': sessionId, 'code': code, 'locked': locked})),
+      timeout: const Duration(seconds: 10),
+    );
   }
 
   Future<void> changePassword({required String current, required String next}) async {
