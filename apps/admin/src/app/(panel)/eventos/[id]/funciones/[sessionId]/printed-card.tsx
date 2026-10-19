@@ -36,14 +36,11 @@ export async function PrintedCard({
         <h2 className="eyebrow mb-1 flex items-center gap-2">
           Entradas impresas
           <Help title="Entradas impresas">
-            Un lote numerado (A-0001…) ocupa cupo al crearse. Con «Activadas al vender», la puerta no las deja pasar hasta que
-            las marcas vendidas (por rango o código). Entrégalas a vendedores y cierra la rendición con lo que te devolvieron.
+            Para vender en mano (vendedores, RRPP, puntos de venta). Un lote numerado (A-0001…) ocupa cupo al crearse y suma a
+            la recaudación recién al marcarse vendido. Con «Activadas al vender», la puerta no las deja pasar hasta que las marcas
+            vendidas (por rango o código). Entrégalas a vendedores y cierra la rendición con lo que te devolvieron.
           </Help>
         </h2>
-        <p className="text-sm text-[var(--ink-muted)]">
-          Para vender en mano (vendedores, RRPP, puntos de venta): lotes numerados que descuentan cupo al crearse y suman a la
-          recaudación recién al marcarse vendidas.
-        </p>
       </div>
 
       {batches.length > 0 && (

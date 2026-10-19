@@ -24,7 +24,7 @@ import {
   type SaleState,
   type ZoneShape,
 } from "@ticketera/core";
-import { getSessionAvailability, getZoneAvailability, prisma } from "@ticketera/db";
+import { getSessionAvailability, getZoneAvailability, prisma, salesCutoff } from "@ticketera/db";
 import { AccessMethodsField } from "@/components/access-methods-field";
 import { TicketTypeForm } from "@/components/ticket-type-form";
 import { ActionForm } from "@/components/action-form";
@@ -149,6 +149,8 @@ export default async function SessionPage({ params, searchParams }: Props) {
   const hasTables = session.ticketTypes.some((t) => t.kind === "TABLE") || seatedSections.some((s) => isTablesLayout(s.layout) || isSeatedTablesLayout(s.layout));
   const nextWeek = utcToZonedInput(new Date(session.startsAt.getTime() + 7 * 86_400_000), tz).slice(0, 10);
   const capacity = sellableCapacity(session.ticketTypes);
+  // Misma regla que la boletería: evento publicado con venta y la función todavía vendible en puerta.
+  const boxOffice = !guestList && session.event.status === "PUBLISHED" && !session.cancelledAt && salesCutoff(session, "POS") > now;
 
   const stats = [
     { label: "Entradas emitidas", value: issued, of: capacity > 0 ? `de ${capacity.toLocaleString("es-BO")}` : null },
@@ -188,7 +190,7 @@ export default async function SessionPage({ params, searchParams }: Props) {
 
       <section aria-label="Accesos rápidos" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Shortcut href={`${base}/en-vivo`} icon="door" label="Ingreso en vivo" note="Mapa y lecturas de las puertas al momento" tone="var(--grad-accent)" primary />
-        {!guestList && <Shortcut href={`/boleteria/${session.id}`} icon="ticket" label="Boletería" note="Vender en la puerta o en un punto de venta" tone="var(--brand-yellow)" />}
+        {boxOffice && <Shortcut href={`/boleteria/${session.id}`} icon="ticket" label="Boletería" note="Vender en la puerta o en un punto de venta" tone="var(--brand-yellow)" />}
         <Shortcut
           href={`${base}/invitados`}
           icon="users"
@@ -613,12 +615,12 @@ export default async function SessionPage({ params, searchParams }: Props) {
               </button>
             </ActionForm>
           </section>
-          <section className="card border-[var(--danger)]/30 p-6 lg:col-span-2">
-            <h2 className="eyebrow mb-1 text-[var(--danger)]">Zona de peligro</h2>
+          <section className="card p-6 lg:col-span-2" style={{ borderColor: "color-mix(in srgb, var(--danger) 30%, var(--border))" }}>
+            <h2 className="mb-1 font-mono text-[0.6875rem] uppercase tracking-[0.06em] text-[var(--danger)]">Zona de peligro</h2>
             <p className="mb-3 text-sm text-[var(--ink-muted)]">Borrar {noun.the} no se puede deshacer.</p>
             <ActionForm action={deleteSessionAction} confirm={`¿Borrar ${noun.the}? No se puede deshacer.`}>
               <input type="hidden" name="sessionId" value={session.id} />
-              <button type="submit" className="btn border-[var(--danger)]/40 text-sm text-[var(--danger)]">
+              <button type="submit" className="rounded-md border border-[var(--danger)]/40 px-4 py-2 text-sm font-medium text-[var(--danger)] transition-colors hover:bg-[var(--danger-soft)]">
                 Borrar {noun.one}
               </button>
             </ActionForm>
