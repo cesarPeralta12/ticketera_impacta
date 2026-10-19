@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
-/* Paleta del panel (prototipo del compañero): fondo claro, acento verde azulado, look de dashboard. */
+/* Paleta del panel: fondo claro para leer cómodo, acento verde para acciones y los colores de marca de la web
+   (amarillo, rosa, violeta) para dar vida: menú, logo, números del resumen y detalles. */
 :root {
-  --bg: #f6f6f3;
+  --bg: #f5f4f0;
   --surface: #ffffff;
   --surface-2: #eeede7;
   --border: #e1dfd7;
@@ -17,12 +18,24 @@
   --danger: #b91c1c;
   --danger-soft: #fdecec;
 
-  /* Menú lateral */
-  --side-bg: #14181b;
-  --side-ink: #e9ece8;
-  --side-dim: #8d948f;
-  --side-border: #262c30;
-  --side-hover: #1e2428;
+  /* Colores de marca (los mismos de la web) */
+  --brand-yellow: #f5b700;
+  --brand-pink: #ff3d68;
+  --brand-purple: #a855f7;
+  --brand-blue: #3b82f6;
+  --brand-orange: #f97316;
+  --brand-green: #10b981;
+  --grad-brand: linear-gradient(135deg, var(--brand-yellow) 0%, var(--brand-pink) 55%, var(--brand-purple) 100%);
+  --grad-accent: linear-gradient(135deg, #12a37c 0%, #0f8a6b 55%, #0b6f63 100%);
+  --shadow-card: 0 1px 2px rgb(20 24 27 / 0.04), 0 6px 20px -12px rgb(20 24 27 / 0.18);
+  --shadow-lift: 0 2px 4px rgb(20 24 27 / 0.05), 0 16px 32px -14px rgb(20 24 27 / 0.28);
+
+  /* Menú lateral: noche con brillo de marca */
+  --side-bg: #120f1c;
+  --side-ink: #eeecf5;
+  --side-dim: #9c97b0;
+  --side-border: rgb(255 255 255 / 0.08);
+  --side-hover: rgb(255 255 255 / 0.06);
 
   --font-body: var(--font-manrope), "Segoe UI", sans-serif;
   --font-mono: var(--font-mono-plex), ui-monospace, monospace;
@@ -44,7 +57,12 @@ html {
 }
 
 body {
-  background: var(--bg);
+  /* Un brillo de marca muy suave arriba: el fondo deja de ser plano sin molestar la lectura. */
+  background:
+    radial-gradient(900px 420px at 92% -8%, rgb(168 85 247 / 0.09), transparent 65%),
+    radial-gradient(800px 380px at 30% -12%, rgb(245 183 0 / 0.08), transparent 65%),
+    var(--bg);
+  background-attachment: fixed;
   color: var(--ink);
   font-family: var(--font-body);
 }
@@ -54,7 +72,16 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 0.875rem;
-  box-shadow: 0 1px 2px rgb(20 24 27 / 0.04);
+  box-shadow: var(--shadow-card);
+}
+/* Las tarjetas que son enlaces se levantan un poco al pasar el mouse. */
+a.card {
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+a.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lift);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 
 .field {
@@ -93,7 +120,7 @@ body {
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
-  transition: opacity 0.15s, border-color 0.15s;
+  transition: opacity 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--ink);
@@ -102,18 +129,22 @@ body {
 .btn:hover {
   border-color: var(--ink);
 }
+.btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
 .btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--grad-accent);
+  border-color: transparent;
   color: var(--accent-ink);
 }
-.btn-primary:hover {
-  opacity: 0.9;
-  border-color: var(--accent);
+.btn-primary:hover:not(:disabled) {
+  border-color: transparent;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px -8px rgb(15 138 107 / 0.7);
 }
 .btn-dark {
   background: var(--ink);
@@ -148,10 +179,30 @@ body {
   white-space: nowrap;
 }
 
-/* Menú lateral oscuro: la sección activa se ve de un vistazo */
+/* Menú lateral oscuro: noche con brillos amarillo y violeta; la sección activa se ve de un vistazo */
 .sidebar {
-  background: var(--side-bg);
+  background:
+    radial-gradient(120% 40% at 0% 0%, rgb(245 183 0 / 0.16), transparent 60%),
+    radial-gradient(120% 45% at 100% 100%, rgb(168 85 247 / 0.24), transparent 65%),
+    linear-gradient(180deg, #110e1a 0%, #161127 55%, #1c1433 100%);
   color: var(--side-ink);
+}
+/* Logo: la inicial sobre el degradado de marca, con un brillo que pasa cada tanto. */
+.brand-tile {
+  position: relative;
+  overflow: hidden;
+  background: var(--grad-brand);
+  color: #fff;
+  box-shadow: 0 6px 18px -6px rgb(255 61 104 / 0.65);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+}
+.brand-tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgb(255 255 255 / 0.55) 50%, transparent 70%);
+  transform: translateX(-120%);
+  animation: shine 6s ease-in-out 1.2s infinite;
 }
 .side-title {
   padding: 0.5rem 0.75rem 0.25rem;
@@ -162,6 +213,7 @@ body {
   color: var(--side-dim);
 }
 .nav-link {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.625rem;
@@ -170,17 +222,42 @@ body {
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
   color: var(--side-dim);
-  transition: background-color 0.12s, color 0.12s;
+  transition: background-color 0.15s, color 0.15s;
+}
+.nav-link svg {
+  transition: color 0.15s, transform 0.2s;
 }
 .nav-link:hover {
   background: var(--side-hover);
   color: var(--side-ink);
 }
+.nav-link:hover svg {
+  color: var(--brand-yellow);
+  transform: scale(1.1);
+}
+/* Activa: fondo con el degradado verde y una barrita de marca a la izquierda. */
 .nav-link-active,
 .nav-link-active:hover {
-  background: var(--accent);
+  background: var(--grad-accent);
   color: var(--accent-ink);
   font-weight: 600;
+  box-shadow: 0 8px 20px -10px rgb(16 185 129 / 0.9);
+}
+.nav-link-active svg,
+.nav-link-active:hover svg {
+  color: #fff;
+}
+@media (min-width: 768px) {
+  .nav-link-active::before {
+    content: "";
+    position: absolute;
+    left: -0.75rem;
+    top: 0.45rem;
+    bottom: 0.45rem;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--grad-brand);
+  }
 }
 .side-btn {
   width: 100%;
@@ -204,6 +281,9 @@ body {
 }
 .btn-primary {
   box-shadow: 0 1px 2px rgb(15 138 107 / 0.35);
+}
+table thead tr {
+  background: color-mix(in srgb, var(--surface-2) 45%, transparent);
 }
 table tbody tr {
   transition: background-color 0.1s;
@@ -257,4 +337,122 @@ table tbody tr:hover {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 0.5rem;
+}
+
+/* Números del resumen: cada tarjeta con su color de marca (borde superior, rótulo y un brillo en la esquina). */
+.stats > * {
+  --tone: var(--brand-green);
+  position: relative;
+  overflow: hidden;
+  border-top: 3px solid var(--tone);
+}
+.stats > :nth-child(6n + 2) {
+  --tone: var(--brand-yellow);
+}
+.stats > :nth-child(6n + 3) {
+  --tone: var(--brand-pink);
+}
+.stats > :nth-child(6n + 4) {
+  --tone: var(--brand-purple);
+}
+.stats > :nth-child(6n + 5) {
+  --tone: var(--brand-blue);
+}
+.stats > :nth-child(6n + 6) {
+  --tone: var(--brand-orange);
+}
+.stats > *::after {
+  content: "";
+  position: absolute;
+  right: -2.25rem;
+  top: -2.25rem;
+  width: 7rem;
+  height: 7rem;
+  border-radius: 9999px;
+  background: var(--tone);
+  opacity: 0.1;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  pointer-events: none;
+}
+.stats > :hover::after {
+  transform: scale(1.25);
+  opacity: 0.16;
+}
+.stats .eyebrow {
+  color: color-mix(in srgb, var(--tone) 70%, var(--ink));
+}
+
+/* Punto "en vivo" que late. */
+.live-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: var(--brand-green);
+  animation: live-pulse 1.8s ease-out infinite;
+  vertical-align: middle;
+}
+
+/* Animaciones: la página entra suave y los números del resumen aparecen uno tras otro. */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes shine {
+  0%,
+  70% {
+    transform: translateX(-120%);
+  }
+  85%,
+  100% {
+    transform: translateX(120%);
+  }
+}
+@keyframes live-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(16 185 129 / 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgb(16 185 129 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(16 185 129 / 0);
+  }
+}
+.page-enter {
+  animation: fade-up 0.35s ease-out both;
+}
+.stats > * {
+  animation: fade-up 0.45s ease-out both;
+}
+.stats > :nth-child(2) {
+  animation-delay: 60ms;
+}
+.stats > :nth-child(3) {
+  animation-delay: 120ms;
+}
+.stats > :nth-child(4) {
+  animation-delay: 180ms;
+}
+.stats > :nth-child(5) {
+  animation-delay: 240ms;
+}
+.stats > :nth-child(6) {
+  animation-delay: 300ms;
+}
+
+/* Quien pide menos movimiento en su equipo no ve animaciones. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }

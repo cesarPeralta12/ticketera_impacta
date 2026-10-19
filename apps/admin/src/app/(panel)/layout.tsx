@@ -4,6 +4,7 @@ import { Suspense, type ReactNode } from "react";
 import { prisma } from "@ticketera/db";
 import { GuidedTour, TourReplay, type TourStep } from "@/components/guided-tour";
 import { NavLink, type NavIcon } from "@/components/nav-link";
+import { PageTransition } from "@/components/page-transition";
 import { PasswordNotice } from "@/components/password-notice";
 import { ReadOnlyProvider } from "@/components/read-only";
 import { exitOrganizationAction } from "@/lib/actions/platform";
@@ -139,7 +140,7 @@ export default async function PanelLayout({ children }: { children: ReactNode })
     <div className="flex min-h-dvh flex-col md:flex-row print:block">
       <aside className="sidebar flex flex-col md:sticky md:top-0 md:h-dvh md:w-64 md:shrink-0 print:hidden">
         <div className="flex items-center gap-3 px-5 py-5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)] text-base font-bold text-[var(--accent-ink)]">
+          <span className="brand-tile flex h-9 w-9 items-center justify-center rounded-lg text-base font-bold">
             {staff.organization.name.slice(0, 1).toUpperCase()}
           </span>
           <span className="min-w-0">
@@ -224,7 +225,9 @@ export default async function PanelLayout({ children }: { children: ReactNode })
         </Suspense>
         <div className="p-4 md:p-8 print:p-0">
           <ReadOnlyProvider value={staff.readOnly}>
-            <div className="mx-auto max-w-6xl">{children}</div>
+            <div className="mx-auto max-w-6xl">
+              <PageTransition>{children}</PageTransition>
+            </div>
           </ReadOnlyProvider>
           {can(staff, ROLES.manage) && <GuidedTour steps={tourSteps(staff)} />}
         </div>

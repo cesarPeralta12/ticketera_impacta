@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
-import { CATEGORY_LABEL, formatDateTime, sellableCapacity } from "@ticketera/core";
+import { CATEGORY_COLOR, CATEGORY_LABEL, formatDateTime, sellableCapacity } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { EVENT_STATUS } from "@/lib/labels";
 import { enterOrganizationAction } from "@/lib/actions/platform";
@@ -95,11 +95,14 @@ export default async function EventsPage() {
             const capacity = event.sessions.reduce((sum, s) => sum + sellableCapacity(s.ticketTypes), 0);
             const sold = event.sessions.reduce((sum, s) => sum + s._count.tickets, 0);
             const status = EVENT_STATUS[event.status];
+            const color = CATEGORY_COLOR[event.category] ?? CATEGORY_COLOR.OTRO;
+            const percent = capacity > 0 ? Math.min(100, Math.round((sold / capacity) * 100)) : 0;
             return (
               <li key={event.id}>
                 <Link
                   href={`/eventos/${event.id}`}
-                  className="card flex flex-wrap items-center justify-between gap-4 px-5 py-4 transition-colors hover:border-[var(--accent)]"
+                  style={{ borderLeft: `4px solid ${color}` }}
+                  className="card flex flex-wrap items-center justify-between gap-4 px-5 py-4"
                 >
                   <div>
                     <div className="flex items-center gap-2.5">
@@ -107,7 +110,8 @@ export default async function EventsPage() {
                       <span className={`badge ${status.className}`}>{status.text}</span>
                       {event.small && <span className="badge bg-[var(--accent-soft)] text-[var(--accent)]">Pequeño</span>}
                     </div>
-                    <p className="mt-0.5 text-sm text-[var(--ink-muted)]">
+                    <p className="mt-0.5 flex items-center gap-1.5 text-sm text-[var(--ink-muted)]">
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
                       {CATEGORY_LABEL[event.category]}
                       {first && ` · ${first.venue.name}`}
                     </p>
@@ -121,6 +125,11 @@ export default async function EventsPage() {
                     <p>
                       {sold} / {capacity} vendidas
                     </p>
+                    {capacity > 0 && (
+                      <span className="ml-auto mt-1.5 block h-1.5 w-32 overflow-hidden rounded-full bg-[var(--surface-2)]" aria-hidden>
+                        <span className="block h-full rounded-full" style={{ width: `${percent}%`, background: "var(--grad-brand)" }} />
+                      </span>
+                    )}
                   </div>
                 </Link>
               </li>
