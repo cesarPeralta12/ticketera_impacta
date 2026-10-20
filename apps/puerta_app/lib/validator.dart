@@ -133,7 +133,17 @@ Future<ScanOutcome> validateScan({
   // Una puerta de salida, o de ida y vuelta con la persona adentro: es una salida (sin zonas ni reingreso).
   final exiting = direction == GateDirection.outward || (direction == GateDirection.both && inside) || sameDoorExit;
   if (exiting) {
-    if (inside) return ScanOutcome(verdict: ScanVerdict.accepted, ticket: ticket, movement: Movement.exit, gateName: gate?.name);
+    if (inside) {
+      return ScanOutcome(
+        verdict: ScanVerdict.accepted,
+        ticket: ticket,
+        movement: Movement.exit,
+        gateName: gate?.name,
+        // En una puerta de entrada (o de entrada y salida) no se sabe si la persona sale o es una lectura repetida:
+        // se le pregunta al portero. En una puerta solo de salida no hay duda.
+        askExit: direction != GateDirection.outward,
+      );
+    }
     return ScanOutcome(
       verdict: ScanVerdict.notInside,
       ticket: ticket,

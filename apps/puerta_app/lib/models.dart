@@ -409,7 +409,7 @@ enum Movement {
 }
 
 class ScanOutcome {
-  const ScanOutcome({required this.verdict, this.ticket, this.detail, this.movement, this.gateName});
+  const ScanOutcome({required this.verdict, this.ticket, this.detail, this.movement, this.gateName, this.askExit = false});
 
   final ScanVerdict verdict;
   final TicketRow? ticket;
@@ -422,6 +422,10 @@ class ScanOutcome {
 
   /// Puerta por la que se leyó (para decir "pasó a la zona de Acceso VIP").
   final String? gateName;
+
+  /// La entrada ya ingresó y se leyó en una puerta que no es solo de salida: el portero decide si la persona está
+  /// saliendo (se registra la salida) o si es una entrada ya usada.
+  final bool askExit;
 
   /// Título grande de la pantalla de resultado.
   String get title => verdict.ok ? (movement ?? Movement.entry).title : verdict.title;

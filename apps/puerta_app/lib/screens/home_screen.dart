@@ -290,7 +290,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 if (a.gates.isNotEmpty) ...[
                   const SizedBox(height: 22),
-                  StaggerIn(index: 3, child: SectionLabel(a.gates.length > 1 ? 'Elige tu puerta' : 'Tu puerta')),
+                  const StaggerIn(index: 3, child: SectionLabel('Tienes estas puertas disponibles')),
+                  if (a.gates.length > 1) const Padding(padding: EdgeInsets.only(top: 6), child: Text('Toca la que vas a atender en este teléfono.', style: Type.muted)),
                   const SizedBox(height: 10),
                   StaggerIn(
                     index: 3,

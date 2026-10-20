@@ -250,6 +250,23 @@ void main() {
     await _shotOf(tester, '17-confirmar');
   });
 
+  testWidgets('hoja de salida', (tester) async {
+    final inside = _ana.copyWith(status: TicketStatus.used, usedAt: DateTime(2026, 10, 20, 22, 14), inside: true, entries: 1);
+    final asked = ScanOutcome(verdict: ScanVerdict.accepted, movement: Movement.exit, askExit: true, ticket: inside);
+    await _pump(
+      tester,
+      Scaffold(
+        body: Builder(
+          builder: (context) => Center(child: TextButton(onPressed: () => showExitSheet(context, outcome: asked), child: const Text('abrir'))),
+        ),
+      ),
+    );
+    await tester.tap(find.text('abrir'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 900));
+    await _shotOf(tester, '19-es-salida');
+  });
+
   testWidgets('últimas lecturas', (tester) async {
     final service = _FakeService();
     await _pump(tester, Scaffold(body: Builder(builder: (context) => Center(child: TextButton(onPressed: () => showRecentScans(context, () => service.recentScans('s1')), child: const Text('abrir'))))));

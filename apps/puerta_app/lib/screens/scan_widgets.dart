@@ -363,6 +363,137 @@ class _ConfirmSheetState extends State<_ConfirmSheet> with SingleTickerProviderS
   }
 }
 
+// ───────────────────────── ¿Es una salida? ─────────────────────────
+
+enum ExitChoice { exit, used, cancelled }
+
+/// La entrada ya ingresó y se leyó otra vez: el portero decide si la persona está saliendo o si es una entrada ya
+/// usada. Cerrar la hoja (o dejar pasar el tiempo) cancela la lectura sin registrar nada.
+Future<ExitChoice> showExitSheet(BuildContext context, {required ScanOutcome outcome}) async {
+  final choice = await showModalBottomSheet<ExitChoice>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Brand.surface2,
+    barrierColor: Colors.black.withValues(alpha: 0.6),
+    builder: (context) => _ExitSheet(outcome: outcome),
+  );
+  return choice ?? ExitChoice.cancelled;
+}
+
+class _ExitSheet extends StatefulWidget {
+  const _ExitSheet({required this.outcome});
+
+  final ScanOutcome outcome;
+
+  @override
+  State<_ExitSheet> createState() => _ExitSheetState();
+}
+
+class _ExitSheetState extends State<_ExitSheet> with SingleTickerProviderStateMixin {
+  late final AnimationController _timer = AnimationController(vsync: this, duration: const Duration(seconds: confirmSeconds))
+    ..addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) Navigator.of(context).pop(ExitChoice.cancelled);
+    })
+    ..forward();
+
+  @override
+  void dispose() {
+    _timer.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.outcome.ticket!;
+    const color = Brand.blue;
+    final at = t.usedAt;
+    final since = at == null ? null : '${at.hour.toString().padLeft(2, '0')}:${at.minute.toString().padLeft(2, '0')}';
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 10, 22, 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(child: Container(width: 44, height: 5, decoration: BoxDecoration(color: Brand.surface3, borderRadius: BorderRadius.circular(3)))),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(color: color.withValues(alpha: 0.18), shape: BoxShape.circle),
+                  child: const Icon(Icons.logout_rounded, color: color, size: 22),
+                ),
+                const SizedBox(width: 10),
+                Text('ESTA ENTRADA YA INGRESÓ', style: Type.label.copyWith(color: color, fontSize: 13)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(t.holder ?? 'Sin nombre', style: const TextStyle(fontFamily: Fonts.display, fontSize: 38, height: 1.05, color: Brand.text), maxLines: 2, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 8),
+            Text(
+              [if (t.type != null) t.type!, if (since != null) 'Ingresó a las $since'].join(' · '),
+              style: Type.muted.copyWith(fontSize: 15),
+            ),
+            const SizedBox(height: 18),
+            Text('¿Es una salida?', style: Type.heading.copyWith(fontSize: 26)),
+            const SizedBox(height: 4),
+            const Text('Si la persona está saliendo, se registra su salida y podrá volver a entrar con el mismo QR.', style: Type.muted),
+            const SizedBox(height: 16),
+            AnimatedBuilder(
+              animation: _timer,
+              builder: (context, _) => ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(value: 1 - _timer.value, minHeight: 5, backgroundColor: Brand.surface3, color: _timer.value > 0.75 ? Brand.amber : Brand.muted),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: PressScale(
+                    onTap: () => Navigator.of(context).pop(ExitChoice.used),
+                    child: Container(
+                      height: 62,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), border: Border.all(color: Brand.stroke), color: Brand.surface3),
+                      child: Text('NO, YA USADA', textAlign: TextAlign.center, style: Type.label.copyWith(fontSize: 14, color: Brand.text)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 3,
+                  child: PressScale(
+                    onTap: () {
+                      HapticFeedback.mediumImpact();
+                      Navigator.of(context).pop(ExitChoice.exit);
+                    },
+                    haptic: false,
+                    scale: 0.96,
+                    child: Container(
+                      height: 62,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(18),
+                        color: color,
+                        boxShadow: [BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 22, offset: const Offset(0, 8))],
+                      ),
+                      child: const Text('SÍ, ES SALIDA', style: TextStyle(fontFamily: Fonts.body, fontSize: 17, fontWeight: FontWeight.w800, color: Brand.ink, letterSpacing: 0.6)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ───────────────────────── Escribir el código ─────────────────────────
 
 /// Pide el código a mano (y el número de 6 dígitos si es de QR dinámico). Devuelve el texto o null.

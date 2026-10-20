@@ -285,6 +285,20 @@ class DoorService extends ChangeNotifier {
     return outcome;
   }
 
+  /// El portero dijo que NO es una salida: es una entrada que ya se usó. Queda registrada como rechazo.
+  Future<ScanOutcome> declineExit(SessionMeta meta, String raw, AccessMethod? method, ScanOutcome asked) async {
+    _readAt.remove(raw);
+    final at = asked.ticket?.usedAt;
+    final time = at == null ? null : '${at.hour.toString().padLeft(2, '0')}:${at.minute.toString().padLeft(2, '0')}';
+    final outcome = ScanOutcome(
+      verdict: ScanVerdict.alreadyUsed,
+      ticket: asked.ticket,
+      detail: time == null ? 'Ya está adentro.' : 'Ingresó a las $time y no salió.',
+    );
+    await _record(meta, raw, method, ScanVerdict.alreadyUsed);
+    return outcome;
+  }
+
   /// El portero aceptó el ingreso: se vuelve a validar (por si otra lectura la usó mientras tanto)
   /// y recién ahí se marca como usada y se guarda para subirla.
   Future<ScanOutcome> confirm(SessionMeta meta, String raw, AccessMethod? method) async {

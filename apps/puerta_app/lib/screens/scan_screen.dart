@@ -45,7 +45,10 @@ class _ScanScreenState extends State<ScanScreen> {
           formats: widget.method == AccessMethod.qr
               ? const [BarcodeFormat.qrCode]
               : const [BarcodeFormat.code128, BarcodeFormat.code39, BarcodeFormat.ean13, BarcodeFormat.ean8],
-          detectionSpeed: DetectionSpeed.noDuplicates,
+          // "noDuplicates" no vuelve a leer el mismo QR hasta que la cámara vea otro: había que salir y volver a entrar a la
+          // pantalla. Con "normal" sigue leyendo; las repeticiones las filtra la pausa por entrada (ScanCooldown).
+          detectionSpeed: DetectionSpeed.normal,
+          detectionTimeoutMs: 400,
         );
 
   late AppSettings _settings;
@@ -164,11 +167,21 @@ class _ScanScreenState extends State<ScanScreen> {
         // y con "ingreso rápido" también el ingreso.
         final ask = !_settings.autoAccept && (movement == Movement.entry || movement == Movement.reentry);
         var accepted = true;
-        if (ask) {
+        var declinedExit = false;
+        if (outcome.askExit) {
+          // La entrada ya ingresó: ¿la persona está saliendo? (aunque esté activado el ingreso rápido)
+          final choice = await showExitSheet(context, outcome: outcome);
+          accepted = choice == ExitChoice.exit;
+          declinedExit = choice == ExitChoice.used;
+        } else if (ask) {
           accepted = await showConfirmSheet(context, outcome: outcome, sectionName: widget.meta.sections[outcome.ticket!.sectionId], gateName: widget.meta.gate?.name);
         }
         if (!mounted) return;
-        if (accepted) {
+        if (declinedExit) {
+          // "No es una salida": se trata como una entrada que ya se usó.
+          shown = await widget.service.declineExit(widget.meta, raw, method, outcome);
+          if (code != null) _cooldown.block(code, CooldownFor.rejected, DateTime.now());
+        } else if (accepted) {
           shown = await widget.service.confirm(widget.meta, raw, method);
           if (code != null) _cooldown.block(code, shown.movement == Movement.exit ? CooldownFor.exited : CooldownFor.accepted, DateTime.now());
           // Sube el movimiento al servidor de una vez (si hay internet), para que el panel lo vea en vivo.

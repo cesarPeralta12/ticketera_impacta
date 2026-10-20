@@ -71,6 +71,7 @@ SessionMeta _metaOnly(List<Gate> gates, String gateId) => SessionMeta(
 Future<ScanOutcome> _scanIn(TicketRow t, SessionMeta meta) => validateScan(tickets: _FakeTickets([t]), meta: meta, raw: 'K7Q3MXPA2B', method: AccessMethod.qr);
 
 void main() {
+  exitQuestion();
   group('salida por la misma puerta (recinto sin puerta de salida)', () {
     final venue = _metaOnly(const [Gate(id: 'in', name: 'Principal'), Gate(id: 'vip', name: 'VIP', zoneId: 'z-vip')], 'in');
 
@@ -216,6 +217,32 @@ void main() {
       expect(ScanVerdict.notInside.title, 'NO ESTABA ADENTRO');
       expect(ScanVerdict.fromApi('NOT_ACTIVATED'), ScanVerdict.notActivated);
       expect(Movement.fromApi('ZONE_CHANGE'), Movement.zoneChange);
+    });
+  });
+}
+
+void exitQuestion() {
+  group('la salida se pregunta al portero (no se elige)', () {
+    final single = _metaOnly(const [Gate(id: 'in', name: 'Principal')], 'in');
+
+    test('puerta de entrada sin puerta de salida: pregunta si es una salida', () async {
+      final r = await _scanIn(_ticket(status: TicketStatus.used, inside: true, entries: 1, maxEntries: 0), single);
+      expect((r.movement, r.askExit), (Movement.exit, true));
+    });
+
+    test('puerta de entrada y salida: también pregunta (puede ser una lectura repetida)', () async {
+      final r = await _scanIn(_ticket(status: TicketStatus.used, inside: true, entries: 1), _metaOnly(const [Gate(id: 'both', name: 'Lateral', direction: GateDirection.both)], 'both'));
+      expect((r.movement, r.askExit), (Movement.exit, true));
+    });
+
+    test('puerta solo de salida: es una salida y no hay nada que preguntar', () async {
+      final r = await _scanIn(_ticket(status: TicketStatus.used, inside: true, entries: 1), _metaOnly(const [Gate(id: 'out', name: 'Salida', direction: GateDirection.outward)], 'out'));
+      expect((r.movement, r.askExit), (Movement.exit, false));
+    });
+
+    test('un ingreso normal no pregunta nada', () async {
+      final r = await _scanIn(_ticket(maxEntries: 0), single);
+      expect((r.movement, r.askExit), (Movement.entry, false));
     });
   });
 }
