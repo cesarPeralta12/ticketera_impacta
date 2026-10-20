@@ -58,7 +58,53 @@ TicketRow _ticket({
 Future<ScanOutcome> _scan(TicketRow t, String gate) =>
     validateScan(tickets: _FakeTickets([t]), meta: _meta(gate), raw: 'K7Q3MXPA2B', method: AccessMethod.qr);
 
+SessionMeta _metaOnly(List<Gate> gates, String gateId) => SessionMeta(
+      sessionId: 's1',
+      title: 'Noche',
+      gateId: gateId,
+      gates: gates,
+      sections: const {},
+      syncedAt: '2026-10-18T12:00:00.000Z',
+      ticketCount: 1,
+    );
+
+Future<ScanOutcome> _scanIn(TicketRow t, SessionMeta meta) => validateScan(tickets: _FakeTickets([t]), meta: meta, raw: 'K7Q3MXPA2B', method: AccessMethod.qr);
+
 void main() {
+  group('salida por la misma puerta (recinto sin puerta de salida)', () {
+    final venue = _metaOnly(const [Gate(id: 'in', name: 'Principal'), Gate(id: 'vip', name: 'VIP', zoneId: 'z-vip')], 'in');
+
+    test('con reingreso: entra, la siguiente lectura es la salida y la otra la vuelta', () async {
+      final first = await _scanIn(_ticket(maxEntries: 0), venue);
+      expect((first.verdict, first.movement), (ScanVerdict.accepted, Movement.entry));
+      final out = await _scanIn(_ticket(status: TicketStatus.used, inside: true, entries: 1, maxEntries: 0), venue);
+      expect((out.verdict, out.movement), (ScanVerdict.accepted, Movement.exit));
+      final back = await _scanIn(_ticket(status: TicketStatus.used, inside: false, entries: 1, maxEntries: 0), venue);
+      expect((back.verdict, back.movement), (ScanVerdict.accepted, Movement.reentry));
+    });
+
+    test('también con un máximo de ingresos (2): sale mientras le quedan', () async {
+      final out = await _scanIn(_ticket(status: TicketStatus.used, inside: true, entries: 1, maxEntries: 2), venue);
+      expect(out.movement, Movement.exit);
+    });
+
+    test('sin reingreso la segunda lectura sigue siendo "ya utilizada"', () async {
+      final r = await _scanIn(_ticket(status: TicketStatus.used, inside: true, entries: 1), venue);
+      expect(r.verdict, ScanVerdict.alreadyUsed);
+    });
+
+    test('si el recinto tiene una puerta de salida, la de entrada no saca a nadie', () async {
+      final withExit = _metaOnly(const [Gate(id: 'in', name: 'Principal'), Gate(id: 'out', name: 'Salida', direction: GateDirection.outward)], 'in');
+      final r = await _scanIn(_ticket(status: TicketStatus.used, inside: true, entries: 1, maxEntries: 0), withExit);
+      expect(r.verdict, ScanVerdict.alreadyUsed);
+    });
+
+    test('en la puerta de una zona (VIP) con otra zona que abre, es un cambio de zona y no una salida', () async {
+      final r = await _scanIn(_ticket(status: TicketStatus.used, inside: true, entries: 1, maxEntries: 0, zoneIds: const ['z-general', 'z-vip'], zoneId: 'z-general'), _metaOnly(venue.gates, 'vip'));
+      expect(r.movement, Movement.zoneChange);
+    });
+  });
+
   group('puerta de salida', () {
     test('registra la salida de quien está adentro', () async {
       final r = await _scan(_ticket(status: TicketStatus.used, inside: true, entries: 1), 'out');

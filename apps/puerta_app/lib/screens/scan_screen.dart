@@ -170,7 +170,7 @@ class _ScanScreenState extends State<ScanScreen> {
         if (!mounted) return;
         if (accepted) {
           shown = await widget.service.confirm(widget.meta, raw, method);
-          if (code != null) _cooldown.block(code, CooldownFor.accepted, DateTime.now());
+          if (code != null) _cooldown.block(code, shown.movement == Movement.exit ? CooldownFor.exited : CooldownFor.accepted, DateTime.now());
           // Sube el movimiento al servidor de una vez (si hay internet), para que el panel lo vea en vivo.
           unawaited(widget.service.sync(widget.meta.sessionId).catchError((_) => false));
         } else {

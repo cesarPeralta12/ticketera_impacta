@@ -34,6 +34,10 @@ class CooldownFor {
   /// Aceptada: el comprador sigue frente a la cámara un buen rato.
   static const accepted = Duration(seconds: 90);
 
+  /// Salida registrada: la persona puede volver enseguida (por la misma puerta, si el recinto no tiene puerta de
+  /// salida); la pausa solo evita que la cámara cuente dos veces el mismo QR mientras lo sigue viendo.
+  static const exited = Duration(seconds: 12);
+
   /// Rechazada (puerta equivocada, ya usada…): lo que dura el aviso en pantalla, y un poco más.
   static const rejected = Duration(seconds: 6);
 

@@ -123,8 +123,15 @@ Future<ScanOutcome> validateScan({
   final gate = meta.gate;
   final direction = gate?.direction ?? GateDirection.inward;
   final inside = ticket.isInside;
+  final gateZone = gate?.zoneId;
+  // Sin ninguna puerta de salida en el recinto, una entrada con reingreso sale (al baño, a fumar) y vuelve por la misma
+  // puerta de entrada: con la persona adentro, la lectura es la salida y la siguiente, la vuelta. Sin reingreso la segunda
+  // lectura sigue siendo "ya utilizada". Si la puerta da a otra zona que la entrada abre (VIP), es un cambio de zona.
+  final venueHasExitGate = meta.gates.any((g) => g.direction != GateDirection.inward);
+  final leadsToOtherZone = gateZone != null && gateZone != ticket.zoneId && (ticket.zoneIds.isEmpty || ticket.zoneIds.contains(gateZone));
+  final sameDoorExit = direction == GateDirection.inward && inside && ticket.maxEntries != 1 && !venueHasExitGate && !leadsToOtherZone;
   // Una puerta de salida, o de ida y vuelta con la persona adentro: es una salida (sin zonas ni reingreso).
-  final exiting = direction == GateDirection.outward || (direction == GateDirection.both && inside);
+  final exiting = direction == GateDirection.outward || (direction == GateDirection.both && inside) || sameDoorExit;
   if (exiting) {
     if (inside) return ScanOutcome(verdict: ScanVerdict.accepted, ticket: ticket, movement: Movement.exit, gateName: gate?.name);
     return ScanOutcome(
@@ -135,7 +142,6 @@ Future<ScanOutcome> validateScan({
   }
 
   // Una puerta que da a una zona (VIP) solo acepta las entradas que abren esa zona.
-  final gateZone = gate?.zoneId;
   if (gateZone != null && ticket.zoneIds.isNotEmpty && !ticket.zoneIds.contains(gateZone)) {
     final others = meta.gatesForZones(ticket.zoneIds);
     return ScanOutcome(
