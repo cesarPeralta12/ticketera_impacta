@@ -49,6 +49,30 @@ export function entranceLabel(entrance: Entrance): string | null {
 export const entranceText = (gates: GateInfo[], sectionId: string | null, zoneIds?: string[]) =>
   entranceLabel(entranceFor(gates, sectionId, zoneIds));
 
+/**
+ * ¿Esta lectura es una salida? (la puerta registra que la persona salió; con reingreso, la próxima lectura la deja volver)
+ * - Puerta de salida: siempre.
+ * - Puerta de "entrada y salida": si la persona está adentro.
+ * - Recinto sin ninguna puerta de salida: con una entrada que permite reingreso y la persona adentro, la misma puerta de
+ *   entrada registra la salida (al baño, a fumar) y la siguiente lectura su vuelta. Salvo que la puerta dé a otra zona
+ *   (VIP): ahí es un cambio de zona. Sin reingreso, la segunda lectura sigue siendo "ya usada".
+ */
+export function isExitScan(input: {
+  direction: "IN" | "OUT" | "BOTH" | null | undefined;
+  inside: boolean;
+  /** El tipo de entrada permite salir y volver a entrar. */
+  reentry: boolean;
+  /** El recinto tiene alguna puerta de salida o de "entrada y salida". */
+  venueHasExitGate: boolean;
+  /** La puerta da a una zona distinta de la que está la persona. */
+  leadsToOtherZone?: boolean;
+}): boolean {
+  if (input.direction === "OUT") return true;
+  if (!input.inside) return false;
+  if (input.direction === "BOTH") return true;
+  return input.reentry && !input.venueHasExitGate && !input.leadsToOtherZone;
+}
+
 /** "Permite salir y volver a entrar (hasta 3 ingresos)" para las entradas con reingreso; null para las de un ingreso. */
 export function reentryText(maxEntries: number | undefined): string | null {
   if (maxEntries === undefined || maxEntries === 1) return null;

@@ -393,7 +393,8 @@ export default async function VenuePage({ params }: Props) {
           Marca qué secciones entran por cada puerta. Una puerta sin secciones marcadas acepta todas. Con secciones
           asignadas, una entrada solo vale en sus puertas: así, aunque se corte internet, dos puertas nunca aceptan la
           misma entrada. <strong>Dirección</strong>: una puerta de salida registra que la persona salió (para reingresar,
-          si su entrada lo permite); una de &ldquo;entrada y salida&rdquo; decide sola según si la persona está adentro.
+          si su entrada lo permite); una de &ldquo;entrada y salida&rdquo; decide sola según si la persona está adentro. Sin
+          ninguna puerta de salida, las entradas con reingreso salen y vuelven por la misma puerta de entrada.
         </p>
         {venue.accessPoints.length === 0 ? (
           <p className="mb-4 text-sm text-[var(--ink-dim)]">Sin puertas cargadas.</p>

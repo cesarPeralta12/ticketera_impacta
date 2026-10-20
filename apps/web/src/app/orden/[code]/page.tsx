@@ -273,7 +273,7 @@ async function TicketList({
             </p>
           )}
           {!ticket.transferred && reentryText(ticket.ticketType.maxEntries) && (
-            <p className="mt-1 text-xs text-[#62655f]">{reentryText(ticket.ticketType.maxEntries)}: al salir, haz leer el QR en la puerta de salida.</p>
+            <p className="mt-1 text-xs text-[#62655f]">{reentryText(ticket.ticketType.maxEntries)}: al salir y al volver, haz leer tu QR en la puerta.</p>
           )}
           {ticket.transferred && (
             <p className="my-4 rounded-lg bg-[#fff4d6] px-3 py-3 text-sm font-semibold">Esta entrada fue transferida a otra persona.</p>

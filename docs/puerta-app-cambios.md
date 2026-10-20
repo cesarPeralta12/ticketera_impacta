@@ -73,3 +73,46 @@ Valores nuevos de `result` (además de los de siempre):
 
 El servidor sigue siendo la autoridad: procesa las lecturas en orden de hora, evita dobles ingresos y lista en el panel
 ("Ingreso en vivo") las lecturas sin conexión que chocaron.
+
+## 4. Reingreso por la misma puerta (octubre 2026, app 1.3.0 → 1.3.1)
+
+En el panel, cada entrada tiene ahora **Reingreso: Sí / No** (Sí = `maxEntries: 0`). El caso típico: alguien sale al
+baño, que queda fuera del recinto, y vuelve. Si el recinto **no tiene ninguna puerta de salida** (`OUT` o `BOTH`), la
+misma puerta de entrada registra la salida y la vuelta:
+
+1. Entra: `ENTRY`.
+2. Se vuelve a leer **mientras está adentro** y su entrada tiene reingreso: es una **salida** (`EXIT`).
+3. Se lee al volver: `REENTRY`. Y así sucesivamente.
+
+Sin reingreso (`maxEntries: 1`), nada cambia: la segunda lectura es `ALREADY_USED`. Si el recinto sí tiene una puerta de
+salida, la salida se lee ahí, como hasta ahora. Si la puerta da a otra zona que la entrada abre (VIP), sigue siendo un
+cambio de zona.
+
+El servidor ya decide así (`isExitScan` en `packages/core/src/entrance.ts`). En la app 1.3.0, `validateScan` todavía
+rechaza la segunda lectura ("Ya está adentro"). El cambio en `lib/validator.dart`, donde se calcula `exiting`:
+
+```dart
+  final gate = meta.gate;
+  final direction = gate?.direction ?? GateDirection.inward;
+  final inside = ticket.isInside;
+  // Sin ninguna puerta de salida en el recinto, una entrada con reingreso sale (al baño) y vuelve por la misma puerta.
+  final venueHasExitGate = meta.gates.any((g) => g.direction != GateDirection.inward);
+  final gateZone = gate?.zoneId;
+  final leadsToOtherZone = gateZone != null &&
+      gateZone != ticket.zoneId &&
+      (ticket.zoneIds.isEmpty || ticket.zoneIds.contains(gateZone));
+  final sameDoorExit = direction == GateDirection.inward &&
+      inside &&
+      ticket.maxEntries != 1 &&
+      !venueHasExitGate &&
+      !leadsToOtherZone;
+  final exiting = direction == GateDirection.outward || (direction == GateDirection.both && inside) || sameDoorExit;
+```
+
+(`gateZone` ya se declara más abajo en la función: al moverlo arriba, quitar la declaración repetida.)
+
+Prueba sugerida en `test/presence_test.dart`: recinto con una sola puerta `IN`, entrada con `maxEntries: 0` →
+lectura 1 `entry`, lectura 2 `exit`, lectura 3 `reentry`; con `maxEntries: 1` → lectura 2 `alreadyUsed`.
+
+**Mientras la app no se actualice**, el mismo resultado se logra sin tocar la app: en el recinto, poner la puerta como
+**"Entrada y salida"** (`BOTH`), que la app 1.3.0 ya maneja.

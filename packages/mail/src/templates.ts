@@ -176,7 +176,7 @@ export function ticketsMessage(input: {
         <div style="font-size:18px;font-weight:700;margin-top:4px">${esc(t.typeName)}</div>
         ${t.seat ? `<div style="font-size:15px;font-weight:700;margin-top:2px">${esc(t.seat)}</div>` : ""}
         ${t.entrance ? `<div style="font-size:14px;font-weight:700;margin-top:6px;color:#0f8a6b">${esc(t.entrance)}</div>` : ""}
-        ${reentry ? `<div style="font-size:13px;margin-top:4px;color:#62655f">${esc(reentry)}. Al salir, haz leer el QR en la puerta de salida.</div>` : ""}
+        ${reentry ? `<div style="font-size:13px;margin-top:4px;color:#62655f">${esc(reentry)}. Al salir y al volver, haz leer tu QR en la puerta.</div>` : ""}
         ${qr}${dynamic}
         <div style="font-family:Consolas,monospace;font-size:16px;letter-spacing:2px">${esc(formatCode(t.code))}</div>
       </td></tr></table>`;

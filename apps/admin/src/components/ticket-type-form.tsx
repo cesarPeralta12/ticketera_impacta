@@ -55,6 +55,18 @@ export function TicketTypeForm({
         <input name="capacity" type="number" min={1} placeholder="ej. 200" className="field w-28" />
         <span className="text-xs font-normal text-[var(--ink-dim)]">En butacas y lounges, el del mapa.</span>
       </label>
+      <fieldset className="label">
+        <legend className="mb-1.5">Reingreso</legend>
+        <div className="flex h-[38px] items-center gap-4 text-sm text-[var(--ink)]">
+          <label className="flex items-center gap-1.5">
+            <input type="radio" name="reentry" value="no" defaultChecked className="accent-[var(--accent)]" /> No
+          </label>
+          <label className="flex items-center gap-1.5">
+            <input type="radio" name="reentry" value="yes" className="accent-[var(--accent)]" /> Sí
+          </label>
+        </div>
+        <span className="text-xs font-normal text-[var(--ink-dim)]">Sí: sale (al baño) y vuelve con el mismo QR.</span>
+      </fieldset>
       <details data-section="club" open={nightlife} className="basis-full">
         <summary className="cursor-pointer text-sm font-medium text-[var(--accent)]">Mesa, consumo incluido u horario de ingreso (opcional)</summary>
         <div className="mt-3 flex flex-wrap items-end gap-3 rounded-md border border-dashed border-[#c04bff]/50 bg-[#f3e8ff]/40 p-3">

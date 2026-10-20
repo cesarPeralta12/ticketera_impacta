@@ -268,7 +268,7 @@ export default async function SessionPage({ params, searchParams }: Props) {
                               {t.qrMode === "DYNAMIC" && <span className="badge bg-[#e8eefc] text-[#3b5bb5]">QR dinámico</span>}
                               {t.kind === "TABLE" && <span className="badge bg-[#f3e8ff] text-[#7b2fbf]">mesa · {t.peoplePerUnit} personas</span>}
                               {t.maxEntries !== 1 && (
-                                <span className="badge bg-[#e6f6ff] text-[#0b6aa2]">{t.maxEntries === 0 ? "reingreso libre" : `${t.maxEntries} ingresos`}</span>
+                                <span className="badge bg-[#e6f6ff] text-[#0b6aa2]">{t.maxEntries === 0 ? "con reingreso" : `${t.maxEntries} ingresos`}</span>
                               )}
                             </span>
                             <span className="mt-0.5 block text-xs text-[var(--ink-muted)]">
@@ -338,16 +338,20 @@ export default async function SessionPage({ params, searchParams }: Props) {
                             <p className="eyebrow">Ingresos y zonas</p>
                             <ActionForm action={updateEntryRulesAction} successMessage="Guardado." className="flex flex-col gap-2 text-xs">
                               <input type="hidden" name="ticketTypeId" value={t.id} />
-                              <label className="label">
-                                Ingresos permitidos
-                                <select name="maxEntries" defaultValue={t.maxEntries} className="field w-auto text-xs">
-                                  <option value={1}>1 (sin reingreso)</option>
-                                  <option value={2}>2 (un reingreso)</option>
-                                  <option value={3}>3</option>
-                                  <option value={5}>5</option>
-                                  <option value={0}>Sin límite</option>
-                                </select>
-                              </label>
+                              <fieldset>
+                                <legend className="mb-1.5 text-[var(--ink-muted)]">Reingreso</legend>
+                                <div className="flex gap-4 text-sm">
+                                  <label className="flex items-center gap-1.5">
+                                    <input type="radio" name="maxEntries" value={1} defaultChecked={t.maxEntries === 1} className="accent-[var(--accent)]" /> No
+                                  </label>
+                                  <label className="flex items-center gap-1.5">
+                                    <input type="radio" name="maxEntries" value={0} defaultChecked={t.maxEntries !== 1} className="accent-[var(--accent)]" /> Sí
+                                  </label>
+                                </div>
+                                <p className="mt-1 text-[var(--ink-dim)]">
+                                  {t.maxEntries > 1 ? `Hoy: hasta ${t.maxEntries} ingresos. ` : ""}Con «Sí», al salir y al volver se lee el mismo QR en la puerta.
+                                </p>
+                              </fieldset>
                               {session.venue.zones.length > 0 && (
                                 <fieldset className="flex flex-wrap gap-x-3 gap-y-1">
                                   <legend className="mb-1 text-[var(--ink-muted)]">Zonas que abre (ninguna = las de siempre)</legend>
@@ -363,9 +367,6 @@ export default async function SessionPage({ params, searchParams }: Props) {
                               <button type="submit" className="btn w-fit px-2.5 py-1 text-xs">
                                 Guardar reglas
                               </button>
-                              {session.venue.accessPoints.length === 0 && (
-                                <p className="text-[var(--ink-dim)]">Para reingresar hace falta una puerta de salida (se configura en el recinto).</p>
-                              )}
                             </ActionForm>
                           </div>
 

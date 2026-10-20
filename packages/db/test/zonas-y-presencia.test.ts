@@ -68,6 +68,36 @@ describe("presencia y reingreso", () => {
     expect((await prisma.ticket.findUniqueOrThrow({ where: { id: unlimited.ana.id } })).entries).toBe(4);
   });
 
+  it("recinto sin puerta de salida: con reingreso, la misma entrada registra la salida al baño y la vuelta", async () => {
+    const { session, types } = await createGeneralAdmissionEvent({ sectionCapacity: 20, types: [{ name: "Con reingreso", capacity: 10 }, { name: "Sin reingreso", capacity: 10 }] });
+    // Las puertas de la fixture son solo de entrada: el recinto no tiene salida.
+    expect(await prisma.accessPoint.count({ where: { venueId: session.venueId, direction: { not: "IN" } } })).toBe(0);
+    const [conReingreso, sinReingreso] = types;
+    await prisma.ticketType.update({ where: { id: conReingreso!.id }, data: { maxEntries: 0 } });
+    const who = await staff();
+    await issueGuestTickets({ ticketTypeId: conReingreso!.id, guests: [{ name: "Lía" }], staffId: who.id });
+    await issueGuestTickets({ ticketTypeId: sinReingreso!.id, guests: [{ name: "Max" }], staffId: who.id });
+    const lia = await prisma.ticket.findFirstOrThrow({ where: { sessionId: session.id, holderName: "Lía" } });
+    const max = await prisma.ticket.findFirstOrThrow({ where: { sessionId: session.id, holderName: "Max" } });
+    const [puerta] = await prisma.accessPoint.findMany({ where: { venueId: session.venueId }, orderBy: { name: "asc" } });
+    const scan = (t: { code: string }) => scanTicket({ sessionId: session.id, raw: t.code, accessPointId: puerta!.id });
+
+    expect((await scan(lia)).movement).toBe("ENTRY");
+    expect(await scan(lia)).toMatchObject({ result: "ACCEPTED", movement: "EXIT" }); // sale al baño
+    expect(await scan(lia)).toMatchObject({ result: "ACCEPTED", movement: "REENTRY" }); // vuelve
+    expect((await scan(lia)).movement).toBe("EXIT");
+    expect((await scan(lia)).movement).toBe("REENTRY");
+    expect(await prisma.ticket.findUniqueOrThrow({ where: { id: lia.id } })).toMatchObject({ inside: true, entries: 3 });
+
+    // Sin reingreso, como siempre: la segunda lectura es "ya usada" (no se registra una salida).
+    expect((await scan(max)).movement).toBe("ENTRY");
+    expect((await scan(max)).result).toBe("ALREADY_USED");
+
+    // Con una puerta de salida en el recinto, la salida se lee ahí: la entrada vuelve a decir "ya usada".
+    await prisma.accessPoint.create({ data: { venueId: session.venueId, name: "Salida", direction: "OUT" } });
+    expect((await scan(lia)).result).toBe("ALREADY_USED");
+  });
+
   it("la puerta de ida y vuelta entra o saca según si está adentro", async () => {
     const { beto, gates, scan } = await setup({ maxEntries: 0 });
     expect((await scan(beto, gates.idaYVuelta)).movement).toBe("ENTRY");
