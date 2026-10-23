@@ -41,7 +41,7 @@ export async function getEventQuota(organizationId: string, now = new Date()): P
 }
 
 export const eventLimitMessage = (limit: number) =>
-  `Llegaste al límite de ${limit} evento${limit === 1 ? "" : "s"} activo${limit === 1 ? "" : "s"}. Para crear otro, cancela o elimina uno que ya no uses, o pide a IMPACTA ampliar tu límite.`;
+  `Llegaste al límite de ${limit} evento${limit === 1 ? "" : "s"} activo${limit === 1 ? "" : "s"}. Para crear otro, cancela o elimina uno que ya no uses, o pide a iPass ampliar tu límite.`;
 
 /**
  * Crea un evento respetando el límite (salvo `ignoreLimit`: IMPACTA trabajando dentro de un organizador). La

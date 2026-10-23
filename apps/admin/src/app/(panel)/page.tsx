@@ -35,11 +35,12 @@ export default async function DashboardPage() {
     }),
   ]);
 
+  // Color según la función: ámbar = a la venta o pendiente, azul = conteos, magenta = dinero.
   const stats = [
-    { label: "Eventos publicados", value: published },
-    { label: "Borradores", value: drafts },
-    { label: "Entradas vendidas", value: ticketsSold },
-    { label: "Ingresos", value: formatMoney(revenue._sum.totalAmount ?? 0, org.currency) },
+    { label: "Eventos publicados", value: published, tone: "amber" },
+    { label: "Borradores", value: drafts, tone: "blue" },
+    { label: "Entradas vendidas", value: ticketsSold, tone: "blue" },
+    { label: "Ingresos", value: formatMoney(revenue._sum.totalAmount ?? 0, org.currency), tone: "magenta" },
   ];
 
   return (
@@ -51,7 +52,7 @@ export default async function DashboardPage() {
 
       <dl className="stats grid grid-cols-2 gap-4 lg:grid-cols-4">
         {stats.map((s) => (
-          <div key={s.label} className="card p-4">
+          <div key={s.label} className={`card tone-${s.tone} p-4`}>
             <dt className="eyebrow">{s.label}</dt>
             <dd className="mt-1 text-2xl font-semibold tabular-nums">{typeof s.value === "number" ? <CountUp value={s.value} /> : s.value}</dd>
           </div>

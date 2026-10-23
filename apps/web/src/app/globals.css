@@ -1,22 +1,38 @@
 @import "tailwindcss";
 
+/* Identidad iPass sobre fondo oscuro: azul noche de base, magenta para acciones y marca, ámbar para destacar
+   (precios, preventas, selección). Rojo y verde quedan para errores y estados. */
 :root {
-  --bg: #0b0b10;
-  --bg-raised: #15151d;
-  --bg-raised-2: #1c1c26;
-  --border: #2a2a36;
-  --border-light: #34343f;
-  --ink: #f5f3ef;
-  --ink-muted: #9a96a6;
-  --ink-dim: #6b687a;
-  --accent: #f5b700;
-  --accent-ink: #1a1200;
-  --accent-2: #ff3d68;
+  --ipass-blue: #60718b;
+  --ipass-magenta: #ad468d;
+  --ipass-magenta-dark: #913673;
+  --ipass-pink: #d985b8;
+  --ipass-yellow: #f5b700;
+  --ipass-navy: #192438;
+  --ipass-ice: #f5f6f8;
+
+  --bg: #111a2b;
+  --bg-raised: var(--ipass-navy);
+  --bg-raised-2: #222f48;
+  --border: #2a3751;
+  --border-light: #3a4865;
+  --ink: var(--ipass-ice);
+  --ink-muted: #9ba9c4;
+  --ink-dim: #7d89a3;
+  /* Botones y fondos de acción (texto blanco encima). */
+  --accent: var(--ipass-magenta);
+  --accent-ink: #ffffff;
+  /* Texto de acento sobre el fondo oscuro: el amarillo de siempre (precios, fechas, enlaces, rótulos). */
+  --accent-text: var(--ipass-yellow);
+  --highlight: var(--ipass-yellow);
+  --highlight-ink: var(--ipass-navy);
+  /* Errores, urgencia y descuentos. */
+  --accent-2: #ff6b81;
   --accent-2-ink: #2a0010;
   --green: #35c48f;
 
-  --font-display: var(--font-anton), "Arial Narrow", sans-serif;
-  --font-body: var(--font-manrope), "Segoe UI", sans-serif;
+  --font-display: var(--font-poppins), "Segoe UI", sans-serif;
+  --font-body: var(--font-poppins), "Segoe UI", sans-serif;
 }
 
 @theme inline {
@@ -37,18 +53,18 @@ html {
 body {
   background: var(--bg);
   background-image:
-    radial-gradient(ellipse 900px 500px at 15% -10%, rgba(245, 183, 0, 0.10), transparent 60%),
-    radial-gradient(ellipse 700px 500px at 100% 0%, rgba(255, 61, 104, 0.08), transparent 55%);
+    radial-gradient(ellipse 900px 500px at 15% -10%, rgba(173, 70, 141, 0.16), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 100% 0%, rgba(96, 113, 139, 0.18), transparent 55%);
   background-attachment: fixed;
   color: var(--ink);
   font-family: var(--font-body);
 }
 
+/* Títulos en Poppins Bold (antes Anton en mayúsculas). */
 h1, h2, h3, .font-display {
   font-family: var(--font-display);
-  letter-spacing: 0.01em;
-  text-transform: uppercase;
-  font-weight: 400;
+  letter-spacing: -0.015em;
+  font-weight: 700;
 }
 
 ::selection {
@@ -144,17 +160,21 @@ h1, h2, h3, .font-display {
   border-color: var(--accent);
 }
 
-.eyebrow {
-  font-family: var(--font-display);
-  font-size: 0.8125rem;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  color: var(--accent);
+/* En la capa de componentes para que un color puesto en la página (text-[…]) le gane. */
+@layer components {
+  .eyebrow {
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent-text);
+  }
 }
 
 /* Barra de la entrada de QR dinámico: un brillo que corre muestra que la pantalla está viva (una captura queda quieta). */
 .dyn-bar {
-  background-image: linear-gradient(90deg, #0f8a6b 0%, #35c9a3 50%, #0f8a6b 100%);
+  background-image: linear-gradient(90deg, #ad468d 0%, #d985b8 50%, #ad468d 100%);
   background-size: 200% 100%;
   animation: dyn-sweep 1.6s linear infinite;
 }
@@ -204,11 +224,12 @@ h1, h2, h3, .font-display {
   line-height: 1.2;
   white-space: nowrap;
 }
-.tag-discount { background: var(--accent-2); color: #fff; }
+/* Promociones en ámbar con texto azul noche; urgencia en rojo; agotado en gris. */
+.tag-discount { background: var(--highlight); color: var(--highlight-ink); }
 .tag-presale { background: var(--accent); color: var(--accent-ink); }
-.tag-low { background: rgba(255, 61, 104, 0.16); color: #ff7a93; border: 1px solid rgba(255, 61, 104, 0.5); }
-.tag-hot { background: rgba(255, 122, 61, 0.16); color: #ff9a6b; border: 1px solid rgba(255, 122, 61, 0.5); }
-.tag-soldout { background: #2a2a36; color: #9a96a6; }
+.tag-low { background: rgba(255, 107, 129, 0.16); color: #ff8fa0; border: 1px solid rgba(255, 107, 129, 0.5); }
+.tag-hot { background: rgba(245, 183, 0, 0.14); color: var(--highlight); border: 1px solid rgba(245, 183, 0, 0.5); }
+.tag-soldout { background: var(--border); color: var(--ink-muted); }
 .tag-soon { background: rgba(53, 196, 143, 0.16); color: var(--green); border: 1px solid rgba(53, 196, 143, 0.5); }
 
 /* Sello de descuento sobre la imagen */
@@ -218,13 +239,14 @@ h1, h2, h3, .font-display {
   width: 3.6rem;
   height: 3.6rem;
   border-radius: 9999px;
-  background: var(--accent-2);
-  color: #fff;
+  background: var(--highlight);
+  color: var(--highlight-ink);
   font-family: var(--font-display);
-  font-size: 1.35rem;
+  font-weight: 800;
+  font-size: 1.05rem;
   line-height: 1;
   transform: rotate(-9deg);
-  box-shadow: 0 6px 18px rgba(255, 61, 104, 0.45), inset 0 0 0 3px rgba(255, 255, 255, 0.22);
+  box-shadow: 0 6px 18px rgba(245, 183, 0, 0.35), inset 0 0 0 3px rgba(255, 255, 255, 0.3);
 }
 
 /* Carrusel principal */

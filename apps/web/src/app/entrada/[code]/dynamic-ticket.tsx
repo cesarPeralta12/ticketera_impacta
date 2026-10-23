@@ -142,18 +142,18 @@ export function DynamicTicket(props: Props) {
 
   return (
     <div className="mx-auto w-full max-w-sm space-y-4">
-      <div className="rounded-3xl bg-[#f5f3ef] p-6 text-center text-[#14181b]">
-        <p className="text-xs uppercase tracking-wide text-[#6b687a]">Entrada · QR dinámico</p>
+      <div className="rounded-3xl bg-[#F5F6F8] p-6 text-center text-[#192438]">
+        <p className="text-xs uppercase tracking-wide text-[#60718B]">Entrada · QR dinámico</p>
         <p className="font-display text-2xl">{props.eventTitle}</p>
-        <p className="text-xs text-[#6b687a]">
+        <p className="text-xs text-[#60718B]">
           {props.when} · {props.venue}
         </p>
         <p className="mt-1 font-semibold">
           {props.typeName}
           {props.seat ? ` · ${props.seat}` : ""}
         </p>
-        {props.holder && <p className="text-sm text-[#6b687a]">{props.holder}</p>}
-        {props.entrance && <p className="mt-1 text-sm font-bold text-[#0f8a6b]">{props.entrance}</p>}
+        {props.holder && <p className="text-sm text-[#60718B]">{props.holder}</p>}
+        {props.entrance && <p className="mt-1 text-sm font-bold text-[#16846C]">{props.entrance}</p>}
 
         {problem ? (
           <div role="alert" className="mt-4 rounded-xl bg-[#fde8e8] p-4 text-sm text-[#9b1c1c]">
@@ -165,7 +165,7 @@ export function DynamicTicket(props: Props) {
             )}
           </div>
         ) : !loaded ? (
-          <p className="my-12 text-sm text-[#6b687a]">Abriendo tu entrada…</p>
+          <p className="my-12 text-sm text-[#60718B]">Abriendo tu entrada…</p>
         ) : !record ? (
           <div className="mt-4 rounded-xl bg-[#fff4d6] p-4 text-left text-sm">
             <p className="font-semibold">Necesitas internet una vez para abrir esta entrada.</p>
@@ -183,17 +183,17 @@ export function DynamicTicket(props: Props) {
                 aria-label="QR de tu entrada, cambia cada 30 segundos"
                 role="img"
               />
-              {used && <p className="absolute inset-0 flex items-center justify-center text-xl font-extrabold text-[#14181b]">YA UTILIZADA</p>}
+              {used && <p className="absolute inset-0 flex items-center justify-center text-xl font-extrabold text-[#192438]">YA UTILIZADA</p>}
             </div>
             {/* Barra viva: una captura se nota quieta y vencida. */}
-            <div className="mx-auto h-2 w-64 overflow-hidden rounded-full bg-[#d8d5cc]" aria-hidden>
-              <div className="dyn-bar h-full rounded-full bg-[#0f8a6b]" style={{ width: `${(secondsLeft / STEP_SECONDS) * 100}%` }} />
+            <div className="mx-auto h-2 w-64 overflow-hidden rounded-full bg-[#E6EAF0]" aria-hidden>
+              <div className="dyn-bar h-full rounded-full bg-[#16846C]" style={{ width: `${(secondsLeft / STEP_SECONDS) * 100}%` }} />
             </div>
-            <p className="mt-1 text-xs text-[#6b687a]" aria-live="off">
+            <p className="mt-1 text-xs text-[#60718B]" aria-live="off">
               Cambia en {Math.ceil(secondsLeft)} s
             </p>
-            <div className="mt-3 border-t border-[#d8d5cc] pt-3">
-              <p className="text-xs text-[#6b687a]">Si el lector falla, dicta el código y este número:</p>
+            <div className="mt-3 border-t border-[#E6EAF0] pt-3">
+              <p className="text-xs text-[#60718B]">Si el lector falla, dicta el código y este número:</p>
               <p className="font-mono text-sm tracking-wider">{formatCode(code)}</p>
               <p className="font-mono text-2xl font-bold tracking-widest">{otp || "···"}</p>
             </div>

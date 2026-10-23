@@ -151,7 +151,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
 
       {event.reviewNote && event.status === "DRAFT" && (
         <div role="alert" className="rounded-lg border border-[var(--warn)]/40 bg-[var(--warn-soft)] px-5 py-4 text-sm">
-          <p className="font-semibold text-[var(--warn)]">Impacta devolvió este evento</p>
+          <p className="font-semibold text-[var(--warn)]">iPass devolvió este evento</p>
           <p className="mt-1">{event.reviewNote}</p>
           <p className="mt-1 text-xs text-[var(--ink-muted)]">Corrígelo y vuelve a enviarlo a revisión.</p>
         </div>
@@ -226,7 +226,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                             <span className="font-mono">{formatDateTime(s.startsAt, s.venue.timezone)}</span>
                             <span className="text-[var(--ink-muted)]"> · {s.venue.name}</span>
                           </span>
-                          <span className={s.ticketTypes.length ? "text-[var(--accent)]" : "text-[var(--warn)]"}>
+                          <span className={s.ticketTypes.length ? "text-[var(--success)]" : "text-[var(--warn)]"}>
                             {s.ticketTypes.length ? `${s._count.tickets} / ${sellableCapacity(s.ticketTypes)}` : guestList ? "sin invitados" : "sin precios"}
                           </span>
                         </Link>
@@ -278,7 +278,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                           <span className="text-[var(--ink-muted)]"> · {s.venue.name}</span>
                           {s.queueEnabled && <span className="badge ml-2 bg-[var(--warn-soft)] text-[var(--warn)]">cola</span>}
                         </span>
-                        <span className={s.ticketTypes.length ? "text-[var(--accent)]" : "text-[var(--warn)]"}>
+                        <span className={s.ticketTypes.length ? "text-[var(--success)]" : "text-[var(--warn)]"}>
                           {guestList
                             ? s.ticketTypes.length
                               ? `${s._count.tickets} invitado(s)`
@@ -398,7 +398,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                 <h2 className="eyebrow">Espacio del cliente</h2>
                 {event.client &&
                   (accessOpen ? (
-                    <span className="badge bg-[var(--accent-soft)] text-[var(--accent)]">
+                    <span className="badge bg-[var(--success-soft)] text-[var(--success)]">
                       Abierto hasta {formatDateTime(event.clientAccessUntil!, tz)}
                     </span>
                   ) : (
@@ -464,7 +464,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
               <div className="flex flex-col gap-3">
                 <p className="text-sm text-[var(--ink-muted)]">
                   {needsReview
-                    ? "Enviado a Impacta. Sale en la web cuando lo aprueben; si piden cambios, los verás aquí."
+                    ? "Enviado a iPass. Sale en la web cuando lo aprueben; si piden cambios, los verás aquí."
                     : "El organizador lo envió a revisión. Apruébalo aquí, o devuélvelo con observaciones desde Aprobaciones."}
                 </p>
                 {!needsReview && (
@@ -506,7 +506,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                   {!ready
                     ? "Completa lo marcado con ! para poder publicar."
                     : needsReview
-                      ? "Impacta lo revisa y lo publica en la web."
+                      ? "iPass lo revisa y lo publica en la web."
                       : guestList
                         ? "Con lista de invitados no aparece en el sitio: se entra solo con invitación."
                         : "Sale a la venta en el sitio apenas lo publiques."}

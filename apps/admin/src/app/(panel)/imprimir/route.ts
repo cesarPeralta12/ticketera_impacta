@@ -25,7 +25,7 @@ const MAX_TICKETS = 2000;
 export async function GET(req: Request) {
   const staff = await currentStaff();
   if (!staff || !can(staff, ROLES.manage)) return Response.json({ error: "Sin permiso." }, { status: 403 });
-  if (staff.readOnly) return Response.json({ error: "Tu cuenta es de solo lectura: imprimir entradas lo hace Impacta." }, { status: 403 });
+  if (staff.readOnly) return Response.json({ error: "Tu cuenta es de solo lectura: imprimir entradas lo hace iPass." }, { status: 403 });
 
   const url = new URL(req.url);
   const q = (name: string) => url.searchParams.get(name) ?? undefined;

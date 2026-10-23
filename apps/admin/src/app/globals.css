@@ -1,43 +1,57 @@
 @import "tailwindcss";
 
-/* Paleta del panel: fondo claro para leer cómodo, acento verde para acciones y los colores de marca de la web
-   (amarillo, rosa, violeta) para dar vida: menú, logo, números del resumen y detalles. */
+/* Identidad iPass (guía de implementación visual): azul noche para navegación, blanco hielo de fondo, magenta
+   para acciones y marca, ámbar para destacar. Verde, rojo y amarillo oscuro quedan solo para estados. */
 :root {
-  --bg: #f5f4f0;
+  --ipass-blue: #60718b;
+  --ipass-magenta: #ad468d;
+  --ipass-magenta-dark: #913673;
+  --ipass-yellow: #f5b700;
+  --ipass-navy: #192438;
+  --ipass-ice: #f5f6f8;
+  --ipass-pink: #d985b8;
+
+  --bg: var(--ipass-ice);
   --surface: #ffffff;
-  --surface-2: #eeede7;
-  --border: #e1dfd7;
-  --ink: #14181b;
-  --ink-muted: #62655f;
-  --ink-dim: #9a9c92;
-  --accent: #0f8a6b;
+  --surface-2: #eef0f4;
+  --border: #e6eaf0;
+  --ink: var(--ipass-navy);
+  --ink-muted: var(--ipass-blue);
+  --ink-dim: #8592a8;
+  /* Acción principal (botones, enlaces, selección). */
+  --accent: var(--ipass-magenta);
+  --accent-hover: var(--ipass-magenta-dark);
   --accent-ink: #ffffff;
-  --accent-soft: #e3f3ee;
-  --warn: #b45309;
-  --warn-soft: #fdf1e0;
-  --danger: #b91c1c;
-  --danger-soft: #fdecec;
+  --accent-soft: #f7e9f2;
+  --highlight: var(--ipass-yellow);
+  --highlight-ink: var(--ipass-navy);
+  --highlight-soft: #fff4dc;
+  /* Estados */
+  --success: #16846c;
+  --success-soft: #e3f3ee;
+  --warn: #b77900;
+  --warn-soft: #fdf3dc;
+  --danger: #c62842;
+  --danger-soft: #fcebee;
+  --info: #3c649e;
+  --info-soft: #e8eef7;
 
-  /* Colores de marca (los mismos de la web) */
-  --brand-yellow: #f5b700;
-  --brand-pink: #ff3d68;
-  --brand-purple: #a855f7;
-  --brand-blue: #3b82f6;
-  --brand-orange: #f97316;
-  --brand-green: #10b981;
-  --grad-brand: linear-gradient(135deg, var(--brand-yellow) 0%, var(--brand-pink) 55%, var(--brand-purple) 100%);
-  --grad-accent: linear-gradient(135deg, #12a37c 0%, #0f8a6b 55%, #0b6f63 100%);
-  --shadow-card: 0 1px 2px rgb(20 24 27 / 0.04), 0 6px 20px -12px rgb(20 24 27 / 0.18);
-  --shadow-lift: 0 2px 4px rgb(20 24 27 / 0.05), 0 16px 32px -14px rgb(20 24 27 / 0.28);
+  --grad-brand: linear-gradient(90deg, var(--ipass-magenta) 0%, var(--ipass-pink) 100%);
+  --grad-accent: linear-gradient(135deg, var(--ipass-magenta) 0%, var(--ipass-magenta-dark) 100%);
+  --shadow-card: 0 1px 2px rgb(25 36 56 / 0.04), 0 6px 20px -12px rgb(25 36 56 / 0.16);
+  --shadow-lift: 0 2px 4px rgb(25 36 56 / 0.05), 0 16px 32px -14px rgb(25 36 56 / 0.26);
+  --radius-card: 12px;
+  --radius-button: 8px;
 
-  /* Menú lateral: noche con brillo de marca */
-  --side-bg: #120f1c;
-  --side-ink: #eeecf5;
-  --side-dim: #9c97b0;
-  --side-border: rgb(255 255 255 / 0.08);
+  /* Menú lateral: azul noche */
+  --side-bg: var(--ipass-navy);
+  --side-ink: #f5f6f8;
+  --side-dim: #9ba9c4;
+  --side-border: rgb(255 255 255 / 0.09);
   --side-hover: rgb(255 255 255 / 0.06);
 
-  --font-body: var(--font-manrope), "Segoe UI", sans-serif;
+  --font-heading: var(--font-poppins), "Segoe UI", sans-serif;
+  --font-body: var(--font-inter), "Segoe UI", sans-serif;
   --font-mono: var(--font-mono-plex), ui-monospace, monospace;
 }
 
@@ -45,6 +59,7 @@
   --color-background: var(--bg);
   --color-foreground: var(--ink);
   --font-sans: var(--font-body);
+  --font-heading: var(--font-heading);
   --font-mono: var(--font-mono);
 }
 
@@ -57,21 +72,25 @@ html {
 }
 
 body {
-  /* Un brillo de marca muy suave arriba: el fondo deja de ser plano sin molestar la lectura. */
-  background:
-    radial-gradient(900px 420px at 92% -8%, rgb(168 85 247 / 0.09), transparent 65%),
-    radial-gradient(800px 380px at 30% -12%, rgb(245 183 0 / 0.08), transparent 65%),
-    var(--bg);
-  background-attachment: fixed;
+  background: var(--bg);
   color: var(--ink);
   font-family: var(--font-body);
+}
+
+/* Títulos en Poppins; tablas y formularios en Inter. */
+h1,
+h2,
+h3,
+.page-title,
+.font-heading {
+  font-family: var(--font-heading);
 }
 
 /* Piezas reutilizables del panel */
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.875rem;
+  border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
 }
 /* Las tarjetas que son enlaces se levantan un poco al pasar el mouse. */
@@ -116,7 +135,7 @@ a.card:hover {
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
-  border-radius: 0.375rem;
+  border-radius: var(--radius-button);
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
@@ -143,8 +162,9 @@ a.card:hover {
 }
 .btn-primary:hover:not(:disabled) {
   border-color: transparent;
+  background: var(--accent-hover);
   transform: translateY(-1px);
-  box-shadow: 0 8px 18px -8px rgb(15 138 107 / 0.7);
+  box-shadow: 0 8px 18px -8px rgb(173 70 141 / 0.7);
 }
 .btn-dark {
   background: var(--ink);
@@ -161,8 +181,8 @@ a.card:hover {
 }
 
 .eyebrow {
-  font-family: var(--font-mono);
   font-size: 0.6875rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--ink-dim);
@@ -170,44 +190,29 @@ a.card:hover {
 
 .badge {
   display: inline-block;
-  border-radius: 0.25rem;
+  border-radius: 0.375rem;
   padding: 0.125rem 0.5rem;
-  font-family: var(--font-mono);
   font-size: 0.625rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
+/* Etiqueta destacada: ámbar con texto azul noche (nunca texto blanco sobre amarillo). */
+.badge-highlight {
+  background: var(--highlight);
+  color: var(--highlight-ink);
+}
 
-/* Menú lateral oscuro: noche con brillos amarillo y violeta; la sección activa se ve de un vistazo */
+/* Menú lateral: azul noche liso; la sección activa en magenta. */
 .sidebar {
-  background:
-    radial-gradient(120% 40% at 0% 0%, rgb(245 183 0 / 0.16), transparent 60%),
-    radial-gradient(120% 45% at 100% 100%, rgb(168 85 247 / 0.24), transparent 65%),
-    linear-gradient(180deg, #110e1a 0%, #161127 55%, #1c1433 100%);
+  background: var(--side-bg);
   color: var(--side-ink);
-}
-/* Logo: la inicial sobre el degradado de marca, con un brillo que pasa cada tanto. */
-.brand-tile {
-  position: relative;
-  overflow: hidden;
-  background: var(--grad-brand);
-  color: #fff;
-  box-shadow: 0 6px 18px -6px rgb(255 61 104 / 0.65);
-  text-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
-}
-.brand-tile::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(115deg, transparent 30%, rgb(255 255 255 / 0.55) 50%, transparent 70%);
-  transform: translateX(-120%);
-  animation: shine 6s ease-in-out 1.2s infinite;
 }
 .side-title {
   padding: 0.5rem 0.75rem 0.25rem;
-  font-family: var(--font-mono);
   font-size: 0.625rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--side-dim);
@@ -232,32 +237,20 @@ a.card:hover {
   color: var(--side-ink);
 }
 .nav-link:hover svg {
-  color: var(--brand-yellow);
+  color: var(--ipass-yellow);
   transform: scale(1.1);
 }
-/* Activa: fondo con el degradado verde y una barrita de marca a la izquierda. */
+/* Activa: fondo magenta, texto e ícono blancos. */
 .nav-link-active,
 .nav-link-active:hover {
-  background: var(--grad-accent);
+  background: var(--accent);
   color: var(--accent-ink);
   font-weight: 600;
-  box-shadow: 0 8px 20px -10px rgb(16 185 129 / 0.9);
+  box-shadow: 0 8px 20px -10px rgb(173 70 141 / 0.9);
 }
 .nav-link-active svg,
 .nav-link-active:hover svg {
   color: #fff;
-}
-@media (min-width: 768px) {
-  .nav-link-active::before {
-    content: "";
-    position: absolute;
-    left: -0.75rem;
-    top: 0.45rem;
-    bottom: 0.45rem;
-    width: 3px;
-    border-radius: 0 3px 3px 0;
-    background: var(--grad-brand);
-  }
 }
 .side-btn {
   width: 100%;
@@ -280,7 +273,7 @@ a.card:hover {
   letter-spacing: -0.01em;
 }
 .btn-primary {
-  box-shadow: 0 1px 2px rgb(15 138 107 / 0.35);
+  box-shadow: 0 1px 2px rgb(173 70 141 / 0.35);
 }
 table thead tr {
   background: color-mix(in srgb, var(--surface-2) 45%, transparent);
@@ -338,8 +331,8 @@ table tbody tr:hover {
   z-index: 60;
   border-radius: 0.75rem;
   /* 150vmax cubre siempre la pantalla (una sombra de miles de píxeles Chrome a veces no la dibuja). */
-  box-shadow: 0 0 0 150vmax rgb(12 9 22 / 0.55);
-  outline: 2px solid var(--brand-yellow);
+  box-shadow: 0 0 0 150vmax rgb(25 36 56 / 0.55);
+  outline: 2px solid var(--ipass-yellow);
   pointer-events: none;
   transition: top 0.35s ease, left 0.35s ease, width 0.35s ease, height 0.35s ease;
 }
@@ -348,14 +341,14 @@ table tbody tr:hover {
   position: absolute;
   inset: -2px;
   border-radius: inherit;
-  border: 2px solid var(--brand-yellow);
+  border: 2px solid var(--ipass-yellow);
   animation: tour-ring 1.6s ease-out infinite;
 }
 .tour-dim {
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: rgb(12 9 22 / 0.45);
+  background: rgb(25 36 56 / 0.45);
   pointer-events: none;
   animation: fade-in 0.3s ease-out both;
 }
@@ -385,47 +378,43 @@ table tbody tr:hover {
   }
 }
 
-/* Números del resumen: cada tarjeta con su color de marca (borde superior, rótulo y un brillo en la esquina). */
-.stats > * {
-  --tone: var(--brand-green);
-  position: relative;
-  overflow: hidden;
-  border-top: 3px solid var(--tone);
+/* Colores por función (no uno distinto por tarjeta): azul = estructura y conteos, magenta = ventas e ingresos,
+   ámbar = lo que está a la venta o pendiente. Sirven para los números del resumen y los accesos rápidos. */
+.tone-blue {
+  --tone: var(--ipass-blue);
+  --tone-ink: #ffffff;
 }
-.stats > :nth-child(6n + 2) {
-  --tone: var(--brand-yellow);
+.tone-magenta {
+  --tone: var(--ipass-magenta);
+  --tone-ink: #ffffff;
 }
-.stats > :nth-child(6n + 3) {
-  --tone: var(--brand-pink);
+.tone-amber {
+  --tone: var(--ipass-yellow);
+  --tone-ink: var(--ipass-navy);
 }
-.stats > :nth-child(6n + 4) {
-  --tone: var(--brand-purple);
-}
-.stats > :nth-child(6n + 5) {
-  --tone: var(--brand-blue);
-}
-.stats > :nth-child(6n + 6) {
-  --tone: var(--brand-orange);
-}
-.stats > *::after {
-  content: "";
-  position: absolute;
-  right: -2.25rem;
-  top: -2.25rem;
-  width: 7rem;
-  height: 7rem;
-  border-radius: 9999px;
+.tone-tile {
   background: var(--tone);
-  opacity: 0.1;
-  transition: transform 0.3s ease, opacity 0.3s ease;
-  pointer-events: none;
+  color: var(--tone-ink);
 }
-.stats > :hover::after {
-  transform: scale(1.25);
-  opacity: 0.16;
+
+/* Números del resumen: tarjetas blancas con borde superior de 3 px según la función. */
+.stats > .card,
+.stats > .card:hover {
+  border-top: 3px solid var(--tone, var(--ipass-blue));
 }
 .stats .eyebrow {
-  color: color-mix(in srgb, var(--tone) 70%, var(--ink));
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--ink-muted);
+}
+.stats .eyebrow::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: var(--tone, var(--ipass-blue));
 }
 
 /* Punto "en vivo" que late. */
@@ -434,7 +423,7 @@ table tbody tr:hover {
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 9999px;
-  background: var(--brand-green);
+  background: var(--success);
   animation: live-pulse 1.8s ease-out infinite;
   vertical-align: middle;
 }
@@ -450,25 +439,15 @@ table tbody tr:hover {
     transform: none;
   }
 }
-@keyframes shine {
-  0%,
-  70% {
-    transform: translateX(-120%);
-  }
-  85%,
-  100% {
-    transform: translateX(120%);
-  }
-}
 @keyframes live-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgb(16 185 129 / 0.55);
+    box-shadow: 0 0 0 0 rgb(22 132 108 / 0.55);
   }
   70% {
-    box-shadow: 0 0 0 8px rgb(16 185 129 / 0);
+    box-shadow: 0 0 0 8px rgb(22 132 108 / 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgb(16 185 129 / 0);
+    box-shadow: 0 0 0 0 rgb(22 132 108 / 0);
   }
 }
 .page-enter {

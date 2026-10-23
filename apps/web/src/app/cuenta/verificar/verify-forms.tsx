@@ -31,7 +31,7 @@ export function ResendForm({ next }: { next?: string }) {
           {state.error}
         </p>
       )}
-      {state?.message && <p className="text-sm text-[var(--accent)]">{state.message}</p>}
+      {state?.message && <p className="text-sm text-[var(--accent-text)]">{state.message}</p>}
       <button type="submit" disabled={pending} className="btn-accent">
         {pending ? "Enviando…" : "Reenviar el correo"}
       </button>

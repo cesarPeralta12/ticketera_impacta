@@ -274,8 +274,8 @@ function cropMarks(page: PDFPage, trim: Box) {
 /** Arma el PDF. Lo grande (cientos de entradas) se dibuja igual: son vectores. */
 export async function ticketsPdf(tickets: PrintableTicket[], format: PaperFormat, artImage: TicketArtImage = null): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
-  pdf.setTitle(`Entradas · ${tickets[0]?.eventTitle ?? "Impacta"}`);
-  pdf.setCreator("Impacta");
+  pdf.setTitle(`Entradas · ${tickets[0]?.eventTitle ?? "iPass"}`);
+  pdf.setCreator("iPass");
   const fonts: Fonts = {
     regular: await pdf.embedFont(StandardFonts.Helvetica),
     bold: await pdf.embedFont(StandardFonts.HelveticaBold),

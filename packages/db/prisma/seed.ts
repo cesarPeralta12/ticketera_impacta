@@ -254,13 +254,13 @@ async function main() {
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${tables.map((t) => `"${t.tablename}"`).join(", ")} RESTART IDENTITY CASCADE`);
 
   const org = await prisma.organization.create({
-    data: { name: "Impacta", slug: "impacta", currency: DEFAULT_CURRENCY, isPlatform: true },
+    data: { name: "iPass", slug: "impacta", currency: DEFAULT_CURRENCY, isPlatform: true },
   });
 
   await prisma.staffUser.create({
     data: {
       email: "admin@impacta.test",
-      name: "Admin Impacta",
+      name: "Admin iPass",
       passwordHash: await hashPassword(seedPassword("Impacta2026!")),
       emailVerified: true,
       memberships: { create: { organizationId: org.id, role: "OWNER" } },

@@ -43,13 +43,13 @@ export default async function MyTicketsPage({ searchParams }: Props) {
           <p className="eyebrow">{session.user.name}</p>
           <h1 className="font-display text-4xl">Mis entradas</h1>
         </div>
-        <Link href="/mis-eventos" className="text-sm text-[var(--accent)] underline underline-offset-4">
+        <Link href="/mis-eventos" className="text-sm text-[var(--accent-text)] underline underline-offset-4">
           Ver mis compras
         </Link>
       </div>
 
       {aviso && (
-        <p role="status" className="rounded-xl border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-4 py-3 text-sm">
+        <p role="status" className="rounded-xl border border-[var(--highlight)]/40 bg-[var(--highlight)]/10 px-4 py-3 text-sm">
           {aviso}
         </p>
       )}
@@ -102,38 +102,38 @@ export default async function MyTicketsPage({ searchParams }: Props) {
       {cards.length === 0 ? (
         <p className="text-[var(--ink-muted)]">
           Todavía no tienes entradas con esta cuenta.{" "}
-          <Link href="/" className="text-[var(--accent)] underline underline-offset-4">
+          <Link href="/" className="text-[var(--accent-text)] underline underline-offset-4">
             Ver eventos
           </Link>
         </p>
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2">
           {cards.map((t) => (
-            <li key={t.id} className="rounded-2xl bg-[#f5f3ef] p-5 text-center text-[#14181b]">
-              <p className="text-xs uppercase tracking-wide text-[#6b687a]">{t.receivedByTransfer ? "Recibida por transferencia" : "Entrada"}</p>
+            <li key={t.id} className="rounded-2xl bg-[#F5F6F8] p-5 text-center text-[#192438]">
+              <p className="text-xs uppercase tracking-wide text-[#60718B]">{t.receivedByTransfer ? "Recibida por transferencia" : "Entrada"}</p>
               <p className="font-display text-xl">{t.eventTitle}</p>
-              <p className="text-xs text-[#6b687a]">
+              <p className="text-xs text-[#60718B]">
                 {formatDateTime(t.startsAt, t.timezone)} · {t.venueName}
               </p>
               {(t.whenWhere.when.doors || t.whenWhere.when.end) && (
-                <p className="text-xs text-[#6b687a]">
+                <p className="text-xs text-[#60718B]">
                   {[t.whenWhere.when.doors, t.whenWhere.when.lastEntry, t.whenWhere.when.end].filter(Boolean).join(" · ")}
                 </p>
               )}
-              {t.whenWhere.conditions.length > 0 && <p className="text-xs font-semibold text-[#b35c00]">{t.whenWhere.conditions.slice(0, 2).join(" · ")}</p>}
+              {t.whenWhere.conditions.length > 0 && <p className="text-xs font-semibold text-[#B77900]">{t.whenWhere.conditions.slice(0, 2).join(" · ")}</p>}
               {t.whenWhere.place.mapUrl && (
-                <a href={t.whenWhere.place.mapUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0f8a6b] underline">
+                <a href={t.whenWhere.place.mapUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#16846C] underline">
                   Cómo llegar
                 </a>
               )}
               <p className="mt-1 font-semibold">{t.typeName}</p>
               {t.seat && <p className="text-sm font-semibold">{t.seat}</p>}
-              {t.entrance && <p className="mt-1 text-sm font-bold text-[#0f8a6b]">{t.entrance}</p>}
+              {t.entrance && <p className="mt-1 text-sm font-bold text-[#16846C]">{t.entrance}</p>}
               {t.entryUntil && t.status === "VALID" && (
-                <p className="mt-1 text-sm font-bold text-[#b35c00]">Válida para entrar hasta las {formatClock(t.entryUntil, t.timezone)}</p>
+                <p className="mt-1 text-sm font-bold text-[#B77900]">Válida para entrar hasta las {formatClock(t.entryUntil, t.timezone)}</p>
               )}
               {t.consumption && (
-                <p className="mx-auto mt-2 w-fit rounded-full bg-[#14181b] px-3 py-1 text-xs font-semibold text-[#f5b700]">
+                <p className="mx-auto mt-2 w-fit rounded-full bg-[#192438] px-3 py-1 text-xs font-semibold text-[#F5B700]">
                   Consumo {t.consumption.shared ? "de la mesa" : "incluido"}: te quedan {formatMoney(t.consumption.left, t.consumption.currency)} de{" "}
                   {formatMoney(t.consumption.amount, t.consumption.currency)}
                 </p>
@@ -143,16 +143,16 @@ export default async function MyTicketsPage({ searchParams }: Props) {
                   <Link href={`/entrada/${t.code}`} className="btn-accent inline-block">
                     Abrir entrada (QR dinámico)
                   </Link>
-                  <p className="mt-2 text-xs text-[#6b687a]">El QR cambia cada 30 segundos y funciona sin internet. No sirve una captura.</p>
+                  <p className="mt-2 text-xs text-[#60718B]">El QR cambia cada 30 segundos y funciona sin internet. No sirve una captura.</p>
                 </div>
               )}
               {t.qr && <div className={`mx-auto my-3 w-44 ${t.status === "USED" ? "opacity-30" : ""}`} dangerouslySetInnerHTML={{ __html: t.qr }} />}
               {t.barcode && (
                 <div className={`mx-auto my-3 w-full max-w-60 overflow-hidden rounded-md bg-white [&>svg]:h-auto [&>svg]:w-full ${t.status === "USED" ? "opacity-30" : ""}`} dangerouslySetInnerHTML={{ __html: t.barcode }} />
               )}
-              {t.accessMethods.includes("NFC") && <p className="my-2 text-xs font-semibold text-[#6b687a]">{t.qr || t.barcode ? "También se lee por NFC." : "Se lee por NFC: acércala al lector."}</p>}
+              {t.accessMethods.includes("NFC") && <p className="my-2 text-xs font-semibold text-[#60718B]">{t.qr || t.barcode ? "También se lee por NFC." : "Se lee por NFC: acércala al lector."}</p>}
               <p className="font-mono text-sm tracking-wider">{formatCode(t.code)}</p>
-              {t.status === "USED" && <p className="mt-1 text-xs font-semibold text-[#6b687a]">Ya utilizada</p>}
+              {t.status === "USED" && <p className="mt-1 text-xs font-semibold text-[#60718B]">Ya utilizada</p>}
 
               {t.pending ? (
                 <div className="mt-3 rounded-lg bg-[#fff4d6] p-3 text-left text-xs">
@@ -168,9 +168,9 @@ export default async function MyTicketsPage({ searchParams }: Props) {
                 </div>
               ) : t.status === "VALID" ? (
                 t.blockedReason ? (
-                  <p className="mt-3 text-xs text-[#6b687a]">{t.blockedReason}</p>
+                  <p className="mt-3 text-xs text-[#60718B]">{t.blockedReason}</p>
                 ) : (
-                  <details className="mt-3 rounded-lg border border-[#d8d5cc] p-3 text-left">
+                  <details className="mt-3 rounded-lg border border-[#E6EAF0] p-3 text-left">
                     <summary className="cursor-pointer text-sm font-semibold">Transferir a otra persona</summary>
                     <TransferForm ticketId={t.id} />
                   </details>

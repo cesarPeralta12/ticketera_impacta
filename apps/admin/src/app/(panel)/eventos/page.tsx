@@ -52,7 +52,7 @@ export default async function EventsPage() {
         <div>
           <p className="eyebrow">{events.length} evento(s)</p>
           <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            {isGlobalView(staff) ? "Eventos de Impacta" : isNightlife(staff) ? "Noches" : "Eventos"}
+            {isGlobalView(staff) ? "Eventos de iPass" : isNightlife(staff) ? "Noches" : "Eventos"}
             <Help title="Cómo se arma un evento">
               «+ Nuevo evento» abre el asistente: datos, lugar y fecha, entradas (con modelos General, VIP, Mesa, Free y
               Preventa), revisar con la vista previa del comprador y publicar. Para un evento chico que se vende con entradas
@@ -108,7 +108,7 @@ export default async function EventsPage() {
                     <div className="flex items-center gap-2.5">
                       <span className="font-medium">{event.title}</span>
                       <span className={`badge ${status.className}`}>{status.text}</span>
-                      {event.small && <span className="badge bg-[var(--accent-soft)] text-[var(--accent)]">Pequeño</span>}
+                      {event.small && <span className="badge badge-highlight">Pequeño</span>}
                     </div>
                     <p className="mt-0.5 flex items-center gap-1.5 text-sm text-[var(--ink-muted)]">
                       <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} aria-hidden />

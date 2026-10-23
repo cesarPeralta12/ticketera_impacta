@@ -27,7 +27,7 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
   const account = await verifyStaffCredentials(email, String(formData.get("password") ?? ""));
   if (account?.role === "OPERATOR") {
     await recordLoginFailure({ kind: "staff", email, reason: "ROLE", context });
-    return { error: "Esta cuenta es de portero: usa la app móvil Impacta Puerta." };
+    return { error: "Esta cuenta es de portero: usa la app móvil de puerta." };
   }
   try {
     await signIn("credentials", { email, password: formData.get("password"), redirect: false });

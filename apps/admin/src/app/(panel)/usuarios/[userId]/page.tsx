@@ -198,7 +198,7 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
                       </td>
                       <td className="py-2.5 pr-4">
                         <span
-                          className={`badge ${active ? "bg-[var(--accent-soft)] text-[var(--accent)]" : "bg-[var(--surface-2)] text-[var(--ink-dim)]"}`}
+                          className={`badge ${active ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--surface-2)] text-[var(--ink-dim)]"}`}
                         >
                           {active ? "Activo" : "Cerrado"}
                         </span>

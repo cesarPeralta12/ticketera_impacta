@@ -36,7 +36,7 @@ export default async function ClientHomePage() {
   await connection();
   const staff = await requireStaff(ROLES.client);
   if (!staff.client) {
-    return <p className="text-sm text-[var(--ink-muted)]">Tu cuenta no está asociada a un cliente. Pide a IMPACTA que la revise.</p>;
+    return <p className="text-sm text-[var(--ink-muted)]">Tu cuenta no está asociada a un cliente. Pide a iPass que la revise.</p>;
   }
   const events = await openEvents(staff.organization.id, staff.client.id);
 
@@ -46,7 +46,7 @@ export default async function ClientHomePage() {
         <p className="eyebrow">{staff.client.name}</p>
         <h1 className="text-2xl font-semibold tracking-tight">Mis eventos</h1>
         <p className="text-sm text-[var(--ink-muted)]">
-          Ventas, ingresos y reportes de tus eventos con IMPACTA. El acceso es temporal: IMPACTA lo habilita por evento y
+          Ventas, ingresos y reportes de tus eventos con iPass. El acceso es temporal: iPass lo habilita por evento y
           se cierra solo después del evento.
         </p>
       </div>

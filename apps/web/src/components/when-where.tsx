@@ -14,7 +14,7 @@ export function WhenWhereBlock({ data, compact = false, className = "" }: { data
         <p className="font-semibold first-letter:uppercase">{when.day}</p>
         <p className="text-[var(--ink-muted)]">{[when.doors, when.start, when.lastEntry].filter(Boolean).join(" · ")}</p>
         {when.end && <p className="text-[var(--ink-muted)]">{when.end}</p>}
-        {when.arrival && <p className="font-medium text-[var(--accent)]">{when.arrival}</p>}
+        {when.arrival && <p className="font-medium text-[var(--accent-text)]">{when.arrival}</p>}
         <p className="text-xs text-[var(--ink-dim)]">{timeZoneLabel(data.timeZone)}</p>
       </div>
 
@@ -26,7 +26,7 @@ export function WhenWhereBlock({ data, compact = false, className = "" }: { data
         {!compact && place.parking && <p className="text-[var(--ink-muted)]">Estacionamiento: {place.parking}</p>}
         {!compact && place.accessibility && <p className="text-[var(--ink-muted)]">Accesibilidad: {place.accessibility}</p>}
         {place.mapUrl && (
-          <a href={place.mapUrl} target="_blank" rel="noopener noreferrer" className="inline-block font-medium text-[var(--accent)] hover:underline">
+          <a href={place.mapUrl} target="_blank" rel="noopener noreferrer" className="inline-block font-medium text-[var(--accent-text)] hover:underline">
             Ver en el mapa →
           </a>
         )}
@@ -49,7 +49,7 @@ export function WhenWhereBlock({ data, compact = false, className = "" }: { data
           <ul className="space-y-0.5">
             {data.program.map((p) => (
               <li key={`${p.time}-${p.name}`}>
-                <span className="font-mono text-[var(--accent)]">{p.time}</span> <span className="font-medium">{p.name}</span>
+                <span className="font-mono text-[var(--accent-text)]">{p.time}</span> <span className="font-medium">{p.name}</span>
                 {p.note && <span className="text-[var(--ink-dim)]"> · {p.note}</span>}
               </li>
             ))}
@@ -61,14 +61,14 @@ export function WhenWhereBlock({ data, compact = false, className = "" }: { data
         <div className="space-y-1">
           <p className="eyebrow">Consultas</p>
           {contact.whatsapp ? (
-            <a href={contact.whatsapp} target="_blank" rel="noopener noreferrer" className="block text-[var(--accent)] hover:underline">
+            <a href={contact.whatsapp} target="_blank" rel="noopener noreferrer" className="block text-[var(--accent-text)] hover:underline">
               WhatsApp {contact.phone}
             </a>
           ) : (
             contact.phone && <p className="text-[var(--ink-muted)]">{contact.phone}</p>
           )}
           {contact.email && (
-            <a href={`mailto:${contact.email}`} className="block text-[var(--accent)] hover:underline">
+            <a href={`mailto:${contact.email}`} className="block text-[var(--accent-text)] hover:underline">
               {contact.email}
             </a>
           )}

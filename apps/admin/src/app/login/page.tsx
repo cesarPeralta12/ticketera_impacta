@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Logo } from "@/components/logo";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Ingresar" };
@@ -10,15 +11,14 @@ export default async function LoginPage({ searchParams }: Props) {
   const { next, cambio } = await searchParams;
   return (
     <main className="page-enter mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-8 px-6">
-      <div className="flex items-center gap-2.5">
-        <span className="brand-tile flex h-10 w-10 items-center justify-center rounded-lg text-base font-bold">I</span>
-        <div>
-          <p className="eyebrow">Panel de organizador</p>
-          <h1 className="text-xl font-semibold tracking-tight">Impacta</h1>
-        </div>
+      <div>
+        <h1>
+          <Logo className="h-12 w-auto" />
+        </h1>
+        <p className="eyebrow mt-3">Panel de organizador</p>
       </div>
       {cambio === "ok" && (
-        <p role="status" className="rounded-md bg-[var(--accent-soft)] px-3 py-2.5 text-sm text-[var(--accent)]">
+        <p role="status" className="rounded-md bg-[var(--success-soft)] px-3 py-2.5 text-sm text-[var(--success)]">
           Contraseña cambiada. Ya puedes ingresar con la nueva.
         </p>
       )}

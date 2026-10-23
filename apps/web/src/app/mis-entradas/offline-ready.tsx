@@ -40,7 +40,7 @@ export function OfflineReady({ userId, codes }: { userId: string; codes: string[
   if (state === "working") return <p className="text-xs text-[var(--ink-dim)]">Preparando tus entradas para usarlas sin internet…</p>;
   if (state === "offline") return <p className="text-xs text-[var(--ink-dim)]">Sin conexión: se usarán las entradas que ya abriste antes con internet.</p>;
   return (
-    <p role="status" className="rounded-xl border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-4 py-3 text-sm">
+    <p role="status" className="rounded-xl border border-[var(--highlight)]/40 bg-[var(--highlight)]/10 px-4 py-3 text-sm">
       {state.ready > 0 ? `✓ ${state.ready} ${state.ready === 1 ? "entrada lista" : "entradas listas"} para usar sin internet. ` : ""}
       {state.failed > 0 ? `${state.failed} no se pudo preparar. ` : ""}
       Instala el sitio en tu pantalla de inicio (menú del navegador → Agregar a pantalla de inicio) para abrirlas más rápido.

@@ -15,7 +15,7 @@ import {
   setOrganizationStatus,
 } from "@ticketera/db";
 import { formObject, zodErrors, type FormState } from "@/lib/forms";
-import { VIEW_AS_COOKIE, requirePlatform } from "@/lib/session";
+import { HOME_BY_ROLE, PREVIEW_ROLES, PREVIEW_ROLE_COOKIE, ROLES, VIEW_AS_COOKIE, requirePlatform, requireStaff } from "@/lib/session";
 
 /** Solo rutas internas del panel. */
 function safePath(value: FormDataEntryValue | null, fallback: string) {
@@ -23,25 +23,47 @@ function safePath(value: FormDataEntryValue | null, fallback: string) {
   return path.startsWith("/") && !path.startsWith("//") ? path : fallback;
 }
 
+const VIEW_COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: "lax",
+  secure: process.env.NODE_ENV === "production",
+  path: "/",
+  maxAge: 8 * 60 * 60,
+} as const;
+
 /** IMPACTA entra a trabajar dentro de un organizador: ve y edita exactamente lo que él ve. */
 export async function enterOrganizationAction(formData: FormData) {
   await requirePlatform();
   const organization = await prisma.organization.findUnique({ where: { id: String(formData.get("organizationId")) } });
   if (!organization || organization.isPlatform) redirect("/organizadores");
-  (await cookies()).set(VIEW_AS_COOKIE, organization.id, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 8 * 60 * 60,
-  });
+  const jar = await cookies();
+  jar.set(VIEW_AS_COOKIE, organization.id, VIEW_COOKIE_OPTIONS);
+  jar.delete(PREVIEW_ROLE_COOKIE);
   redirect(safePath(formData.get("next"), "/"));
 }
 
 export async function exitOrganizationAction(formData: FormData) {
   await requirePlatform();
-  (await cookies()).delete(VIEW_AS_COOKIE);
+  const jar = await cookies();
+  jar.delete(VIEW_AS_COOKIE);
+  jar.delete(PREVIEW_ROLE_COOKIE);
   redirect(safePath(formData.get("next"), "/organizadores"));
+}
+
+/**
+ * Dentro de un organizador, IMPACTA mira el panel como lo ve una de sus cuentas (administrador del organizador o
+ * cajero) antes de entregar los accesos: mismo menú y mismas pantallas, sin poder cambiar nada. Sin `role`, vuelve
+ * a trabajar normal dentro del organizador. No usa requirePlatform: durante la vista previa la cuenta actúa con el
+ * rol que se mira, pero solo llega aquí quien "entró" a un organizador (eso ya exige ser administrador de IMPACTA).
+ */
+export async function previewAsAction(formData: FormData) {
+  const staff = await requireStaff(ROLES.any);
+  if (!staff.viewingAs) redirect("/");
+  const role = PREVIEW_ROLES.find((r) => r === formData.get("role"));
+  const jar = await cookies();
+  if (role) jar.set(PREVIEW_ROLE_COOKIE, role, VIEW_COOKIE_OPTIONS);
+  else jar.delete(PREVIEW_ROLE_COOKIE);
+  redirect(role ? HOME_BY_ROLE[role] : "/");
 }
 
 const organizerSchema = z.object({

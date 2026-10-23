@@ -51,7 +51,8 @@ export default auth((req) => {
     pathname === "/api/health" ||
     // La app móvil de puerta usa tokens propios (Authorization: Bearer), no la cookie del panel.
     pathname.startsWith("/api/v1/") ||
-    /^\/icon[\w-]*\.(svg|png)$/.test(pathname)
+    // Íconos y logos: se ven también en el login.
+    /^\/((apple-)?icon[\w-]*(\.(svg|png))?|ipass-logo[\w-]*\.svg)$/.test(pathname)
   ) {
     return NextResponse.next();
   }

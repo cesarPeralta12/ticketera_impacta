@@ -68,7 +68,7 @@ export async function EventView({ event, preview = false }: { event: ViewableEve
   return (
     <main className="pb-16">
       {preview && (
-        <p role="status" className="bg-[var(--accent)] px-6 py-2 text-center text-sm font-semibold text-[#0b0b10]">
+        <p role="status" className="bg-[var(--accent)] px-6 py-2 text-center text-sm font-semibold text-[var(--accent-ink)]">
           Vista previa: así lo verá el comprador.{event.status !== "PUBLISHED" && " Todavía no está publicado; comprar no funciona."}
         </p>
       )}
@@ -83,7 +83,7 @@ export async function EventView({ event, preview = false }: { event: ViewableEve
         <div className="relative mx-auto flex h-full max-w-6xl flex-col justify-end gap-3 px-6 pb-8">
           <span
             className="w-fit rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide"
-            style={{ background: color, color: "#0b0b10" }}
+            style={{ background: color, color: "#192438" }}
           >
             {CATEGORY_LABEL[event.category] ?? "Evento"}
           </span>
@@ -155,7 +155,7 @@ export async function EventView({ event, preview = false }: { event: ViewableEve
                         {!soldOut && s.left <= LOW_STOCK && (
                           <span className="ml-2 font-semibold text-[var(--accent-2)]">¡Últimas {s.left}!</span>
                         )}
-                        {s.queueEnabled && <span className="ml-2 text-[var(--accent)]">Fila virtual</span>}
+                        {s.queueEnabled && <span className="ml-2 text-[var(--accent-text)]">Fila virtual</span>}
                       </p>
                       {s.presaleUntil && (
                         <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-[var(--accent-2)]">
@@ -172,7 +172,7 @@ export async function EventView({ event, preview = false }: { event: ViewableEve
                       className={
                         soldOut
                           ? "text-sm font-medium text-[var(--ink-dim)]"
-                          : "text-sm font-semibold text-[var(--accent)] transition-transform group-hover:translate-x-1"
+                          : "text-sm font-semibold text-[var(--accent-text)] transition-transform group-hover:translate-x-1"
                       }
                     >
                       {soldOut ? "Agotado" : "Comprar →"}

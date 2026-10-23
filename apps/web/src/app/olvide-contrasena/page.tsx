@@ -14,7 +14,7 @@ export default function ForgotPasswordPage() {
       </div>
       <ForgotForm />
       <p className="text-sm text-[var(--ink-muted)]">
-        <Link href="/login" className="text-[var(--accent)] underline underline-offset-4">
+        <Link href="/login" className="text-[var(--accent-text)] underline underline-offset-4">
           Volver a iniciar sesión
         </Link>
       </p>

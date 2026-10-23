@@ -69,7 +69,7 @@ export function TicketTypeForm({
       </fieldset>
       <details data-section="club" open={nightlife} className="basis-full">
         <summary className="cursor-pointer text-sm font-medium text-[var(--accent)]">Mesa, consumo incluido u horario de ingreso (opcional)</summary>
-        <div className="mt-3 flex flex-wrap items-end gap-3 rounded-md border border-dashed border-[#c04bff]/50 bg-[#f3e8ff]/40 p-3">
+        <div className="mt-3 flex flex-wrap items-end gap-3 rounded-md border border-dashed border-[var(--accent)]/50 bg-[var(--accent-soft)]/40 p-3">
           <label className="flex items-center gap-2 self-center text-sm">
             <input type="checkbox" name="table" className="h-4 w-4" /> Es una mesa o lounge
           </label>

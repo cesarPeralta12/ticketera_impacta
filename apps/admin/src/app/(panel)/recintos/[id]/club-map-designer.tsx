@@ -598,7 +598,7 @@ function PlanEditor({
       </div>
 
       {placingGroup && (
-        <p className="rounded-md bg-[#f3e8ff] px-3 py-2 text-sm text-[#7b2fbf]">
+        <p className="rounded-md bg-[var(--accent-soft)] px-3 py-2 text-sm text-[var(--accent-hover)]">
           Toca el plano donde va cada lounge de <strong>{placingGroup.name}</strong> (se numeran solos). Arrástralos para
           moverlos.{" "}
           <button type="button" onClick={() => setPlacing(null)} className="font-medium underline">
@@ -843,7 +843,7 @@ function PlanEditor({
         <p className="text-sm font-medium">Lounges y mesas (cada círculo es uno; el comprador elige el suyo en el mapa)</p>
         {groups.length === 0 && <p className="text-sm text-[var(--ink-muted)]">Todavía no hay lounges en el plano.</p>}
         {groups.map((g) => (
-          <div key={g.key} className={`flex flex-wrap items-end gap-3 rounded-md border p-3 ${placing === g.key ? "border-[#c04bff]" : "border-[var(--border)]"}`}>
+          <div key={g.key} className={`flex flex-wrap items-end gap-3 rounded-md border p-3 ${placing === g.key ? "border-[var(--accent)]" : "border-[var(--border)]"}`}>
             <label className="label">
               Color
               <input type="color" value={g.color} onChange={(e) => updateGroup(g.key, { color: e.target.value })} className="h-[38px] w-12 rounded border border-[var(--border)]" />
@@ -889,7 +889,7 @@ function PlanEditor({
         </button>
         {dirty && !pending && <span className="text-sm text-[var(--warn)]">Tienes cambios sin guardar.</span>}
         {message && (
-          <span role={message.ok ? "status" : "alert"} className={`text-sm ${message.ok ? "text-[var(--accent)]" : "text-[var(--danger)]"}`}>
+          <span role={message.ok ? "status" : "alert"} className={`text-sm ${message.ok ? "text-[var(--success)]" : "text-[var(--danger)]"}`}>
             {message.text}
           </span>
         )}

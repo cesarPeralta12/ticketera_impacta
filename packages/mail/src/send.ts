@@ -42,7 +42,7 @@ export class MailError extends Error {
   }
 }
 
-const DEFAULT_FROM = "Impacta <onboarding@resend.dev>";
+const DEFAULT_FROM = "iPass <onboarding@resend.dev>";
 
 function providerName(): "resend" | "smtp" | "console" {
   const chosen = process.env.MAIL_PROVIDER?.toLowerCase();
@@ -51,7 +51,7 @@ function providerName(): "resend" | "smtp" | "console" {
 }
 
 /**
- * Remitente. MAIL_FROM puede ser "Impacta (no responder) <impacta@gmail.com>": el nombre se ve en el correo
+ * Remitente. MAIL_FROM puede ser "iPass (no responder) <tucuenta@gmail.com>": el nombre se ve en el correo
  * de quien lo recibe. MAIL_REPLY_TO (opcional) es a dónde llegan las respuestas, por ejemplo soporte@...
  * Ojo: con Gmail, la dirección de envío es siempre la de la cuenta (Gmail reemplaza cualquier otra).
  */

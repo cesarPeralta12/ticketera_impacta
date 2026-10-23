@@ -1,5 +1,5 @@
 /**
- * Plantillas de los correos de Impacta. HTML simple con estilos en línea (los clientes de correo no
+ * Plantillas de los correos de iPass. HTML simple con estilos en línea (los clientes de correo no
  * cargan hojas de estilo) y una versión de texto para quien no ve HTML.
  */
 import { formatCode, formatDateTime, reentryText, type WhenWhere } from "@ticketera/core";
@@ -8,8 +8,11 @@ import type { Email, InlineImage } from "./send";
 const esc = (value: string) =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-const BRAND = "#0f8a6b";
-const INK = "#14181b";
+// Colores iPass: magenta para botones y enlaces (su variante oscura en textos chicos), azul noche de base.
+const BRAND = "#AD468D";
+const LINK = "#913673";
+const INK = "#192438";
+const MUTED = "#60718B";
 
 function button(href: string, label: string) {
   return `<a href="${esc(href)}" style="display:inline-block;background:${BRAND};color:#ffffff;text-decoration:none;font-weight:700;padding:14px 26px;border-radius:10px;font-size:16px">${esc(label)}</a>`;
@@ -18,15 +21,15 @@ function button(href: string, label: string) {
 function layout(preheader: string, body: string) {
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;background:#f4f4f0;font-family:Arial,Helvetica,sans-serif;color:${INK}">
+<body style="margin:0;background:#F5F6F8;font-family:Arial,Helvetica,sans-serif;color:${INK}">
 <span style="display:none;max-height:0;overflow:hidden;opacity:0">${esc(preheader)}</span>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f0"><tr><td align="center" style="padding:24px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F6F8"><tr><td align="center" style="padding:24px 12px">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:14px;overflow:hidden">
-    <tr><td style="background:${INK};padding:18px 28px;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:.5px">IMPACTA<span style="color:#f5b700">.</span></td></tr>
+    <tr><td style="background:${INK};padding:18px 28px;color:#ffffff;font-size:26px;font-weight:700;letter-spacing:-.5px"><span style="color:${BRAND}">i</span>Pass</td></tr>
     <tr><td style="padding:28px">${body}</td></tr>
-    <tr><td style="padding:16px 28px;background:#fafaf7;color:#7a7d76;font-size:12px;line-height:1.5">
+    <tr><td style="padding:16px 28px;background:#F5F6F8;color:${MUTED};font-size:12px;line-height:1.5">
       Este es un mensaje automático: por favor no respondas a este correo. Lo recibes porque se usó esta dirección en
-      Impacta; si no fuiste tú, puedes ignorarlo.
+      iPass; si no fuiste tú, puedes ignorarlo.
     </td></tr>
   </table>
 </td></tr></table>
@@ -34,40 +37,40 @@ function layout(preheader: string, body: string) {
 }
 
 export function verifyEmailMessage(input: { to: string; name: string; link: string; hours: number }): Email {
-  const subject = "Confirma tu correo en Impacta";
+  const subject = "Confirma tu correo en iPass";
   const html = layout(
     "Confirma tu correo para poder comprar entradas.",
     `<h1 style="margin:0 0 12px;font-size:24px">Confirma tu correo</h1>
      <p style="line-height:1.55">Hola ${esc(input.name)}, para comprar entradas necesitamos confirmar que este correo es tuyo. Ahí te enviaremos tus entradas.</p>
      <p style="margin:26px 0">${button(input.link, "Confirmar mi correo")}</p>
-     <p style="color:#62655f;font-size:13px;line-height:1.5">El enlace vale ${input.hours} horas. Si el botón no funciona, copia esta dirección en el navegador:<br><span style="word-break:break-all">${esc(input.link)}</span></p>`,
+     <p style="color:${MUTED};font-size:13px;line-height:1.5">El enlace vale ${input.hours} horas. Si el botón no funciona, copia esta dirección en el navegador:<br><span style="word-break:break-all">${esc(input.link)}</span></p>`,
   );
-  const text = `Hola ${input.name},\n\nConfirma tu correo para poder comprar entradas en Impacta:\n${input.link}\n\nEl enlace vale ${input.hours} horas.`;
+  const text = `Hola ${input.name},\n\nConfirma tu correo para poder comprar entradas en iPass:\n${input.link}\n\nEl enlace vale ${input.hours} horas.`;
   return { to: input.to, subject, html, text };
 }
 
 export function resetPasswordMessage(input: { to: string; name: string; link: string; minutes: number }): Email {
-  const subject = "Cambia tu contraseña de Impacta";
+  const subject = "Cambia tu contraseña de iPass";
   const html = layout(
     "Pediste cambiar tu contraseña.",
     `<h1 style="margin:0 0 12px;font-size:24px">Cambia tu contraseña</h1>
      <p style="line-height:1.55">Hola ${esc(input.name)}, recibimos un pedido para cambiar la contraseña de tu cuenta.</p>
      <p style="margin:26px 0">${button(input.link, "Elegir una contraseña nueva")}</p>
-     <p style="color:#62655f;font-size:13px;line-height:1.5">El enlace vale ${input.minutes} minutos y sirve una sola vez. Si no lo pediste tú, ignora este correo: tu contraseña no cambia.<br><br><span style="word-break:break-all">${esc(input.link)}</span></p>`,
+     <p style="color:${MUTED};font-size:13px;line-height:1.5">El enlace vale ${input.minutes} minutos y sirve una sola vez. Si no lo pediste tú, ignora este correo: tu contraseña no cambia.<br><br><span style="word-break:break-all">${esc(input.link)}</span></p>`,
   );
   const text = `Hola ${input.name},\n\nPara elegir una contraseña nueva entra aquí (vale ${input.minutes} minutos, una sola vez):\n${input.link}\n\nSi no lo pediste tú, ignora este correo.`;
   return { to: input.to, subject, html, text };
 }
 
 export function passwordChangedMessage(input: { to: string; name: string }): Email {
-  const subject = "Tu contraseña de Impacta cambió";
+  const subject = "Tu contraseña de iPass cambió";
   const html = layout(
     "Tu contraseña cambió.",
     `<h1 style="margin:0 0 12px;font-size:24px">Tu contraseña cambió</h1>
      <p style="line-height:1.55">Hola ${esc(input.name)}, te avisamos que la contraseña de tu cuenta se cambió hace un momento.</p>
-     <p style="line-height:1.55;color:#b91c1c"><strong>¿No fuiste tú?</strong> Cambia tu contraseña de inmediato desde «Olvidé mi contraseña» y escríbenos.</p>`,
+     <p style="line-height:1.55;color:#C62842"><strong>¿No fuiste tú?</strong> Cambia tu contraseña de inmediato desde «Olvidé mi contraseña» y escríbenos.</p>`,
   );
-  const text = `Hola ${input.name},\n\nLa contraseña de tu cuenta de Impacta se cambió hace un momento. Si no fuiste tú, cámbiala de inmediato desde "Olvidé mi contraseña".`;
+  const text = `Hola ${input.name},\n\nLa contraseña de tu cuenta de iPass se cambió hace un momento. Si no fuiste tú, cámbiala de inmediato desde "Olvidé mi contraseña".`;
   return { to: input.to, subject, html, text };
 }
 
@@ -89,31 +92,31 @@ export type TicketMail = {
 function whenWhereHtml(ww: WhenWhere): string {
   const row = (title: string, lines: string[]) =>
     lines.length
-      ? `<tr><td style="padding:6px 0;vertical-align:top;width:110px;font-size:12px;color:#7a7d76;text-transform:uppercase;letter-spacing:1px">${esc(title)}</td><td style="padding:6px 0;font-size:14px;line-height:1.5">${lines.join("<br>")}</td></tr>`
+      ? `<tr><td style="padding:6px 0;vertical-align:top;width:110px;font-size:12px;color:${MUTED};text-transform:uppercase;letter-spacing:1px">${esc(title)}</td><td style="padding:6px 0;font-size:14px;line-height:1.5">${lines.join("<br>")}</td></tr>`
       : "";
   const when = [
     `<strong>${esc(capitalize(ww.when.day))}</strong>`,
     esc([ww.when.doors, ww.when.start, ww.when.lastEntry].filter(Boolean).join(" · ")),
     ...(ww.when.end ? [esc(ww.when.end)] : []),
-    ...(ww.when.arrival ? [`<strong style="color:#0f8a6b">${esc(ww.when.arrival)}</strong>`] : []),
+    ...(ww.when.arrival ? [`<strong style="color:${LINK}">${esc(ww.when.arrival)}</strong>`] : []),
   ];
   const where = [
     `<strong>${esc(ww.place.name)}</strong>`,
     ...(ww.place.address ? [esc(ww.place.address)] : []),
     ...(ww.place.directions ? [`Cómo llegar: ${esc(ww.place.directions)}`] : []),
     ...(ww.place.parking ? [`Estacionamiento: ${esc(ww.place.parking)}`] : []),
-    ...(ww.place.mapUrl ? [`<a href="${esc(ww.place.mapUrl)}" style="color:#0f8a6b;font-weight:700">Ver en el mapa</a>`] : []),
+    ...(ww.place.mapUrl ? [`<a href="${esc(ww.place.mapUrl)}" style="color:${LINK};font-weight:700">Ver en el mapa</a>`] : []),
   ];
   const program = ww.program.map((item) => `<strong>${esc(item.time)}</strong> ${esc(item.name)}${item.note ? ` · ${esc(item.note)}` : ""}`);
   const contact = [
     ...(ww.contact.whatsapp
-      ? [`<a href="${esc(ww.contact.whatsapp)}" style="color:#0f8a6b">WhatsApp ${esc(ww.contact.phone ?? "")}</a>`]
+      ? [`<a href="${esc(ww.contact.whatsapp)}" style="color:${LINK}">WhatsApp ${esc(ww.contact.phone ?? "")}</a>`]
       : ww.contact.phone
         ? [esc(ww.contact.phone)]
         : []),
-    ...(ww.contact.email ? [`<a href="mailto:${esc(ww.contact.email)}" style="color:#0f8a6b">${esc(ww.contact.email)}</a>`] : []),
+    ...(ww.contact.email ? [`<a href="mailto:${esc(ww.contact.email)}" style="color:${LINK}">${esc(ww.contact.email)}</a>`] : []),
   ];
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;border-top:1px solid #e1dfd7;border-bottom:1px solid #e1dfd7">
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;border-top:1px solid #E6EAF0;border-bottom:1px solid #E6EAF0">
     ${row("Cuándo", when)}${row("Dónde", where)}${row("Condiciones", ww.conditions.map(esc))}${row("Programa", program)}${row("Consultas", contact)}
   </table>`;
 }
@@ -169,14 +172,14 @@ export function ticketsMessage(input: {
       const reentry = reentryText(t.maxEntries);
       const dynamic = t.dynamicUrl
         ? `<div style="margin:14px 0 6px">${button(t.dynamicUrl, "Abrir mi entrada")}</div>
-        <div style="font-size:12px;color:#62655f;line-height:1.5;max-width:340px">Esta entrada es de <strong>QR dinámico</strong>: el QR cambia cada 30 segundos y no sirve una captura. <strong>Ábrela una vez con internet antes de salir</strong> y después funciona aunque no haya señal.</div>`
+        <div style="font-size:12px;color:${MUTED};line-height:1.5;max-width:340px">Esta entrada es de <strong>QR dinámico</strong>: el QR cambia cada 30 segundos y no sirve una captura. <strong>Ábrela una vez con internet antes de salir</strong> y después funciona aunque no haya señal.</div>`
         : "";
-      return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e1dfd7;border-radius:12px;margin:14px 0"><tr><td align="center" style="padding:16px">
-        <div style="font-size:12px;color:#7a7d76;text-transform:uppercase;letter-spacing:1px">Entrada ${i + 1} de ${input.tickets.length}</div>
+      return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E6EAF0;border-radius:12px;margin:14px 0"><tr><td align="center" style="padding:16px">
+        <div style="font-size:12px;color:${MUTED};text-transform:uppercase;letter-spacing:1px">Entrada ${i + 1} de ${input.tickets.length}</div>
         <div style="font-size:18px;font-weight:700;margin-top:4px">${esc(t.typeName)}</div>
         ${t.seat ? `<div style="font-size:15px;font-weight:700;margin-top:2px">${esc(t.seat)}</div>` : ""}
-        ${t.entrance ? `<div style="font-size:14px;font-weight:700;margin-top:6px;color:#0f8a6b">${esc(t.entrance)}</div>` : ""}
-        ${reentry ? `<div style="font-size:13px;margin-top:4px;color:#62655f">${esc(reentry)}. Al salir y al volver, haz leer tu QR en la puerta.</div>` : ""}
+        ${t.entrance ? `<div style="font-size:14px;font-weight:700;margin-top:6px;color:${LINK}">${esc(t.entrance)}</div>` : ""}
+        ${reentry ? `<div style="font-size:13px;margin-top:4px;color:${MUTED}">${esc(reentry)}. Al salir y al volver, haz leer tu QR en la puerta.</div>` : ""}
         ${qr}${dynamic}
         <div style="font-family:Consolas,monospace;font-size:16px;letter-spacing:2px">${esc(formatCode(t.code))}</div>
       </td></tr></table>`;
@@ -189,11 +192,11 @@ export function ticketsMessage(input: {
     `${input.tickets.length} entrada(s) para ${input.eventTitle}`,
     `<h1 style="margin:0 0 6px;font-size:24px">¡Listo, ${esc(input.buyerName.split(" ")[0] ?? "")}! Tus entradas</h1>
      <p style="margin:0 0 4px;font-size:18px;font-weight:700">${esc(input.eventTitle)}</p>
-     <p style="margin:0;color:#62655f">${esc(when)} · ${esc(input.venueName)}</p>
+     <p style="margin:0;color:${MUTED}">${esc(when)} · ${esc(input.venueName)}</p>
      ${input.whenWhere ? whenWhereHtml(input.whenWhere) : ""}
      ${cards}
      <p style="margin:22px 0;text-align:center">${button(input.orderUrl, "Ver mis entradas")}</p>
-     <p style="color:#62655f;font-size:13px;line-height:1.55">${singleEntry ? "Cada entrada vale para <strong>un solo ingreso</strong> y está a tu nombre" : "Cada entrada está a tu nombre"}: lleva tu <strong>carnet de identidad</strong>, que se puede pedir en la puerta. No compartas el QR por redes: quien llegue primero con él entra. El botón de arriba abre siempre la versión actualizada.${input.orderCode ? ` Compra ${esc(input.orderCode)}.` : ""}</p>`,
+     <p style="color:${MUTED};font-size:13px;line-height:1.55">${singleEntry ? "Cada entrada vale para <strong>un solo ingreso</strong> y está a tu nombre" : "Cada entrada está a tu nombre"}: lleva tu <strong>carnet de identidad</strong>, que se puede pedir en la puerta. No compartas el QR por redes: quien llegue primero con él entra. El botón de arriba abre siempre la versión actualizada.${input.orderCode ? ` Compra ${esc(input.orderCode)}.` : ""}</p>`,
   );
   const text =
     `¡Listo, ${input.buyerName}! Tus entradas para ${input.eventTitle}\n${when} · ${input.venueName}\n\n` +
@@ -231,10 +234,10 @@ export function transferOfferedMessage(input: {
     `<h1 style="margin:0 0 12px;font-size:24px">Te ofrecieron una entrada</h1>
      <p style="line-height:1.55"><strong>${esc(input.fromName)}</strong> quiere transferirte una entrada para:</p>
      <p style="margin:0;font-size:18px;font-weight:700">${esc(input.eventTitle)}</p>
-     <p style="margin:2px 0 0;color:#62655f">${esc(when)} · ${esc(input.venueName)}</p>
+     <p style="margin:2px 0 0;color:${MUTED}">${esc(when)} · ${esc(input.venueName)}</p>
      <p style="margin:6px 0 0;font-weight:700">${esc(what)}</p>
      <p style="margin:26px 0">${button(input.link, "Ver y aceptar la entrada")}</p>
-     <p style="color:#62655f;font-size:13px;line-height:1.5">Hola ${esc(input.name)}: si la aceptas, la entrada pasa a tu cuenta con tu nombre y tu carnet, y el QR anterior deja de valer. La oferta vale ${input.hours} horas. Si no la conoces o no la quieres, ignora este correo.</p>`,
+     <p style="color:${MUTED};font-size:13px;line-height:1.5">Hola ${esc(input.name)}: si la aceptas, la entrada pasa a tu cuenta con tu nombre y tu carnet, y el QR anterior deja de valer. La oferta vale ${input.hours} horas. Si no la conoces o no la quieres, ignora este correo.</p>`,
   );
   const text = `Hola ${input.name},
 
@@ -252,7 +255,7 @@ export function transferAcceptedMessage(input: { to: string; name: string; toNam
     `${input.toName} aceptó la entrada.`,
     `<h1 style="margin:0 0 12px;font-size:24px">Transferencia lista</h1>
      <p style="line-height:1.55">Hola ${esc(input.name)}, <strong>${esc(input.toName)}</strong> aceptó tu entrada <strong>${esc(input.typeName)}</strong> para <strong>${esc(input.eventTitle)}</strong>.</p>
-     <p style="line-height:1.55;color:#62655f">La entrada ya no está en tu cuenta y tu QR anterior dejó de valer.</p>`,
+     <p style="line-height:1.55;color:${MUTED}">La entrada ya no está en tu cuenta y tu QR anterior dejó de valer.</p>`,
   );
   const text = `Hola ${input.name},
 

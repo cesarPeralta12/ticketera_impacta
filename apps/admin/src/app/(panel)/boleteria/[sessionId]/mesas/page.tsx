@@ -14,7 +14,7 @@ type Props = { params: Promise<{ sessionId: string }> };
 const STATUS: Record<TableLiveStatus, { text: string; card: string; badge: string }> = {
   FREE: { text: "Libre", card: "border-[var(--border)]", badge: "bg-[var(--surface-2)] text-[var(--ink-dim)]" },
   SOLD: { text: "Vendida", card: "border-[var(--warn)]/50 bg-[var(--warn-soft)]", badge: "bg-[var(--warn)] text-white" },
-  OCCUPIED: { text: "Ocupada", card: "border-[var(--accent)]/60 bg-[var(--accent-soft)]", badge: "bg-[var(--accent)] text-white" },
+  OCCUPIED: { text: "Ocupada", card: "border-[var(--success)]/60 bg-[var(--success-soft)]", badge: "bg-[var(--success)] text-white" },
 };
 
 /** Para anfitriones: cada mesa con su estado (libre, vendida, ocupada), quién la compró, cuántos entraron y su consumo. */
@@ -74,7 +74,7 @@ export default async function TablesPage({ params }: Props) {
                         <strong>{t.name}</strong>
                         <span className={`badge ${STATUS[t.status].badge}`}>{STATUS[t.status].text}</span>
                       </div>
-                      {t.held && <p className="text-xs font-medium text-[#7c3aed]">Apartada: {t.held}</p>}
+                      {t.held && <p className="text-xs font-medium text-[var(--accent-hover)]">Apartada: {t.held}</p>}
                       {t.chairs && (
                         <p className="text-xs text-[var(--ink-muted)]">
                           {t.chairs.sold} de {t.chairs.total} sillas vendidas

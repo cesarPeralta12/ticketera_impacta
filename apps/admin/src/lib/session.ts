@@ -30,6 +30,12 @@ export const HOME_BY_ROLE: Record<StaffRole, string> = {
 /** Organizador en el que está trabajando un administrador de IMPACTA ("Entrar como"). */
 export const VIEW_AS_COOKIE = "impacta-ver-como";
 
+/** Vista previa dentro de un organizador: el panel como lo ve una de sus cuentas, sin poder cambiar nada. */
+export const PREVIEW_ROLE_COOKIE = "impacta-ver-como-rol";
+export const PREVIEW_ROLES = ["ADMIN", "CASHIER"] as const satisfies StaffRole[];
+export type PreviewRole = (typeof PREVIEW_ROLES)[number];
+export const PREVIEW_LABEL: Record<PreviewRole, string> = { ADMIN: "el organizador", CASHIER: "un cajero" };
+
 /**
  * Usuario actual verificado contra la base, o null (para route handlers que responden JSON).
  *
@@ -58,13 +64,16 @@ export async function currentStaff() {
 
   let organization = home;
   let viewingAs: typeof home | null = null;
+  let preview: PreviewRole | null = null;
   if (platform) {
-    const viewId = (await cookies()).get(VIEW_AS_COOKIE)?.value;
+    const jar = await cookies();
+    const viewId = jar.get(VIEW_AS_COOKIE)?.value;
     if (viewId && viewId !== home.id) {
       const target = await prisma.organization.findUnique({ where: { id: viewId } });
       if (target && !target.isPlatform) {
         organization = target;
         viewingAs = target;
+        preview = PREVIEW_ROLES.find((r) => r === jar.get(PREVIEW_ROLE_COOKIE)?.value) ?? null;
       }
     }
   }
@@ -73,14 +82,17 @@ export async function currentStaff() {
     id: session.user.id,
     name: membership.user.name,
     email: membership.user.email,
-    role: membership.role,
+    // En la vista previa, el rol de la cuenta que se está mirando (el menú y los permisos son los suyos).
+    role: preview ?? membership.role,
     mustChangePassword: membership.user.mustChangePassword,
     organization,
     /** Su propia organización (para IMPACTA, aunque esté viendo un organizador). */
     home,
-    platform,
+    platform: platform && !preview,
     /** El organizador en el que entró un administrador de IMPACTA, o null. */
     viewingAs,
+    /** IMPACTA mirando el panel como lo ve una cuenta del organizador (siempre de solo lectura), o null. */
+    preview,
     /** Solo para el rol CLIENT. */
     client: viewingAs ? null : membership.client,
     /**
@@ -88,7 +100,7 @@ export async function currentStaff() {
      * ingresos, reportes) pero no cambian nada; crear y modificar es solo de IMPACTA (también cuando entra en
      * un organizador). El personal de operación (cajero y portero) sigue vendiendo, cobrando y leyendo QR.
      */
-    readOnly: !platform && (membership.role === "OWNER" || membership.role === "ADMIN" || membership.role === "CLIENT"),
+    readOnly: preview !== null || (!platform && (membership.role === "OWNER" || membership.role === "ADMIN" || membership.role === "CLIENT")),
   };
 }
 
@@ -109,7 +121,7 @@ export async function requireStaff(allowed: StaffRole[] = ROLES.manage): Promise
   return staff;
 }
 
-export const READ_ONLY_MESSAGE = "Tu cuenta es de solo lectura: los cambios los hace Impacta.";
+export const READ_ONLY_MESSAGE = "Tu cuenta es de solo lectura: los cambios los hace iPass.";
 
 /** Una cuenta de solo lectura intentó cambiar algo (la interfaz no lo ofrece: llegó por otro lado). */
 export class ReadOnlyError extends Error {

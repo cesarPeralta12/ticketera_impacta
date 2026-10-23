@@ -80,15 +80,15 @@ export function EventFields({
           <span>
             Evento pequeño
             <span className="block text-xs font-normal text-[var(--ink-dim)]">
-              Peñas, recitales íntimos, obras o fiestas con pocos cupos: además de la portada, aparece en la sección «Eventos pequeños» de la web.
+              Peñas, recitales íntimos, obras o fiestas con pocos cupos: además de la portada, aparece con el filtro «Eventos pequeños» de la web.
             </span>
           </span>
         </label>
         {clients && (
           <label className="label">
-            Cliente (Impacta opera el evento)
+            Cliente (iPass opera el evento)
             <select name="clientId" defaultValue={defaults?.clientId ?? ""} className="field">
-              <option value="">IMPACTA (evento propio)</option>
+              <option value="">iPass (evento propio)</option>
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}

@@ -48,13 +48,14 @@ export async function GlobalDashboard({ name }: { name: string }) {
       }),
     ]);
 
+  // Color según la función: azul = estructura, ámbar = a la venta o pendiente, magenta = ventas e ingresos.
   const stats = [
-    { label: "Organizadores activos", value: organizers, href: "/organizadores" },
-    { label: "Eventos a la venta", value: onSale },
-    { label: "Esperando aprobación", value: pending, href: "/aprobaciones", warn: pending > 0 },
-    { label: "Ventas de hoy", value: `${salesToday} · ${formatMoney(revenueToday._sum.totalAmount ?? 0, DEFAULT_CURRENCY)}`, href: "/ordenes" },
-    { label: "Entradas emitidas", value: tickets },
-    { label: "Ingresos hoy en puerta", value: entriesToday, href: "/ingresos" },
+    { label: "Organizadores activos", value: organizers, href: "/organizadores", tone: "blue" },
+    { label: "Eventos a la venta", value: onSale, tone: "amber" },
+    { label: "Esperando aprobación", value: pending, href: "/aprobaciones", warn: pending > 0, tone: "amber" },
+    { label: "Ventas de hoy", value: `${salesToday} · ${formatMoney(revenueToday._sum.totalAmount ?? 0, DEFAULT_CURRENCY)}`, href: "/ordenes", tone: "magenta" },
+    { label: "Entradas emitidas", value: tickets, tone: "blue" },
+    { label: "Ingresos hoy en puerta", value: entriesToday, href: "/ingresos", tone: "magenta" },
   ];
 
   return (
@@ -79,11 +80,11 @@ export async function GlobalDashboard({ name }: { name: string }) {
             </>
           );
           return s.href ? (
-            <Link key={s.label} href={s.href} className="card p-4 transition-colors hover:border-[var(--accent)]">
+            <Link key={s.label} href={s.href} className={`card tone-${s.tone} p-4 transition-colors hover:border-[var(--accent)]`}>
               {body}
             </Link>
           ) : (
-            <div key={s.label} className="card p-4">
+            <div key={s.label} className={`card tone-${s.tone} p-4`}>
               {body}
             </div>
           );
@@ -169,7 +170,7 @@ export async function GlobalDashboard({ name }: { name: string }) {
                     </span>
                   </span>
                   <span className="text-right text-xs">
-                    <span className={s.result === "ACCEPTED" ? "font-medium text-[var(--accent)]" : "font-medium text-[var(--danger)]"}>
+                    <span className={s.result === "ACCEPTED" ? "font-medium text-[var(--success)]" : "font-medium text-[var(--danger)]"}>
                       {SCAN_LABEL[s.result]}
                     </span>
                     <span className="block text-[var(--ink-dim)]">{formatTime(s.scannedAt, s.session.venue.timezone)}</span>

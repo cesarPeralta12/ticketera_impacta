@@ -15,10 +15,10 @@ type Props = { params: Promise<{ id: string; sessionId: string; batchId: string 
 
 const STATE_CLASS: Record<PrintStateName, string> = {
   STOCK: "bg-[var(--surface-2)] text-[var(--ink-muted)]",
-  ASSIGNED: "bg-[#e8eefc] text-[#3b5bb5]",
-  SOLD: "bg-[var(--accent-soft)] text-[var(--accent)]",
+  ASSIGNED: "bg-[var(--info-soft)] text-[var(--info)]",
+  SOLD: "bg-[var(--success-soft)] text-[var(--success)]",
   RETURNED: "bg-[var(--warn-soft)] text-[var(--warn)]",
-  VOID: "bg-[#fde8e8] text-[var(--danger)]",
+  VOID: "bg-[var(--danger-soft)] text-[var(--danger)]",
 };
 
 /** Un lote de entradas impresas: imprimir, entregar a vendedores, vender, devolver, anular y rendir. */
@@ -62,7 +62,7 @@ export default async function PrintBatchPage({ params }: Props) {
           {first} a {last} · precio de referencia {money(batch.unitAmount)} · creado por {batch.createdBy.name} el {formatDateTime(batch.createdAt, tz)}
           {batch.art && ` · diseño "${batch.art.name}"`}
         </p>
-        <p className={`mt-2 w-fit rounded-md px-3 py-1.5 text-sm ${activate ? "bg-[var(--accent-soft)] text-[var(--accent)]" : "bg-[var(--warn-soft)] text-[var(--warn)]"}`}>
+        <p className={`mt-2 w-fit rounded-md px-3 py-1.5 text-sm ${activate ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--warn-soft)] text-[var(--warn)]"}`}>
           {activate
             ? "Activadas al vender: una entrada abre la puerta recién cuando se marca vendida. Una fotocopia o una sin vender no pasa."
             : "Válidas desde que se imprimen: cualquiera de estas entradas abre la puerta (una fotocopia también)."}
@@ -238,7 +238,7 @@ export default async function PrintBatchPage({ params }: Props) {
                     <td className="py-2 pr-4 text-right font-mono">{s.returned}</td>
                     <td className="py-2 pr-4 text-right font-mono">{money(s.soldAmount)}</td>
                     <td className="py-2 pr-4 text-right font-mono">{money(s.received)}</td>
-                    <td className={`py-2 text-right font-mono ${s.pending > 0 ? "text-[var(--warn)]" : s.pending < 0 ? "text-[var(--accent)]" : ""}`}>{money(s.pending)}</td>
+                    <td className={`py-2 text-right font-mono ${s.pending > 0 ? "text-[var(--warn)]" : s.pending < 0 ? "text-[var(--success)]" : ""}`}>{money(s.pending)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -280,7 +280,7 @@ export default async function PrintBatchPage({ params }: Props) {
               <li key={s.id} className="text-[var(--ink-muted)]">
                 {formatDateTime(s.createdAt, tz)} · <strong className="text-[var(--ink)]">{s.seller}</strong> entregó {money(s.receivedAmount)} de {money(s.expectedAmount)}
                 {s.receivedAmount !== s.expectedAmount && (
-                  <span className={s.receivedAmount < s.expectedAmount ? "text-[var(--danger)]" : "text-[var(--accent)]"}>
+                  <span className={s.receivedAmount < s.expectedAmount ? "text-[var(--danger)]" : "text-[var(--success)]"}>
                     {" "}
                     ({s.receivedAmount < s.expectedAmount ? "faltan" : "sobran"} {money(Math.abs(s.receivedAmount - s.expectedAmount))})
                   </span>

@@ -58,7 +58,7 @@ const eventSchema = z.object({
     .literal("on")
     .optional()
     .transform((v) => v === "on"),
-  /** Casilla "evento pequeño": sale también en la sección "Eventos pequeños" de la web. */
+  /** Casilla "evento pequeño": sale también con el filtro "Eventos pequeños" de la web. */
   small: z
     .literal("on")
     .optional()

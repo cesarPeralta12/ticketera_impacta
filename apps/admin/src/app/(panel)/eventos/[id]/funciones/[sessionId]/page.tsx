@@ -53,8 +53,8 @@ import { ROLES, requireStaff } from "@/lib/session";
 export const metadata: Metadata = { title: "Función" };
 
 const SALE_STATE: Record<SaleState, { text: string; className: string }> = {
-  open: { text: "A la venta", className: "bg-[var(--accent-soft)] text-[var(--accent)]" },
-  scheduled: { text: "Programada", className: "bg-[#e8eefc] text-[#3b5bb5]" },
+  open: { text: "A la venta", className: "bg-[var(--success-soft)] text-[var(--success)]" },
+  scheduled: { text: "Programada", className: "bg-[var(--info-soft)] text-[var(--info)]" },
   closed: { text: "Terminada", className: "bg-[var(--surface-2)] text-[var(--ink-dim)]" },
 };
 
@@ -69,14 +69,14 @@ type Tab = (typeof TABS)[number]["key"];
 type Props = { params: Promise<{ id: string; sessionId: string }>; searchParams: Promise<{ tab?: string }> };
 
 /** Acceso rápido: ícono de color, nombre, un dato y una línea corta. */
-function Shortcut({ href, icon, label, note, value, tone, primary }: { href: string; icon: NavIcon; label: string; note: string; value?: string; tone: string; primary?: boolean }) {
+function Shortcut({ href, icon, label, note, value, tone, primary }: { href: string; icon: NavIcon; label: string; note: string; value?: string; tone: "blue" | "magenta" | "amber"; primary?: boolean }) {
   return (
     <Link
       href={href}
       className={`card group flex items-center gap-3 p-3.5 ${primary ? "border-[var(--accent)]" : ""}`}
       title={note}
     >
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white shadow-sm" style={{ background: tone }}>
+      <span className={`tone-${tone} tone-tile flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-sm`}>
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d={ICONS[icon]} />
         </svg>
@@ -153,10 +153,10 @@ export default async function SessionPage({ params, searchParams }: Props) {
   const boxOffice = !guestList && session.event.status === "PUBLISHED" && !session.cancelledAt && salesCutoff(session, "POS") > now;
 
   const stats = [
-    { label: "Entradas emitidas", value: issued, of: capacity > 0 ? `de ${capacity.toLocaleString("es-BO")}` : null },
-    { label: "Ya ingresaron", value: entered, of: issued > 0 ? `${Math.round((entered / issued) * 100)}%` : null },
-    { label: guestList ? "Invitados" : "Invitaciones", value: guests, of: null },
-    ...(!guestList && seatedSections.length > 0 ? [{ label: "Lugares apartados", value: held, of: null }] : []),
+    { label: "Entradas emitidas", value: issued, of: capacity > 0 ? `de ${capacity.toLocaleString("es-BO")}` : null, tone: "blue" },
+    { label: "Ya ingresaron", value: entered, of: issued > 0 ? `${Math.round((entered / issued) * 100)}%` : null, tone: "magenta" },
+    { label: guestList ? "Invitados" : "Invitaciones", value: guests, of: null, tone: "amber" },
+    ...(!guestList && seatedSections.length > 0 ? [{ label: "Lugares apartados", value: held, of: null, tone: "blue" }] : []),
   ];
 
   return (
@@ -176,7 +176,7 @@ export default async function SessionPage({ params, searchParams }: Props) {
 
       <dl className="stats grid grid-cols-2 gap-3 lg:grid-cols-4">
         {stats.map((s) => (
-          <div key={s.label} className="card p-4">
+          <div key={s.label} className={`card tone-${s.tone} p-4`}>
             <dt className="eyebrow">{s.label}</dt>
             <dd className="mt-1 flex items-baseline gap-1.5">
               <span className="text-2xl font-semibold tabular-nums">
@@ -189,21 +189,21 @@ export default async function SessionPage({ params, searchParams }: Props) {
       </dl>
 
       <section aria-label="Accesos rápidos" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Shortcut href={`${base}/en-vivo`} icon="door" label="Ingreso en vivo" note="Mapa y lecturas de las puertas al momento" tone="var(--grad-accent)" primary />
-        {boxOffice && <Shortcut href={`/boleteria/${session.id}`} icon="ticket" label="Boletería" note="Vender en la puerta o en un punto de venta" tone="var(--brand-yellow)" />}
+        <Shortcut href={`${base}/en-vivo`} icon="door" label="Ingreso en vivo" note="Mapa y lecturas de las puertas al momento" tone="magenta" primary />
+        {boxOffice && <Shortcut href={`/boleteria/${session.id}`} icon="ticket" label="Boletería" note="Vender en la puerta o en un punto de venta" tone="amber" />}
         <Shortcut
           href={`${base}/invitados`}
           icon="users"
           label={guestList ? "Lista de invitados" : "Invitaciones"}
           note={guestList ? "Carga a los invitados: cada uno recibe su QR" : "Cortesías con QR propio"}
           value={`${guests}`}
-          tone="var(--brand-pink)"
+          tone="magenta"
         />
         {!guestList && seatedSections.length > 0 && (
-          <Shortcut href={`${base}/retenciones`} icon="tag" label="Retenciones" note="Aparta lugares con un código" value={`${held}`} tone="var(--brand-purple)" />
+          <Shortcut href={`${base}/retenciones`} icon="tag" label="Retenciones" note="Aparta lugares con un código" value={`${held}`} tone="blue" />
         )}
-        {hasTables && <Shortcut href={`/boleteria/${session.id}/mesas`} icon="map" label="Mesas (anfitriones)" note="Cada mesa en vivo: libre, vendida u ocupada" tone="var(--brand-blue)" />}
-        {nightlife && hasConsumption && <Shortcut href={`/barra/${session.id}`} icon="glass" label="Barra (consumos)" note="Descuenta el consumo de mesas y entradas" tone="var(--brand-orange)" />}
+        {hasTables && <Shortcut href={`/boleteria/${session.id}/mesas`} icon="map" label="Mesas (anfitriones)" note="Cada mesa en vivo: libre, vendida u ocupada" tone="blue" />}
+        {nightlife && hasConsumption && <Shortcut href={`/barra/${session.id}`} icon="glass" label="Barra (consumos)" note="Descuenta el consumo de mesas y entradas" tone="amber" />}
       </section>
 
       <nav aria-label={`Secciones de ${noun.the}`} className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-[var(--border)]">
@@ -265,10 +265,10 @@ export default async function SessionPage({ params, searchParams }: Props) {
                             <span className="flex flex-wrap items-center gap-2">
                               <span className="font-medium">{t.name}</span>
                               {t.presale && <span className="badge bg-[var(--warn-soft)] text-[var(--warn)]">preventa</span>}
-                              {t.qrMode === "DYNAMIC" && <span className="badge bg-[#e8eefc] text-[#3b5bb5]">QR dinámico</span>}
-                              {t.kind === "TABLE" && <span className="badge bg-[#f3e8ff] text-[#7b2fbf]">mesa · {t.peoplePerUnit} personas</span>}
+                              {t.qrMode === "DYNAMIC" && <span className="badge bg-[var(--info-soft)] text-[var(--info)]">QR dinámico</span>}
+                              {t.kind === "TABLE" && <span className="badge bg-[var(--accent-soft)] text-[var(--accent-hover)]">mesa · {t.peoplePerUnit} personas</span>}
                               {t.maxEntries !== 1 && (
-                                <span className="badge bg-[#e6f6ff] text-[#0b6aa2]">{t.maxEntries === 0 ? "con reingreso" : `${t.maxEntries} ingresos`}</span>
+                                <span className="badge bg-[var(--info-soft)] text-[var(--info)]">{t.maxEntries === 0 ? "con reingreso" : `${t.maxEntries} ingresos`}</span>
                               )}
                             </span>
                             <span className="mt-0.5 block text-xs text-[var(--ink-muted)]">

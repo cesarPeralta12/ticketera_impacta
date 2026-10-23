@@ -46,13 +46,21 @@ describe("importar entradas desde Excel", () => {
     expect(batch.validRows).toBe(3);
     expect((await getSessionAvailability(session.id)).get(types[0]!.id)).toBe(3);
 
-    // Con errores no se confirma, salvo dejándolos fuera.
+    // Con un error no se emite nada, ni las filas buenas: se corrige el archivo y se vuelve a subir.
     await expect(confirmImport({ batchId: batch.id, staffId: s.id })).rejects.toMatchObject({ code: "INVALID_ITEMS" });
-    await confirmImport({ batchId: batch.id, staffId: s.id, skipErrors: true });
-    expect((await getSessionAvailability(session.id)).get(types[0]!.id)).toBe(0);
-    await expect(confirmImport({ batchId: batch.id, staffId: s.id, skipErrors: true })).rejects.toMatchObject({ code: "INVALID_STATE" });
+    expect(await prisma.order.count({ where: { importBatchId: batch.id } })).toBe(0);
+    expect((await getSessionAvailability(session.id)).get(types[0]!.id)).toBe(3);
 
-    const orders = await prisma.order.findMany({ where: { importBatchId: batch.id }, include: { tickets: true }, orderBy: { buyerName: "asc" } });
+    const fixed = await draft(session.eventId, s.id, [
+      ["", "General", "Ana Pérez", "111", "ana@prueba.test", "", "150"],
+      ["", "General", "Juan Soto", "", "", "B-4", ""],
+      ["", "General", "Rosa Vera", "", "", "", ""],
+    ]);
+    await confirmImport({ batchId: fixed.id, staffId: s.id });
+    expect((await getSessionAvailability(session.id)).get(types[0]!.id)).toBe(0);
+    await expect(confirmImport({ batchId: fixed.id, staffId: s.id })).rejects.toMatchObject({ code: "INVALID_STATE" });
+
+    const orders = await prisma.order.findMany({ where: { importBatchId: fixed.id }, include: { tickets: true }, orderBy: { buyerName: "asc" } });
     expect(orders.map((o) => [o.buyerName, o.channel, o.status, o.totalAmount, o.tickets.length])).toEqual([
       ["Ana Pérez", "IMPORT", "PAID", 15_000, 1],
       ["Juan Soto", "IMPORT", "PAID", 0, 1],
@@ -98,8 +106,12 @@ describe("importar entradas desde Excel", () => {
       [5, "A-1 está repetida (fila 2)."],
       [6, "A-2 ya está vendida o reservada."],
     ]);
-    await confirmImport({ batchId: batch.id, staffId: s.id, skipErrors: true });
-    const tickets = await prisma.ticket.findMany({ where: { order: { importBatchId: batch.id } }, include: { seat: true } });
+    const fixed = await draft(session.eventId, s.id, [
+      ["1", "Platea", "Ana Pérez", "", "", "A 1", ""],
+      ["1", "Platea", "Mario Paz", "", "", "A3", ""],
+    ]);
+    await confirmImport({ batchId: fixed.id, staffId: s.id });
+    const tickets = await prisma.ticket.findMany({ where: { order: { importBatchId: fixed.id } }, include: { seat: true } });
     expect(tickets.map((t) => t.seat?.label).sort()).toEqual(["A-1", "A-3"]);
   });
 
@@ -114,8 +126,12 @@ describe("importar entradas desde Excel", () => {
     ]);
     expect((batch.errors as { message: string }[])[0]!.message).toContain("mesa 3");
     expect(batch.ticketCount).toBe(8);
-    await confirmImport({ batchId: batch.id, staffId: s.id, skipErrors: true });
-    const credits = await prisma.consumptionCredit.findMany({ where: { order: { importBatchId: batch.id } }, include: { tickets: true }, orderBy: { tableNumber: "asc" } });
+    const fixed = await draft(session.eventId, s.id, [
+      ["", "Mesa VIP", "Ana Pérez", "", "", "Mesa 3", "1200"],
+      ["", "Mesa VIP", "Luis Rojas", "", "", "", ""],
+    ]);
+    await confirmImport({ batchId: fixed.id, staffId: s.id });
+    const credits = await prisma.consumptionCredit.findMany({ where: { order: { importBatchId: fixed.id } }, include: { tickets: true }, orderBy: { tableNumber: "asc" } });
     expect(credits.map((c) => [c.tableNumber, c.tickets.length, c.amount])).toEqual([
       [3, 4, 50_000],
       [4, 4, 50_000],
@@ -153,5 +169,24 @@ describe("importar entradas desde Excel", () => {
       expect.stringContaining("QR dinámico"),
       "Falta la función (el evento tiene varias).",
     ]);
+  });
+
+  it("un archivo grande se emite por bloques: cada fila con su orden, su línea y su entrada", async () => {
+    const total = 1_200; // más de dos bloques
+    const { session, types } = await createGeneralAdmissionEvent({ sectionCapacity: total, types: [{ name: "General", capacity: total }] });
+    const s = await staff();
+    const batch = await draft(
+      session.eventId,
+      s.id,
+      Array.from({ length: total }, (_, i) => ["", "General", `Persona ${i + 1}`, String(5_000_000 + i), "", "", i % 2 ? "80" : ""]),
+    );
+    await confirmImport({ batchId: batch.id, staffId: s.id });
+
+    const orders = await prisma.order.findMany({ where: { importBatchId: batch.id }, include: { items: true, tickets: true } });
+    expect(orders).toHaveLength(total);
+    expect(orders.every((o) => o.items.length === 1 && o.tickets.length === 1 && o.tickets[0]!.orderItemId === o.items[0]!.id)).toBe(true);
+    expect(orders.every((o) => o.tickets[0]!.holderName === o.buyerName && o.channel === "IMPORT" && o.status === "PAID")).toBe(true);
+    expect(orders.reduce((sum, o) => sum + o.totalAmount, 0)).toBe((total / 2) * 8_000);
+    expect((await getSessionAvailability(session.id)).get(types[0]!.id)).toBe(0);
   });
 });

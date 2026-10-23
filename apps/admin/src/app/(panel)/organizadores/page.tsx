@@ -63,9 +63,9 @@ export default async function OrganizersPage({ searchParams }: Props) {
         <p className="eyebrow">{organizers.length} organizador(es)</p>
         <h1 className="text-2xl font-semibold tracking-tight">{kind === "NIGHTLIFE" ? "Boliches" : kind === "EVENTS" ? "Organizadores de eventos" : "Organizadores"}</h1>
         <p className="text-sm text-[var(--ink-muted)]">
-          Clientes a los que Impacta les da el servicio: organizadores de eventos y boliches. Cada uno tiene su panel de{" "}
+          Clientes a los que iPass les da el servicio: organizadores de eventos y boliches. Cada uno tiene su panel de{" "}
           <strong>solo lectura</strong>: ve en vivo sus eventos (o noches), ventas, compradores, ingresos y reportes, sin
-          ver nada de los demás. Todo lo que se crea o cambia lo hace Impacta: entra con &ldquo;Entrar&rdquo; y trabaja
+          ver nada de los demás. Todo lo que se crea o cambia lo hace iPass: entra con &ldquo;Entrar&rdquo; y trabaja
           dentro de su panel.
         </p>
       </div>
@@ -110,7 +110,7 @@ export default async function OrganizersPage({ searchParams }: Props) {
                     {o.name}
                   </Link>
                   <span
-                    className={`badge ml-2 ${o.kind === "NIGHTLIFE" ? "bg-[#f3e8ff] text-[#7b2fbf]" : "bg-[#e8eefc] text-[#3b5bb5]"}`}
+                    className={`badge ml-2 ${o.kind === "NIGHTLIFE" ? "bg-[var(--accent-soft)] text-[var(--accent-hover)]" : "bg-[var(--info-soft)] text-[var(--info)]"}`}
                   >
                     {o.kind === "NIGHTLIFE" ? "boliche" : "eventos"}
                   </span>
@@ -138,7 +138,7 @@ export default async function OrganizersPage({ searchParams }: Props) {
                 <td className="px-5 py-3 text-right font-mono">{formatMoney(o.revenue, o.currency)}</td>
                 <td className="px-5 py-3">
                   <span
-                    className={`badge ${o.status === "ACTIVE" ? "bg-[var(--accent-soft)] text-[var(--accent)]" : "bg-[var(--danger-soft)] text-[var(--danger)]"}`}
+                    className={`badge ${o.status === "ACTIVE" ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--danger-soft)] text-[var(--danger)]"}`}
                   >
                     {o.status === "ACTIVE" ? "Activo" : "Suspendido"}
                   </span>
@@ -174,7 +174,7 @@ export default async function OrganizersPage({ searchParams }: Props) {
 function NewOrganizerForm({ kind }: { kind: Kind }) {
   const nightlife = kind === "NIGHTLIFE";
   return (
-    <section className={`card p-6 ${nightlife ? "border-[#c04bff]/40" : ""}`}>
+    <section data-tour="nuevo-organizador" className={`card p-6 ${nightlife ? "border-[var(--accent)]/40" : ""}`}>
       <h2 className="eyebrow mb-1">{nightlife ? "Nuevo usuario de boliche" : "Nuevo usuario de eventos"}</h2>
       <p className="mb-4 text-sm text-[var(--ink-muted)]">
         {nightlife

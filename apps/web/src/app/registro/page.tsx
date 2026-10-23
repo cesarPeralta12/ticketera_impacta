@@ -17,7 +17,7 @@ export default async function RegisterPage({ searchParams }: Props) {
       <AuthForm mode="register" next={next} />
       <p className="text-sm text-[var(--ink-muted)]">
         ¿Ya tienes cuenta?{" "}
-        <Link href="/login" className="text-[var(--accent)] underline underline-offset-4">
+        <Link href="/login" className="text-[var(--accent-text)] underline underline-offset-4">
           Inicia sesión
         </Link>
       </p>

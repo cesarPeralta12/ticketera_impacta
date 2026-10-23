@@ -2,8 +2,8 @@ import { isTablesLayout } from "@ticketera/core";
 
 /** Etiquetas de estado del panel. */
 export const EVENT_STATUS = {
-  PUBLISHED: { text: "Publicado", className: "bg-[var(--accent-soft)] text-[var(--accent)]" },
-  PENDING_REVIEW: { text: "En revisión", className: "bg-[#e8eefc] text-[#3b5bb5]" },
+  PUBLISHED: { text: "Publicado", className: "bg-[var(--success-soft)] text-[var(--success)]" },
+  PENDING_REVIEW: { text: "En revisión", className: "bg-[var(--info-soft)] text-[var(--info)]" },
   DRAFT: { text: "Borrador", className: "bg-[var(--warn-soft)] text-[var(--warn)]" },
   CANCELLED: { text: "Cancelado", className: "bg-[var(--surface-2)] text-[var(--ink-dim)]" },
 } as const;
@@ -57,14 +57,14 @@ export const DIRECTION_LABEL = { IN: "Entrada", OUT: "Salida", BOTH: "Entrada y 
 export const ACCESS_METHOD_LABEL = { QR: "QR", BARCODE: "Código de barras", NFC: "NFC" } as const;
 
 export const TICKET_STATUS = {
-  VALID: { text: "Válida", className: "bg-[var(--accent-soft)] text-[var(--accent)]" },
+  VALID: { text: "Válida", className: "bg-[var(--success-soft)] text-[var(--success)]" },
   USED: { text: "Ingresó", className: "bg-[var(--surface-2)] text-[var(--ink)]" },
   CANCELLED: { text: "Anulada", className: "bg-[var(--danger-soft)] text-[var(--danger)]" },
 } as const;
 
 export const IMPORT_STATUS = {
   DRAFT: { text: "Por confirmar", className: "bg-[var(--warn-soft)] text-[var(--warn)]" },
-  CONFIRMED: { text: "Importada", className: "bg-[var(--accent-soft)] text-[var(--accent)]" },
+  CONFIRMED: { text: "Importada", className: "bg-[var(--success-soft)] text-[var(--success)]" },
   UNDONE: { text: "Deshecha", className: "bg-[var(--danger-soft)] text-[var(--danger)]" },
   DISCARDED: { text: "Descartada", className: "bg-[var(--surface-2)] text-[var(--ink-dim)]" },
 } as const;

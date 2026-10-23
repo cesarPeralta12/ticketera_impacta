@@ -42,7 +42,7 @@ export function EventStub({ event, now, eager = false }: { event: EventCard; now
           className={`h-full w-full object-cover transition-transform duration-500 group-hover:scale-105 ${soldOut ? "grayscale" : ""}`}
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[var(--bg-raised)] via-transparent to-transparent" />
-        <span className="absolute left-3 top-3 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide" style={{ background: color, color: "#0b0b10" }}>
+        <span className="absolute left-3 top-3 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide" style={{ background: color, color: "#192438" }}>
           {CATEGORY_LABEL[event.category] ?? "Evento"}
         </span>
         {event.sales.onSale && event.sales.discountPercent ? (
@@ -59,13 +59,13 @@ export function EventStub({ event, now, eager = false }: { event: EventCard; now
           {event.nextSession.venue.city && ` · ${event.nextSession.venue.city}`}
         </p>
         <BadgeList badges={badges} />
-        {offer && <p className="text-xs font-semibold text-[var(--accent)]">{offer}</p>}
+        {offer && <p className="text-xs font-semibold text-[var(--accent-text)]">{offer}</p>}
       </div>
 
       <div className="stub-foot flex items-center gap-4 px-4">
         <div className="flex w-12 shrink-0 flex-col items-center leading-none">
           <span className="font-display text-3xl text-[var(--ink)]">{day}</span>
-          <span className="mt-0.5 text-[11px] font-bold uppercase tracking-widest text-[var(--accent)]">{month}</span>
+          <span className="mt-0.5 text-[11px] font-bold uppercase tracking-widest text-[var(--accent-text)]">{month}</span>
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs text-[var(--ink-muted)]">
@@ -81,7 +81,7 @@ export function EventStub({ event, now, eager = false }: { event: EventCard; now
               {event.listAmount !== null && (
                 <p className="text-[11px] text-[var(--ink-dim)] line-through">{formatMoney(event.listAmount, event.minPrice.currency)}</p>
               )}
-              <p className="font-display text-lg text-[var(--accent)]">{formatMoney(event.minPrice.unitAmount, event.minPrice.currency)}</p>
+              <p className="font-display text-lg text-[var(--accent-text)]">{formatMoney(event.minPrice.unitAmount, event.minPrice.currency)}</p>
             </>
           ) : (
             <p className="font-display text-lg text-[var(--ink-dim)]">—</p>

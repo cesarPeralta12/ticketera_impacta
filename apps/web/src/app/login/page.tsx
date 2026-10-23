@@ -15,7 +15,7 @@ export default async function LoginPage({ searchParams }: Props) {
         <h1 className="font-display text-3xl">Iniciar sesión</h1>
       </div>
       {cambio === "ok" && (
-        <p role="status" className="rounded-xl border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-4 py-3 text-sm">
+        <p role="status" className="rounded-xl border border-[var(--highlight)]/40 bg-[var(--highlight)]/10 px-4 py-3 text-sm">
           Contraseña cambiada. Ya puedes iniciar sesión con la nueva.
         </p>
       )}
@@ -27,7 +27,7 @@ export default async function LoginPage({ searchParams }: Props) {
       </p>
       <p className="text-sm text-[var(--ink-muted)]">
         ¿No tienes cuenta?{" "}
-        <Link href={`/registro${next ? `?next=${encodeURIComponent(next)}` : ""}`} className="text-[var(--accent)] underline underline-offset-4">
+        <Link href={`/registro${next ? `?next=${encodeURIComponent(next)}` : ""}`} className="text-[var(--accent-text)] underline underline-offset-4">
           Regístrate
         </Link>
         . Para comprar entradas necesitas una cuenta con tu carnet de identidad.

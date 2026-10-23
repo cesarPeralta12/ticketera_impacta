@@ -164,7 +164,7 @@ export async function createTransfer(input: {
   if (!recipient) {
     throw new DomainError(
       "RECIPIENT_NOT_FOUND",
-      "No hay una cuenta con esos datos. Pídele a la persona que cree su cuenta en Impacta (necesita su carnet) y vuelve a intentar.",
+      "No hay una cuenta con esos datos. Pídele a la persona que cree su cuenta en iPass (necesita su carnet) y vuelve a intentar.",
     );
   }
   if (recipient.id === input.fromCustomerId) throw new DomainError("TRANSFER_NOT_ALLOWED", "No puedes transferirte una entrada a ti mismo.");

@@ -297,12 +297,15 @@ export async function createImportDraft(input: {
   });
 }
 
+/** Filas por bloque al emitir: miles de filas una por una tardaban ~30 s con el inventario del evento bloqueado. */
+const IMPORT_CHUNK = 500;
+
 /**
  * Confirma un borrador: en una sola transacción, con el inventario bloqueado, vuelve a revisar butacas y cupo (pudo
  * venderse algo desde la vista previa) y emite todo o nada. Cada fila es una orden pagada del canal IMPORT.
- * `skipErrors`: confirmar aunque haya filas con error, dejándolas fuera.
+ * Con una sola fila con error no se emite nada: se corrige el archivo y se vuelve a subir.
  */
-export async function confirmImport(input: { batchId: string; staffId: string; skipErrors?: boolean; now?: Date }) {
+export async function confirmImport(input: { batchId: string; staffId: string; now?: Date }) {
   const now = input.now ?? new Date();
   return prisma.$transaction(
     async (tx) => {
@@ -313,8 +316,8 @@ export async function confirmImport(input: { batchId: string; staffId: string; s
         throw new DomainError("INVALID_STATE", batch.status === "CONFIRMED" ? "Esta importación ya se confirmó." : "Esta importación ya no se puede confirmar.");
       }
       const errors = batch.errors as ImportIssue[];
-      if (errors.length > 0 && !input.skipErrors) {
-        throw new DomainError("INVALID_ITEMS", `Hay ${errors.length} fila(s) con error: corrígelas y vuelve a subir el archivo, o confirma dejándolas fuera.`);
+      if (errors.length > 0) {
+        throw new DomainError("INVALID_ITEMS", `Hay ${errors.length} fila(s) con error: corrígelas y vuelve a subir el archivo. No se emitió ninguna entrada.`);
       }
       const rows = batch.rows as unknown as ResolvedImportRow[];
       if (rows.length === 0 || batch.validRows === 0) throw new DomainError("INVALID_ITEMS", "No hay filas válidas para importar.");
@@ -345,24 +348,68 @@ export async function confirmImport(input: { batchId: string; staffId: string; s
       }
 
       const byId = new Map(types.map((t) => [t.id, t]));
-      for (const row of rows) {
+      const orderData = (row: ResolvedImportRow, code = randomCode()) => {
+        const type = byId.get(row.ticketTypeId)!;
+        return {
+          code,
+          channel: "IMPORT" as const,
+          issuedById: input.staffId,
+          importBatchId: batch.id,
+          buyerName: row.name,
+          buyerEmail: row.email ?? "",
+          buyerDocument: row.document,
+          status: "PAID" as const,
+          currency: type.currency,
+          subtotalAmount: row.amount,
+          feeAmount: 0,
+          totalAmount: row.amount,
+          expiresAt: now,
+          paidAt: now,
+        };
+      };
+
+      // Una entrada común (sin mesa ni consumo incluido) se emite por bloques: órdenes, líneas y entradas con un
+      // INSERT por bloque. Mesas y consumos abren saldos y numeran mesas: van una por una con issueTickets.
+      const plain = (row: ResolvedImportRow) => {
+        const type = byId.get(row.ticketTypeId)!;
+        return type.kind === "ENTRY" && !type.consumptionAmount;
+      };
+      const simpleRows = rows.filter(plain);
+      for (let start = 0; start < simpleRows.length; start += IMPORT_CHUNK) {
+        const chunk = simpleRows.slice(start, start + IMPORT_CHUNK).map((row) => ({ row, code: randomCode() }));
+        const orders = await tx.order.createManyAndReturn({ data: chunk.map(({ row, code }) => orderData(row, code)), select: { id: true, code: true } });
+        const orderIdByCode = new Map(orders.map((o) => [o.code, o.id]));
+        const lines = chunk.map(({ row, code }) => ({ row, orderId: orderIdByCode.get(code)! }));
+        const items = await tx.orderItem.createManyAndReturn({
+          data: lines.map(({ row, orderId }) => ({
+            orderId,
+            ticketTypeId: row.ticketTypeId,
+            seatId: row.seatId,
+            quantity: 1,
+            unitAmount: row.amount,
+            name: byId.get(row.ticketTypeId)!.name,
+          })),
+          select: { id: true, orderId: true },
+        });
+        const itemIdByOrder = new Map(items.map((i) => [i.orderId, i.id]));
+        await tx.ticket.createMany({
+          data: lines.map(({ row, orderId }) => ({
+            code: randomCode(),
+            orderId,
+            orderItemId: itemIdByOrder.get(orderId)!,
+            ticketTypeId: row.ticketTypeId,
+            sessionId: byId.get(row.ticketTypeId)!.sessionId,
+            seatId: row.seatId,
+            holderName: row.name,
+          })),
+        });
+      }
+
+      for (const row of rows.filter((r) => !plain(r))) {
         const type = byId.get(row.ticketTypeId)!;
         const order = await tx.order.create({
           data: {
-            code: randomCode(),
-            channel: "IMPORT",
-            issuedById: input.staffId,
-            importBatchId: batch.id,
-            buyerName: row.name,
-            buyerEmail: row.email ?? "",
-            buyerDocument: row.document,
-            status: "PAID",
-            currency: type.currency,
-            subtotalAmount: row.amount,
-            feeAmount: 0,
-            totalAmount: row.amount,
-            expiresAt: now,
-            paidAt: now,
+            ...orderData(row),
             items: { create: { ticketTypeId: type.id, seatId: row.seatId, quantity: 1, unitAmount: row.amount, name: type.name } },
           },
           select: { id: true, customerId: true, buyerName: true, items: { select: { id: true, ticketTypeId: true, seatId: true, quantity: true } } },
@@ -380,7 +427,7 @@ export async function confirmImport(input: { batchId: string; staffId: string; s
         action: "import.confirm",
         entity: "ImportBatch",
         entityId: batch.id,
-        data: { orders: rows.length, tickets: batch.ticketCount, skipped: errors.length },
+        data: { orders: rows.length, tickets: batch.ticketCount },
       });
       return confirmed;
     },

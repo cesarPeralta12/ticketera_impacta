@@ -173,7 +173,7 @@ export default async function EntriesPage({ searchParams }: Props) {
                   </td>
                   <td data-label="Resultado" className="px-4 py-2.5">
                     <span
-                      className={`badge ${s.result === "ACCEPTED" ? "bg-[var(--accent-soft)] text-[var(--accent)]" : "bg-[var(--danger-soft)] text-[var(--danger)]"}`}
+                      className={`badge ${s.result === "ACCEPTED" ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--danger-soft)] text-[var(--danger)]"}`}
                     >
                       {s.result === "ACCEPTED" && s.movement && s.movement !== "ENTRY" ? MOVEMENT_LABEL[s.movement] : SCAN_LABEL[s.result]}
                     </span>

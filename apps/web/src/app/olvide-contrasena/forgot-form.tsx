@@ -7,7 +7,7 @@ export function ForgotForm() {
   const [state, formAction, pending] = useActionState(forgotPasswordAction, undefined);
   if (state?.sent) {
     return (
-      <p role="status" className="rounded-xl border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-4 py-3 text-sm">
+      <p role="status" className="rounded-xl border border-[var(--highlight)]/40 bg-[var(--highlight)]/10 px-4 py-3 text-sm">
         Si ese email tiene una cuenta, te enviamos un enlace para cambiar la contraseña. Vale 1 hora. Revisa también la carpeta de spam.
       </p>
     );

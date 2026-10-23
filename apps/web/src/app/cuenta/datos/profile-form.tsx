@@ -36,7 +36,7 @@ export function ProfileForm({
           {state.error}
         </p>
       )}
-      {state?.ok && <p className="text-sm text-[var(--accent)]">Datos guardados.</p>}
+      {state?.ok && <p className="text-sm text-[var(--accent-text)]">Datos guardados.</p>}
       <button type="submit" disabled={pending} className="btn-accent mt-1">
         {pending ? "Guardando…" : next ? "Guardar y continuar" : "Guardar"}
       </button>
@@ -65,7 +65,7 @@ export function PasswordForm({ minLength }: { minLength: number }) {
           {state.error}
         </p>
       )}
-      {state?.ok && <p className="text-sm text-[var(--accent)]">Contraseña cambiada. Te avisamos por correo.</p>}
+      {state?.ok && <p className="text-sm text-[var(--accent-text)]">Contraseña cambiada. Te avisamos por correo.</p>}
       <button type="submit" disabled={pending} className="btn-accent">
         {pending ? "Guardando…" : "Cambiar contraseña"}
       </button>
