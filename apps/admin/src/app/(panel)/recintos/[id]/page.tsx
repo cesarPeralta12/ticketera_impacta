@@ -93,7 +93,7 @@ export default async function VenuePage({ params, searchParams }: Props) {
     .map((s) => ({ id: s.id, name: s.name, color: s.color, capacity: s.capacity, layout: isZoneLayout(s.layout) ? (s.layout as ZoneShape) : null }));
   // Plano real de fondo para calcar (lo ve solo el panel).
   const plan = venue.planImage ? { url: `/recintos/${venue.id}/fondo?v=${venue.planImage.updatedAt.getTime()}`, opacity: venue.planImage.opacity } : null;
-  const backgroundSeats = sections.flatMap((s) => (s.seatingMode === "RESERVED" ? positioned(s.seats).map((p) => ({ ...p, color: s.color })) : []));
+  const backgroundSeats = sections.flatMap((s) => (s.seatingMode === "RESERVED" ? positioned(s.seats).map((p) => ({ ...p, color: s.color, sectionId: s.id })) : []));
 
   const tableSections = sections.filter((s) => isSeatedTablesLayout(s.layout)).length;
   const doorNames = venue.accessPoints.map((g) => g.name);
@@ -352,7 +352,13 @@ export default async function VenuePage({ params, searchParams }: Props) {
               Para cenas, galas o shows con mesas: cada silla es un lugar numerado. Elige si la mesa se vende completa, por silla
               o de N a M sillas. Las secciones de mesas que ya creaste aparecen en &ldquo;Secciones&rdquo;.
             </p>
-            <SeatedTablesDesigner venueId={venue.id} background={backgroundSeats} plan={plan} items={mapItems} />
+            <SeatedTablesDesigner
+              venueId={venue.id}
+              background={backgroundSeats}
+              plan={plan}
+              items={mapItems}
+              existing={sections.flatMap((s) => (isSeatedTablesLayout(s.layout) ? [{ id: s.id, name: s.name, color: s.color, layout: s.layout }] : []))}
+            />
           </section>
         )}
 

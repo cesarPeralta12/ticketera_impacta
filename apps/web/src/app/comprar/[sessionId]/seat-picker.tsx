@@ -7,6 +7,7 @@ import {
   MAP_ITEM_COLOR,
   formatMoney,
   hasStage,
+  mapItemLabel,
   reservadoSize,
   tableHeight,
   zoneLabelPoint,
@@ -135,10 +136,8 @@ export function SeatPicker({
               strokeDasharray={item.kind === "LABEL" ? "6 4" : undefined}
             />
             <text
-              x={item.x + item.width / 2}
-              y={item.y + item.height / 2 + 5}
+              {...mapItemLabel(item)}
               textAnchor="middle"
-              fontSize={Math.min(16, Math.max(10, item.height / 2.6))}
               fontWeight="700"
               letterSpacing="2"
               fill={item.kind === "LABEL" ? "#C3CCDD" : MAP_ITEM_COLOR[item.kind]}

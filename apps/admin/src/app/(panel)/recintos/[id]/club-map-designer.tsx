@@ -14,6 +14,7 @@ import {
   reservadoSize,
   defaultMapItem,
   hasStage,
+  mapItemLabel,
   nextTableNumber,
   zoneLabelPoint,
   zonePath,
@@ -448,6 +449,20 @@ function PlanEditor({
     changed();
   }
 
+  /** Gira el nombre (y la caja, sobre su centro): una puerta en una pared de costado queda parada. */
+  function setVertical(item: MapItem, vertical: boolean) {
+    if (Boolean(item.vertical) === vertical) return;
+    const [cx, cy] = [item.x + item.width / 2, item.y + item.height / 2];
+    const [width, height] = [item.height, item.width];
+    updateItem(item.id, {
+      vertical,
+      width,
+      height,
+      x: Math.round(clamp(cx - width / 2, 0, CANVAS_WIDTH - width)),
+      y: Math.round(clamp(cy - height / 2, 0, CANVAS_HEIGHT - height)),
+    });
+  }
+
   /** Quita lo elegido (los lounges con ventas se pueden mover, no quitar). */
   function removeSelected() {
     const keys = multi.length ? multi : selected ? [keyOf(selected)] : [];
@@ -706,10 +721,8 @@ function PlanEditor({
                 strokeDasharray={isSel || item.kind === "LABEL" ? "6 4" : undefined}
               />
               <text
-                x={item.x + item.width / 2}
-                y={item.y + item.height / 2 + 5}
+                {...mapItemLabel(item)}
                 textAnchor="middle"
-                fontSize={Math.min(16, Math.max(10, item.height / 2.6))}
                 fontWeight="700"
                 letterSpacing="1"
                 fill="#1a1a18"
@@ -833,6 +846,25 @@ function PlanEditor({
             {MAP_ITEM_LABEL[selectedItem.kind]}: texto
             <input value={selectedItem.label} maxLength={30} onChange={(e) => updateItem(selectedItem.id, { label: e.target.value })} className="field w-48" />
           </label>
+          <div className="label">
+            Texto
+            <div className="flex h-[38px] items-center gap-1 rounded-md bg-[var(--surface-2)] p-1 text-xs" role="group" aria-label="Orientación del texto">
+              {[false, true].map((vertical) => {
+                const on = Boolean(selectedItem.vertical) === vertical;
+                return (
+                  <button
+                    key={String(vertical)}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setVertical(selectedItem, vertical)}
+                    className={`rounded px-2.5 py-1 ${on ? "bg-[var(--surface)] font-semibold text-[var(--ink)] shadow-sm" : "text-[var(--ink-muted)]"}`}
+                  >
+                    {vertical ? "Vertical" : "Horizontal"}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <label className="label">
             Ancho
             <input
