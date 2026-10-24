@@ -183,7 +183,21 @@ export async function uploadTicketArtAction(_prev: FormState, formData: FormData
   await logAudit({ actorType: "staff", actorId: staff.id, action: "print.art.upload", entity: "TicketArt", entityId: art.id });
   const back = String(formData.get("back") ?? "");
   if (back.startsWith("/")) revalidatePath(back);
-  return { ok: true, message: `Diseño "${art.name}" guardado: elígelo al crear un lote.` };
+  return { ok: true, message: `Diseño "${art.name}" guardado: viene elegido al crear un lote, y en un lote ya creado se pone desde su página.` };
+}
+
+/** Pone, cambia o quita el diseño de fondo de un lote ya creado (solo cambia cómo se imprime, no las entradas). */
+export async function setPrintBatchArtAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const batch = await ownBatch(staff, String(formData.get("batchId") ?? ""));
+  if (!batch) return { error: "Lote no encontrado." };
+  const artId = String(formData.get("artId") ?? "") || null;
+  const art = artId ? await prisma.ticketArt.findFirst({ where: { id: artId, organizationId: staff.organization.id }, select: { id: true, name: true } }) : null;
+  if (artId && !art) return { error: "Ese diseño ya no existe." };
+  await prisma.printBatch.update({ where: { id: batch.id }, data: { artId: art?.id ?? null } });
+  await logAudit({ actorType: "staff", actorId: staff.id, action: "print.batch.art", entity: "PrintBatch", entityId: batch.id, data: { artId: art?.id ?? null } });
+  revalidatePath(batchPath(batch));
+  return { ok: true, message: art ? `Diseño "${art.name}" puesto: el PDF ya sale con él.` : "Sin diseño: el PDF sale en blanco." };
 }
 
 const MAX_SMALL_TYPES = 4;

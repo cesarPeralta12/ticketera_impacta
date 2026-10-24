@@ -3,9 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { PRINT_STATE_LABEL, formatDateTime, formatMoney, formatSerial, type PrintStateName } from "@ticketera/core";
-import { getPrintBatchReport } from "@ticketera/db";
+import { getPrintBatchReport, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
-import { movePrintedAction, settleSellerAction } from "@/lib/actions/printed";
+import { movePrintedAction, setPrintBatchArtAction, settleSellerAction } from "@/lib/actions/printed";
 import { PAPER_FORMATS, PAPER_LABEL } from "@/lib/print/tickets-pdf";
 import { ROLES, requireStaff } from "@/lib/session";
 
@@ -31,6 +31,7 @@ export default async function PrintBatchPage({ params }: Props) {
     notFound();
   }
   const { batch, counts, used, revenue, sellers } = report;
+  const arts = await prisma.ticketArt.findMany({ where: { organizationId: staff.organization.id }, orderBy: { createdAt: "desc" }, select: { id: true, name: true } });
   const tz = batch.session.venue.timezone;
   const money = (v: number) => formatMoney(v, batch.currency);
   const first = formatSerial(batch.prefix, batch.firstNumber);
@@ -81,6 +82,27 @@ export default async function PrintBatchPage({ params }: Props) {
 
       <section className="card space-y-4 p-6">
         <h2 className="eyebrow">Imprimir</h2>
+        {/* El diseño se puede poner o cambiar en cualquier momento: solo cambia cómo sale el PDF. */}
+        <ActionForm action={setPrintBatchArtAction} className="flex flex-wrap items-end gap-3">
+          <input type="hidden" name="batchId" value={batch.id} />
+          <label className="label">
+            Diseño de fondo
+            <select name="artId" defaultValue={batch.art?.id ?? ""} className="field min-w-56">
+              <option value="">Sin diseño (blanco)</option>
+              {arts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" className="btn">
+            Guardar diseño
+          </button>
+          {arts.length === 0 && (
+            <p className="basis-full text-xs text-[var(--ink-dim)]">Todavía no subiste diseños: se suben en la función, pestaña Impresas, &ldquo;Diseños de entrada&rdquo;.</p>
+          )}
+        </ActionForm>
         <form action="/imprimir" method="get" target="_blank" className="flex flex-wrap items-end gap-3">
           <input type="hidden" name="lote" value={batch.id} />
           <label className="label">

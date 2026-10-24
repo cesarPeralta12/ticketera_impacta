@@ -101,7 +101,7 @@ export async function PrintedCard({
             </label>
             <label className="label">
               Diseño de fondo
-              <select name="artId" defaultValue="" className="field">
+              <select name="artId" defaultValue={arts[0]?.id ?? ""} className="field">
                 <option value="">Sin diseño (blanco)</option>
                 {arts.map((a) => (
                   <option key={a.id} value={a.id}>
