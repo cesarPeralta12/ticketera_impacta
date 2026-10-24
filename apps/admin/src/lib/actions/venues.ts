@@ -704,7 +704,7 @@ export async function saveClubPlanAction(venueId: string, planJson: string): Pro
   });
   revalidatePath(`/recintos/${venue.id}`);
   const tables = plan.groups.reduce((n, g) => n + g.tables.length, 0);
-  return { ok: true, message: `Plano guardado: ${plan.items.length} elemento(s) y ${tables} lounge(s).` };
+  return { ok: true, message: `Plano guardado: ${plan.items.length} elemento(s)${plan.groups.length ? ` y ${tables} lounge(s)` : ""}.` };
 }
 
 class PlanError extends Error {}

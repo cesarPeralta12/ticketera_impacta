@@ -11,10 +11,12 @@ import {
   seatedTableSeats,
   seatedTablesGrid,
   tableHeight,
+  type MapItem,
   type TableSaleMode,
   type TableShape,
 } from "@ticketera/core";
 import { ActionForm } from "@/components/action-form";
+import { MapDecor } from "@/components/map-decor";
 import { PlanBackground, type PlanBackgroundInfo } from "@/components/plan-background";
 import { addSeatedTablesSectionAction } from "@/lib/actions/venues";
 
@@ -24,7 +26,7 @@ type Background = { x: number; y: number; color: string };
  * Mesas con sillas alrededor (cena show, gala, matrimonio): se arman en una grilla y se ve en vivo cómo quedan sobre
  * el mapa del recinto. Cada silla es una butaca; la mesa se vende completa, por silla o de N a M sillas.
  */
-export function SeatedTablesDesigner({ venueId, background, plan }: { venueId: string; background: Background[]; plan?: PlanBackgroundInfo }) {
+export function SeatedTablesDesigner({ venueId, background, plan, items = [] }: { venueId: string; background: Background[]; plan?: PlanBackgroundInfo; items?: MapItem[] }) {
   const [name, setName] = useState("Mesas");
   const [color, setColor] = useState("#B98CFF");
   const [prefix, setPrefix] = useState("Mesa");
@@ -138,6 +140,7 @@ export function SeatedTablesDesigner({ venueId, background, plan }: { venueId: s
 
       <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full rounded-lg border border-[var(--border)]" style={{ background: "#fbfbf9" }} role="img" aria-label="Vista previa de las mesas">
         <PlanBackground background={plan} />
+        <MapDecor items={items} />
         {background.map((b, i) => (
           <circle key={i} cx={b.x} cy={b.y} r={4} fill={b.color} opacity={0.25} />
         ))}

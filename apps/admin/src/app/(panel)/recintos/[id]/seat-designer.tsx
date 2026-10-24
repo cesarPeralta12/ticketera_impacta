@@ -1,5 +1,6 @@
 "use client";
 
+import { MapDecor } from "@/components/map-decor";
 import { PlanBackground, type PlanBackgroundInfo } from "@/components/plan-background";
 /**
  * Editor visual de mapas de butacas — portado del prototipo del compañero.
@@ -17,6 +18,7 @@ import {
   computeSeatPositions,
   zoneLabelPoint,
   zonePath,
+  type MapItem,
   type SectionShape,
   type ZoneShape,
 } from "@ticketera/core";
@@ -77,8 +79,11 @@ export function SeatDesigner({
   existingSections,
   zones = [],
   background,
+  items = [],
 }: {
   venueId: string;
+  /** Escenario, puertas y demás elementos del plano (de fondo). */
+  items?: MapItem[];
   /** Imagen del plano real para calcar (si se subió). */
   background?: PlanBackgroundInfo;
   existingSections: DesignerSection[];
@@ -276,10 +281,8 @@ export function SeatDesigner({
           style={{ background: "#fbfbf9" }}
         >
           <PlanBackground background={background} />
-          <rect x={CANVAS_WIDTH / 2 - 160} y={16} width={320} height={20} rx={4} fill="#1a1a18" />
-          <text x={CANVAS_WIDTH / 2} y={30} textAnchor="middle" fontSize="10" letterSpacing="2" fill="#fff">
-            ESCENARIO
-          </text>
+          {/* Escenario, puertas y demás del plano (sin escenario propio, el de siempre arriba al centro). */}
+          <MapDecor items={items} />
 
           {zones.map((z) => {
             const p = zoneLabelPoint(z.layout);

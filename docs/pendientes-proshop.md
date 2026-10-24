@@ -95,6 +95,15 @@ Probado en local (23-10) entrando con cada tipo de cuenta: cada paso abre su pan
 
 - [x] ✅ Pruebas automáticas completas (23-10): 23 archivos, **199 de 199** bien (compra web, boletería, invitaciones,
       Excel, impresas, puerta, reingreso, zonas, mesas, boliches, QR dinámico, transferencias, reportes, seguridad).
-- [ ] 🧪 En local, a mano: crear evento → precios → venta web y boletería → importación → impresas → ingreso, salida
-      y reingreso → reportes.
+- [x] ✅ En local, a mano (24-10), evento "Prueba integral iPass" en Salón Asistente Prueba:
+      1. Crear y configurar: asistente completo, 2 precios (con y sin reingreso), publicado.
+      2. Venta: web (orden NNXN4-D5JTH, 3 entradas), boletería (1, efectivo) e importación por Excel (con un error no
+         deja importar; corregido, 3 entradas, PDF y correo).
+      3. Emisión: 12 entradas con QR (3 web, 1 boletería, 3 importadas, 5 impresas).
+      4. Impresión: lote P-0001 a P-0005, PDF, 2 marcadas vendidas.
+      5 y 6. Puerta (dos teléfonos simulados por la API de la app, uno en la entrada y otro en la salida): con reingreso
+         entra, sale y vuelve dos veces; sin reingreso sale pero no vuelve; la copia de una usada, la impresa sin vender,
+         la salida de alguien que no entró y un código inventado se rechazan.
+      7. Reportes: 12 emitidas, 5 ingresaron, Bs 340 (por canal: 130 web, 30 boletería, 100 impresas, 80 importadas);
+         en vivo 4 adentro, 1 afuera, 2 reingresos; CSV de asistentes.
 - [ ] 🧪 En producción (después de desplegar): la misma prueba con un evento de prueba, y deshacer lo creado.

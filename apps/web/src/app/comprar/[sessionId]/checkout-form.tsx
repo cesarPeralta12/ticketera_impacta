@@ -221,7 +221,8 @@ export function CheckoutForm({
         ids.length ? <input key={type} type="hidden" name={`seats:${type}`} value={ids.join(",")} /> : null,
       )}
 
-      {(seated.length > 0 || zones.length > 0) && (
+      {/* El mapa: para elegir butaca o zona, o al menos para ver por qué puerta se entra. */}
+      {(seated.length > 0 || zones.length > 0 || items.some((i) => i.kind === "ENTRANCE")) && (
         <section className="card space-y-4 p-4 sm:p-6">
           <h2 className="font-display text-xl">
             {seated.length > 0 ? (seated.every((t) => t.table) ? "1. Elige tu mesa en el mapa" : "1. Elige tus butacas") : "Mapa del recinto"}
