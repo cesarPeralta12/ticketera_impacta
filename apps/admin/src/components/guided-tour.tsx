@@ -31,8 +31,22 @@ const samePage = (href: string, pathname: string, search: string) => {
  * Recorrido guiado: la primera vez que alguien entra al panel (en este navegador) lo lleva por las secciones
  * principales, abre cada página e ilumina lo importante con una tarjeta que lo explica. Se puede avanzar con las
  * flechas del teclado, saltar a cualquier paso y volver a verlo desde "Ver el recorrido" en el menú.
+ *
+ * - `storageKey`: dónde se recuerda que ya se vio (sin clave, no se abre solo).
+ * - `event`: el evento de la ventana que lo abre de nuevo.
+ * - `finishHref`: a dónde lleva al terminar (sin destino, se queda en la pantalla).
  */
-export function GuidedTour({ steps }: { steps: TourStep[] }) {
+export function GuidedTour({
+  steps,
+  storageKey = KEY,
+  event = "impacta:recorrido",
+  finishHref = "/",
+}: {
+  steps: TourStep[];
+  storageKey?: string | null;
+  event?: string;
+  finishHref?: string | null;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const [step, setStep] = useState<number | null>(null);
@@ -43,27 +57,27 @@ export function GuidedTour({ steps }: { steps: TourStep[] }) {
   useEffect(() => {
     let seen = true;
     try {
-      seen = localStorage.getItem(KEY) === "1";
+      seen = !storageKey || localStorage.getItem(storageKey) === "1";
     } catch {
       /* sin almacenamiento (ventana privada): no se muestra solo */
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- se decide una vez, al cargar en el navegador
     if (!seen) setStep(0);
     const replay = () => setStep(0);
-    window.addEventListener("impacta:recorrido", replay);
-    return () => window.removeEventListener("impacta:recorrido", replay);
-  }, []);
+    window.addEventListener(event, replay);
+    return () => window.removeEventListener(event, replay);
+  }, [storageKey, event]);
 
   const close = useCallback(() => {
     try {
-      localStorage.setItem(KEY, "1");
+      if (storageKey) localStorage.setItem(storageKey, "1");
     } catch {
       /* nada */
     }
     setStep(null);
     setRect(null);
     targetRef.current = null;
-  }, []);
+  }, [storageKey]);
 
   const current = step === null ? undefined : steps[step];
 
@@ -101,7 +115,7 @@ export function GuidedTour({ steps }: { steps: TourStep[] }) {
   useLayoutEffect(() => {
     if (step === null) return;
     let frame = 0;
-    const follow = () => {
+    const update = () => {
       setMobile(window.innerWidth < 640);
       const el = targetRef.current;
       if (el?.isConnected) {
@@ -112,10 +126,20 @@ export function GuidedTour({ steps }: { steps: TourStep[] }) {
             : { top: r.top, left: r.left, width: r.width, height: r.height },
         );
       }
+    };
+    const follow = () => {
+      update();
       frame = requestAnimationFrame(follow);
     };
     frame = requestAnimationFrame(follow);
-    return () => cancelAnimationFrame(frame);
+    // También con el scroll y al cambiar el tamaño: si el navegador frena los cuadros (pestaña de fondo), igual sigue.
+    window.addEventListener("scroll", update, { capture: true, passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", update, { capture: true });
+      window.removeEventListener("resize", update);
+    };
   }, [step]);
 
   // Teclado: → o Enter avanza, ← vuelve, Esc cierra.
@@ -217,7 +241,7 @@ export function GuidedTour({ steps }: { steps: TourStep[] }) {
               onClick={() => {
                 if (!last) return setStep(step + 1);
                 close();
-                if (pathname !== "/") router.push("/");
+                if (finishHref && pathname !== finishHref) router.push(finishHref);
               }}
               className="btn btn-primary px-3 py-1 text-xs"
             >
@@ -228,6 +252,26 @@ export function GuidedTour({ steps }: { steps: TourStep[] }) {
         <p className="mt-2 hidden text-[11px] text-[var(--ink-dim)] sm:block">Usa ← → del teclado. Esc cierra.</p>
       </div>
     </div>
+  );
+}
+
+/**
+ * Recorrido de una sola pantalla: un botón (al lado del título) que ilumina sus partes una por una. No se abre solo:
+ * lo pide quien lo necesita, y al terminar se queda en la misma pantalla.
+ */
+export function PageTour({ id, steps }: { id: string; steps: TourStep[] }) {
+  const event = `impacta:recorrido:${id}`;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => window.dispatchEvent(new Event(event))}
+        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--accent)]/40 bg-[var(--accent-soft)] px-3 py-1 text-xs font-medium text-[var(--accent-hover)] transition-colors hover:border-[var(--accent)] print:hidden"
+      >
+        <span aria-hidden>▶</span> Ver recorrido
+      </button>
+      <GuidedTour steps={steps} storageKey={null} event={event} finishHref={null} />
+    </>
   );
 }
 

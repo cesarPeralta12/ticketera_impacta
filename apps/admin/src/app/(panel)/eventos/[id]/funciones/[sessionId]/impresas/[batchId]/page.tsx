@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { PRINT_STATE_LABEL, formatDateTime, formatMoney, formatSerial, type PrintStateName } from "@ticketera/core";
 import { getPrintBatchReport, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
+import { PageTour, type TourStep } from "@/components/guided-tour";
 import { movePrintedAction, setPrintBatchArtAction, settleSellerAction } from "@/lib/actions/printed";
 import { PAPER_FORMATS, PAPER_LABEL } from "@/lib/print/tickets-pdf";
 import { ROLES, requireStaff } from "@/lib/session";
@@ -49,16 +50,101 @@ export default async function PrintBatchPage({ params }: Props) {
     ["Recaudado", money(revenue)],
   ];
 
+  // Recorrido de esta pantalla (botón al lado del título): qué es el lote y qué se hace con cada entrada impresa.
+  const tour: TourStep[] = [
+    {
+      title: "Este lote",
+      target: '[data-tour="lote-datos"]',
+      text: `${first} a ${last}: ${batch.quantity} entradas físicas de "${batch.ticketType.name}", con precio de referencia ${money(batch.unitAmount)}.`,
+      points: activate
+        ? ["Activadas al vender: no abren la puerta hasta que las marcas como vendidas.", "Una fotocopia o una perdida sin vender no entra."]
+        : ["Válidas al imprimir: cualquiera abre la puerta, también una fotocopia.", "Cuídalas como si fueran dinero."],
+    },
+    {
+      title: "Los números",
+      target: '[data-tour="lote-numeros"]',
+      text: "Cómo está cada entrada del lote, al momento.",
+      points: [
+        "En stock: las tienes tú. Entregadas: las tiene un vendedor o RRPP.",
+        `Vendidas: las cobradas${activate ? " (solo estas abren la puerta)" : ""}.`,
+        "Devueltas, anuladas, las que ya entraron y lo recaudado.",
+      ],
+    },
+    {
+      title: "Imprimir",
+      target: '[data-tour="lote-imprimir"]',
+      text: "Saca el PDF para imprimir el lote.",
+      points: [
+        "Diseño de fondo: tu arte detrás de los datos; lo cambias cuando quieras.",
+        "Formato: carta, A4, térmica de 80 mm o imprenta con marcas de corte.",
+        "Desde / Hasta: imprime solo una parte (ej. del 1 al 50).",
+        "Imprime primero una hoja de prueba y léela con la app de puerta.",
+      ],
+    },
+    {
+      title: "Vender",
+      target: '[data-tour="lote-vender"]',
+      text: "Cuando se venden (las vendas tú o un vendedor), márcalas aquí.",
+      points: [
+        `Por rango (${rangeHint}) o escaneando los códigos con un lector USB.`,
+        "Elige el cobro y el precio (viene el del lote; cámbialo si hubo descuento).",
+        activate ? "Desde ese momento abren la puerta y suman a lo recaudado." : "Suman a lo recaudado.",
+      ],
+    },
+    {
+      title: "Entregar a un vendedor o RRPP",
+      target: '[data-tour="lote-entregar"]',
+      text: "Para repartir talonarios: anota qué rango se lleva cada vendedor.",
+      points: [
+        "Queda registrado quién tiene cada entrada.",
+        ...(activate ? ["Entregadas todavía no abren la puerta: si se pierden, no sirven."] : []),
+        "Abajo ves cuánto vendió y cuánto te debe cada uno.",
+      ],
+    },
+    {
+      title: "Devolver o volver a stock",
+      target: '[data-tour="lote-return"]',
+      text: "Lo que vuelve sin venderse.",
+      points: [
+        "Devolver: el vendedor trae las que no vendió; después se pueden entregar a otro o vender.",
+        "Volver a stock (abajo): le quita el vendedor, si te equivocaste de persona.",
+      ],
+    },
+    {
+      title: "Anular",
+      target: '[data-tour="lote-void"]',
+      text: "Para las perdidas, robadas o rotas.",
+      points: [
+        "No abren la puerta nunca y su lugar queda libre para vender.",
+        "Una vendida solo se puede anular (el dinero se devuelve por fuera).",
+        "Una que ya entró no se mueve más.",
+      ],
+    },
+    {
+      title: "Vendedores y rendición",
+      target: '[data-tour="lote-rendicion"]',
+      text: "Las cuentas con cada vendedor.",
+      points: [
+        "Cuántas tiene en mano, cuántas vendió y devolvió, y cuánto debe.",
+        "Registra lo que te entregó: el panel marca si falta o sobra.",
+        "Antes de rendir, marca como vendidas y devueltas las de ese vendedor.",
+      ],
+    },
+  ];
+
   return (
     <div className="space-y-8">
-      <div>
+      <div data-tour="lote-datos">
         <Link href={`/eventos/${id}/funciones/${sessionId}?tab=impresas`} className="text-sm text-[var(--ink-dim)] hover:text-[var(--ink)]">
           ← {batch.session.event.title} · {formatDateTime(batch.session.startsAt, tz)}
         </Link>
         <p className="eyebrow mt-2">Entradas impresas</p>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Lote {batch.prefix} · {batch.ticketType.name}
-        </h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Lote {batch.prefix} · {batch.ticketType.name}
+          </h1>
+          <PageTour id="lote-impresas" steps={tour} />
+        </div>
         <p className="text-sm text-[var(--ink-muted)]">
           {first} a {last} · precio de referencia {money(batch.unitAmount)} · creado por {batch.createdBy.name} el {formatDateTime(batch.createdAt, tz)}
           {batch.art && ` · diseño "${batch.art.name}"`}
@@ -71,7 +157,7 @@ export default async function PrintBatchPage({ params }: Props) {
         {batch.note && <p className="mt-1 text-sm text-[var(--ink-muted)]">Nota: {batch.note}</p>}
       </div>
 
-      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <dl data-tour="lote-numeros" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {stats.map(([label, value]) => (
           <div key={label} className="card p-4">
             <dt className="eyebrow">{label}</dt>
@@ -80,7 +166,7 @@ export default async function PrintBatchPage({ params }: Props) {
         ))}
       </dl>
 
-      <section className="card space-y-4 p-6">
+      <section data-tour="lote-imprimir" className="card space-y-4 p-6">
         <h2 className="eyebrow">Imprimir</h2>
         {/* El diseño se puede poner o cambiar en cualquier momento: solo cambia cómo sale el PDF. */}
         <ActionForm action={setPrintBatchArtAction} className="flex flex-wrap items-end gap-3">
@@ -148,7 +234,7 @@ export default async function PrintBatchPage({ params }: Props) {
           salta de línea solo).
         </p>
 
-        <details open className="rounded-md border border-[var(--border)] p-4">
+        <details open data-tour="lote-vender" className="rounded-md border border-[var(--border)] p-4">
           <summary className="cursor-pointer text-sm font-medium">Vender</summary>
           <ActionForm action={movePrintedAction} className="mt-3 flex flex-wrap items-end gap-3">
             <input type="hidden" name="batchId" value={batch.id} />
@@ -179,7 +265,7 @@ export default async function PrintBatchPage({ params }: Props) {
           </ActionForm>
         </details>
 
-        <details className="rounded-md border border-[var(--border)] p-4">
+        <details data-tour="lote-entregar" className="rounded-md border border-[var(--border)] p-4">
           <summary className="cursor-pointer text-sm font-medium">Entregar a un vendedor o RRPP</summary>
           <ActionForm action={movePrintedAction} className="mt-3 flex flex-wrap items-end gap-3">
             <input type="hidden" name="batchId" value={batch.id} />
@@ -210,7 +296,7 @@ export default async function PrintBatchPage({ params }: Props) {
             ["VOID", "Anular (perdidas o inválidas: no abren la puerta y liberan su lugar)", "Anular", "¿Anular esas entradas? No abren la puerta y no se pueden recuperar."],
           ] as const
         ).map(([action, title, button, confirm]) => (
-          <details key={action} className="rounded-md border border-[var(--border)] p-4">
+          <details key={action} data-tour={`lote-${action.toLowerCase()}`} className="rounded-md border border-[var(--border)] p-4">
             <summary className="cursor-pointer text-sm font-medium">{title}</summary>
             <ActionForm action={movePrintedAction} confirm={confirm} className="mt-3 flex flex-wrap items-end gap-3">
               <input type="hidden" name="batchId" value={batch.id} />
@@ -231,7 +317,7 @@ export default async function PrintBatchPage({ params }: Props) {
         ))}
       </section>
 
-      <section className="card space-y-4 p-6">
+      <section data-tour="lote-rendicion" className="card space-y-4 p-6">
         <h2 className="eyebrow">Vendedores y rendición</h2>
         {sellers.length === 0 ? (
           <p className="text-sm text-[var(--ink-muted)]">Todavía no se entregaron entradas de este lote a ningún vendedor.</p>
