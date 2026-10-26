@@ -49,7 +49,7 @@ export function eventChecks(event: ChecklistEvent, venueCount: number): EventChe
       done: event.sessions.length > 0 && !missingEnd,
       required: false,
       text: `Hora de fin de cada ${noun.one}`,
-      href: missingEnd ? `${sessionHref(missingEnd.id)}#horarios` : tab("funciones"),
+      href: missingEnd ? `${sessionHref(missingEnd.id)}?tab=horarios` : tab("funciones"),
       action: "Ponerla",
     },
     ...(event.category === "BOLICHE"

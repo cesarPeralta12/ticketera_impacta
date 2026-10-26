@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "Ventas" };
 
 const statusLabel: Record<OrderStatus, { text: string; className: string }> = {
   PENDING_PAYMENT: { text: "Pendiente de pago", className: "bg-[var(--warn-soft)] text-[var(--warn)]" },
-  PAID: { text: "Pagada", className: "bg-[var(--accent-soft)] text-[var(--accent)]" },
+  PAID: { text: "Pagada", className: "bg-[var(--success-soft)] text-[var(--success)]" },
   EXPIRED: { text: "Expirada", className: "bg-[var(--surface-2)] text-[var(--ink-dim)]" },
   CANCELLED: { text: "Cancelada", className: "bg-[var(--surface-2)] text-[var(--ink-dim)]" },
   REFUNDED: { text: "Reembolsada", className: "bg-[var(--surface-2)] text-[var(--ink)]" },
@@ -57,7 +57,7 @@ export default async function SalesPage({ searchParams }: Props) {
         </p>
       </div>
 
-      <form className="card flex flex-wrap items-end gap-3 p-4">
+      <form data-tour="filtros-ventas" className="card flex flex-wrap items-end gap-3 p-4">
         <label className="label min-w-56 flex-1">
           Buscar
           <input name="q" defaultValue={q} placeholder="Nombre, email, CI o código de orden" className="field" />

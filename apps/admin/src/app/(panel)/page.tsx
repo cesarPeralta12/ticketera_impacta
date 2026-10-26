@@ -2,6 +2,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { formatDateTime, formatMoney, sellableCapacity } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
+import { CountUp } from "@/components/count-up";
 import { GlobalDashboard } from "@/components/global-dashboard";
 import { ROLES, isGlobalView, isNightlife, requireStaff } from "@/lib/session";
 
@@ -34,11 +35,12 @@ export default async function DashboardPage() {
     }),
   ]);
 
+  // Color según la función: ámbar = a la venta o pendiente, azul = conteos, magenta = dinero.
   const stats = [
-    { label: "Eventos publicados", value: published },
-    { label: "Borradores", value: drafts },
-    { label: "Entradas vendidas", value: ticketsSold },
-    { label: "Ingresos", value: formatMoney(revenue._sum.totalAmount ?? 0, org.currency) },
+    { label: "Eventos publicados", value: published, tone: "amber" },
+    { label: "Borradores", value: drafts, tone: "blue" },
+    { label: "Entradas vendidas", value: ticketsSold, tone: "blue" },
+    { label: "Ingresos", value: formatMoney(revenue._sum.totalAmount ?? 0, org.currency), tone: "magenta" },
   ];
 
   return (
@@ -48,11 +50,11 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Resumen</h1>
       </div>
 
-      <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <dl className="stats grid grid-cols-2 gap-4 lg:grid-cols-4">
         {stats.map((s) => (
-          <div key={s.label} className="card p-4">
+          <div key={s.label} className={`card tone-${s.tone} p-4`}>
             <dt className="eyebrow">{s.label}</dt>
-            <dd className="mt-1 text-2xl font-semibold tabular-nums">{s.value}</dd>
+            <dd className="mt-1 text-2xl font-semibold tabular-nums">{typeof s.value === "number" ? <CountUp value={s.value} /> : s.value}</dd>
           </div>
         ))}
       </dl>

@@ -52,7 +52,7 @@ export default async function OrderPage({ params }: Props) {
       {session && order.status === "PAID" && <WhenWhereBlock data={whenWhere({ session, venue: session.venue, event: session.event })} />}
 
       {order.status === "PENDING_PAYMENT" && (
-        <section className="space-y-4 rounded-xl border border-[var(--accent)]/40 bg-[var(--accent)]/10 p-5">
+        <section className="space-y-4 rounded-xl border border-[var(--highlight)]/40 bg-[var(--highlight)]/10 p-5">
           {isAwaitingWebhook(latestPayment) ? (
             <>
               <AutoRefresh />
@@ -85,7 +85,7 @@ export default async function OrderPage({ params }: Props) {
             <p className="text-sm">Recibimos tu pago, pero ya no quedaban entradas disponibles. Te lo reembolsaremos.</p>
           )}
           {session && (
-            <Link href={`/eventos/${session.event.slug}`} className="text-sm font-semibold text-[var(--accent)] underline">
+            <Link href={`/eventos/${session.event.slug}`} className="text-sm font-semibold text-[var(--accent-text)] underline">
               Volver a elegir entradas
             </Link>
           )}
@@ -129,7 +129,7 @@ export default async function OrderPage({ params }: Props) {
           {isOwner && order.channel === "ONLINE" && (
             <p className="text-sm text-[var(--ink-muted)]">
               ¿Quieres darle una entrada a otra persona?{" "}
-              <Link href="/mis-entradas" className="text-[var(--accent)] underline underline-offset-4">
+              <Link href="/mis-entradas" className="text-[var(--accent-text)] underline underline-offset-4">
                 Transferirla desde Mis entradas
               </Link>
               .
@@ -241,8 +241,8 @@ async function TicketList({
     <ul className="grid gap-4 sm:grid-cols-2">
       {rendered.map((ticket, i) => (
         // Boleto claro: el QR se lee mejor con fondo blanco, también en pantallas con poco brillo.
-        <li key={ticket.id} className="rounded-2xl bg-[#f5f3ef] p-5 text-center text-[#14181b]">
-          <p className="text-xs uppercase tracking-wide text-[#6b687a]">
+        <li key={ticket.id} className="rounded-2xl bg-[#F5F6F8] p-5 text-center text-[#192438]">
+          <p className="text-xs uppercase tracking-wide text-[#60718B]">
             {guest ? "Invitación" : `Entrada ${i + 1} de ${rendered.length}`}
           </p>
           {ticket.holderName && <p className="text-sm font-semibold">{ticket.holderName}</p>}
@@ -259,21 +259,21 @@ async function TicketList({
             </p>
           )}
           {ticket.ticketType.entryUntil && ticket.status === "VALID" && (
-            <p className="mt-1 text-sm font-bold text-[#b35c00]">Válida para entrar hasta las {formatClock(ticket.ticketType.entryUntil, timeZone)}</p>
+            <p className="mt-1 text-sm font-bold text-[#B77900]">Válida para entrar hasta las {formatClock(ticket.ticketType.entryUntil, timeZone)}</p>
           )}
           {ticket.credit && ticket.credit.amount > 0 && (!ticket.person || ticket.person === 1) && (
-            <p className="mx-auto mt-2 w-fit rounded-full bg-[#14181b] px-3 py-1 text-xs font-semibold text-[#f5b700]">
+            <p className="mx-auto mt-2 w-fit rounded-full bg-[#192438] px-3 py-1 text-xs font-semibold text-[#F5B700]">
               Consumo {ticket.ticketType.kind === "TABLE" ? "de la mesa" : "incluido"}: {formatMoney(consumptionLeft(ticket.credit), ticket.credit.currency)} de{" "}
               {formatMoney(ticket.credit.amount, ticket.credit.currency)}
             </p>
           )}
           {!ticket.transferred && entranceText(gates, ticket.ticketType.sectionId, ticket.ticketType.zones.map((z) => z.id)) && (
-            <p className="mt-1 text-sm font-bold text-[#0f8a6b]">
+            <p className="mt-1 text-sm font-bold text-[#16846C]">
               {entranceText(gates, ticket.ticketType.sectionId, ticket.ticketType.zones.map((z) => z.id))}
             </p>
           )}
           {!ticket.transferred && reentryText(ticket.ticketType.maxEntries) && (
-            <p className="mt-1 text-xs text-[#62655f]">{reentryText(ticket.ticketType.maxEntries)}: al salir, haz leer el QR en la puerta de salida.</p>
+            <p className="mt-1 text-xs text-[#60718B]">{reentryText(ticket.ticketType.maxEntries)}: al salir y al volver, haz leer tu QR en la puerta.</p>
           )}
           {ticket.transferred && (
             <p className="my-4 rounded-lg bg-[#fff4d6] px-3 py-3 text-sm font-semibold">Esta entrada fue transferida a otra persona.</p>
@@ -283,7 +283,7 @@ async function TicketList({
               <Link href={`/entrada/${ticket.code}`} className="btn-accent inline-block">
                 Abrir entrada (QR dinámico)
               </Link>
-              <p className="mt-2 text-xs text-[#6b687a]">Ábrela con internet antes de salir: el QR cambia cada 30 segundos y funciona sin señal.</p>
+              <p className="mt-2 text-xs text-[#60718B]">Ábrela con internet antes de salir: el QR cambia cada 30 segundos y funciona sin señal.</p>
             </div>
           )}
           {ticket.qr && (
@@ -299,14 +299,14 @@ async function TicketList({
             />
           )}
           {ticket.nfc && (
-            <p className="my-2 text-xs font-semibold text-[#6b687a]">
+            <p className="my-2 text-xs font-semibold text-[#60718B]">
               {ticket.qr || ticket.barcode ? "También se lee por NFC." : "Esta entrada se lee por NFC: acércala al lector."}
             </p>
           )}
           <p className="font-mono text-sm tracking-wider">{formatCode(ticket.code)}</p>
-          {ticket.status === "USED" && <p className="mt-1 text-xs font-semibold text-[#6b687a]">Ya utilizada</p>}
+          {ticket.status === "USED" && <p className="mt-1 text-xs font-semibold text-[#60718B]">Ya utilizada</p>}
           {ticket.status === "CANCELLED" && (
-            <p className="mt-1 text-xs font-semibold text-[#c2183e]">
+            <p className="mt-1 text-xs font-semibold text-[#C62842]">
               {ticket.expiredAt && ticket.ticketType.entryUntil
                 ? `Venció: era válida para entrar hasta las ${formatClock(ticket.ticketType.entryUntil, timeZone)}`
                 : "Anulada"}

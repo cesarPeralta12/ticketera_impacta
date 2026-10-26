@@ -82,7 +82,7 @@ export function ActionForm({
       onInput={() => setDirty(true)}
       className={className}
       aria-busy={pending}
-      title={readOnly ? "Solo lectura: los cambios los hace Impacta." : undefined}
+      title={readOnly ? "Solo lectura: los cambios los hace iPass." : undefined}
     >
       <fieldset disabled={pending || readOnly} className="contents">
         {children}
@@ -93,7 +93,7 @@ export function ActionForm({
         </div>
       )}
       {state?.ok && (state.message ?? successMessage) && (
-        <p role="status" className="w-full basis-full text-sm text-[var(--accent)]">
+        <p role="status" className="w-full basis-full text-sm text-[var(--success)]">
           {state.message ?? successMessage}
         </p>
       )}

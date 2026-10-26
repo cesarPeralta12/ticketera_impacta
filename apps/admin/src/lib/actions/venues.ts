@@ -8,6 +8,7 @@ import {
   MAX_SEATS_PER_ROW,
   TABLE_RADIUS,
   computeSeatPositions,
+  isSeatedTablesLayout,
   isTablesLayout,
   parseMapItems,
   parseTables,
@@ -403,6 +404,51 @@ export async function addSeatedTablesSectionAction(_prev: FormState, formData: F
   return { ok: true };
 }
 
+/**
+ * Recoloca las mesas de una sección de mesas con sillas ya creada: solo cambia dónde está cada mesa (y sus sillas)
+ * en el mapa. Las mesas, sus números, las sillas y lo vendido quedan igual, así que se puede hacer con ventas.
+ */
+export async function moveSeatedTablesAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const section = await prisma.section.findFirst({
+    where: { id: String(formData.get("sectionId")), venue: { organizationId: staff.organization.id } },
+    select: { id: true, venueId: true, layout: true },
+  });
+  if (!section || !isSeatedTablesLayout(section.layout)) return { error: "Sección de mesas no encontrada." };
+  let moved: unknown;
+  try {
+    moved = JSON.parse(String(formData.get("tables") ?? ""));
+  } catch {
+    return { error: "Las mesas no son válidas." };
+  }
+  const current = section.layout;
+  const byNumber = new Map(
+    (Array.isArray(moved) ? moved : []).map((t: { number?: unknown; x?: unknown; y?: unknown }) => [Number(t?.number), { x: Number(t?.x), y: Number(t?.y) }]),
+  );
+  if (byNumber.size !== current.tables.length || current.tables.some((t) => !byNumber.has(t.number))) {
+    return { error: "Las mesas cambiaron: recarga la página." };
+  }
+  const parsed = parseSeatedTablesLayout({ ...current, tables: current.tables.map((t) => ({ number: t.number, ...byNumber.get(t.number)! })) });
+  if (!parsed.ok) return { error: parsed.error };
+  const seats = seatedTableSeats(parsed.layout);
+  await prisma.$transaction(async (tx) => {
+    await tx.section.update({ where: { id: section.id }, data: { layout: parsed.layout } });
+    for (const seat of seats) {
+      await tx.seat.updateMany({ where: { sectionId: section.id, row: seat.row, number: seat.number }, data: { x: seat.x, y: seat.y } });
+    }
+  });
+  await logAudit({
+    actorType: "staff",
+    actorId: staff.id,
+    action: "section.seated_tables_moved",
+    entity: "Section",
+    entityId: section.id,
+    data: { tables: parsed.layout.tables.length },
+  });
+  revalidatePath(`/recintos/${section.venueId}`);
+  return { ok: true, message: "Posiciones guardadas." };
+}
+
 /** Entradas vendidas o reservadas (en cualquier estado) de una sección. */
 async function sectionSales(sectionId: string) {
   return prisma.orderItem.count({ where: { ticketType: { sectionId } } });
@@ -704,7 +750,7 @@ export async function saveClubPlanAction(venueId: string, planJson: string): Pro
   });
   revalidatePath(`/recintos/${venue.id}`);
   const tables = plan.groups.reduce((n, g) => n + g.tables.length, 0);
-  return { ok: true, message: `Plano guardado: ${plan.items.length} elemento(s) y ${tables} lounge(s).` };
+  return { ok: true, message: `Plano guardado: ${plan.items.length} elemento(s)${plan.groups.length ? ` y ${tables} lounge(s)` : ""}.` };
 }
 
 class PlanError extends Error {}

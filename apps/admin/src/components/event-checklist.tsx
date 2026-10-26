@@ -11,7 +11,7 @@ export function EventChecklist({ checks, readOnly }: { checks: EventCheck[]; rea
             aria-hidden
             className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
               c.done
-                ? "bg-[var(--accent)] text-white"
+                ? "bg-[var(--success)] text-white"
                 : c.required
                   ? "border border-[var(--warn)] text-[var(--warn)]"
                   : "border border-[var(--border)] text-[var(--ink-dim)]"

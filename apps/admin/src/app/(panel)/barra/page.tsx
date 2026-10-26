@@ -60,7 +60,7 @@ export default async function BarPage() {
                 >
                   <span className="flex items-center justify-between gap-2">
                     <span className="font-medium">{n.event.title}</span>
-                    {started && <span className="badge bg-[var(--accent-soft)] text-[var(--accent)]">esta noche</span>}
+                    {started && <span className="badge bg-[var(--success-soft)] text-[var(--success)]">esta noche</span>}
                   </span>
                   <span className="block text-sm capitalize text-[var(--ink-muted)]">
                     {formatDateTime(n.startsAt, n.venue.timezone)} · {n.venue.name}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultMapItem, hasStage, isTablesLayout, nextTableNumber, parseMapItems, parseTables, tableName } from "./club-map";
+import { defaultMapItem, hasStage, isTablesLayout, mapItemLabel, nextTableNumber, parseMapItems, parseTables, tableName } from "./club-map";
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "./seat-geometry";
 
 describe("elementos del plano", () => {
@@ -23,6 +23,18 @@ describe("elementos del plano", () => {
     expect(hasStage(items)).toBe(true);
     expect(parseMapItems([{ kind: "PISCINA", x: 0, y: 0, width: 10, height: 10 }])).toBeNull();
     expect(parseMapItems("nada")).toBeNull();
+  });
+
+  it("el nombre puede ir vertical (ej. una puerta en una pared de costado)", () => {
+    const [door, bar] = parseMapItems([
+      { id: "p", kind: "ENTRANCE", label: "Puerta 2", x: 960, y: 200, width: 36, height: 140, vertical: true },
+      { id: "b", kind: "BAR", label: "Barra", x: 100, y: 100, width: 200, height: 40, vertical: "sí" },
+    ])!;
+    expect(door!.vertical).toBe(true);
+    expect(bar).not.toHaveProperty("vertical");
+    // Vertical: el texto gira sobre el centro de la caja y su tamaño sigue al ancho; horizontal, al alto y sin giro.
+    expect(mapItemLabel(door!)).toEqual({ x: 978, y: 275, fontSize: Math.min(16, Math.max(10, 36 / 2.6)), transform: "rotate(-90 978 270)" });
+    expect(mapItemLabel(bar!)).toEqual({ x: 200, y: 125, fontSize: Math.min(16, Math.max(10, 40 / 2.6)) });
   });
 });
 

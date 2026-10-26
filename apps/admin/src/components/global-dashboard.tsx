@@ -2,6 +2,7 @@ import Link from "next/link";
 import { DEFAULT_CURRENCY, DEFAULT_TIMEZONE, formatCode, formatDateTime, formatMoney, formatTime } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { CountUp } from "@/components/count-up";
 import { CHANNEL_LABEL, SCAN_LABEL } from "@/lib/labels";
 import { startOfToday } from "@/lib/dates";
 
@@ -47,13 +48,14 @@ export async function GlobalDashboard({ name }: { name: string }) {
       }),
     ]);
 
+  // Color según la función: azul = estructura, ámbar = a la venta o pendiente, magenta = ventas e ingresos.
   const stats = [
-    { label: "Organizadores activos", value: organizers, href: "/organizadores" },
-    { label: "Eventos a la venta", value: onSale },
-    { label: "Esperando aprobación", value: pending, href: "/aprobaciones", warn: pending > 0 },
-    { label: "Ventas de hoy", value: `${salesToday} · ${formatMoney(revenueToday._sum.totalAmount ?? 0, DEFAULT_CURRENCY)}`, href: "/ordenes" },
-    { label: "Entradas emitidas", value: tickets },
-    { label: "Ingresos hoy en puerta", value: entriesToday, href: "/ingresos" },
+    { label: "Organizadores activos", value: organizers, href: "/organizadores", tone: "blue" },
+    { label: "Eventos a la venta", value: onSale, tone: "amber" },
+    { label: "Esperando aprobación", value: pending, href: "/aprobaciones", warn: pending > 0, tone: "amber" },
+    { label: "Ventas de hoy", value: `${salesToday} · ${formatMoney(revenueToday._sum.totalAmount ?? 0, DEFAULT_CURRENCY)}`, href: "/ordenes", tone: "magenta" },
+    { label: "Entradas emitidas", value: tickets, tone: "blue" },
+    { label: "Ingresos hoy en puerta", value: entriesToday, href: "/ingresos", tone: "magenta" },
   ];
 
   return (
@@ -63,24 +65,26 @@ export async function GlobalDashboard({ name }: { name: string }) {
         <p className="eyebrow">Hola, {name}</p>
         <h1 className="text-2xl font-semibold tracking-tight">Resumen general</h1>
         <p className="text-sm text-[var(--ink-muted)]">
-          Todos los organizadores juntos, en vivo (se actualiza cada 30 segundos).
+          <span className="live-dot mr-1.5" aria-hidden /> Todos los organizadores juntos, en vivo (se actualiza cada 30 segundos).
         </p>
       </div>
 
-      <dl className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+      <dl className="stats grid grid-cols-2 gap-4 lg:grid-cols-3">
         {stats.map((s) => {
           const body = (
             <>
               <dt className="eyebrow">{s.label}</dt>
-              <dd className={`mt-1 text-2xl font-semibold tabular-nums ${s.warn ? "text-[var(--warn)]" : ""}`}>{s.value}</dd>
+              <dd className={`mt-1 text-2xl font-semibold tabular-nums ${s.warn ? "text-[var(--warn)]" : ""}`}>
+                {typeof s.value === "number" ? <CountUp value={s.value} /> : s.value}
+              </dd>
             </>
           );
           return s.href ? (
-            <Link key={s.label} href={s.href} className="card p-4 transition-colors hover:border-[var(--accent)]">
+            <Link key={s.label} href={s.href} className={`card tone-${s.tone} p-4 transition-colors hover:border-[var(--accent)]`}>
               {body}
             </Link>
           ) : (
-            <div key={s.label} className="card p-4">
+            <div key={s.label} className={`card tone-${s.tone} p-4`}>
               {body}
             </div>
           );
@@ -166,7 +170,7 @@ export async function GlobalDashboard({ name }: { name: string }) {
                     </span>
                   </span>
                   <span className="text-right text-xs">
-                    <span className={s.result === "ACCEPTED" ? "font-medium text-[var(--accent)]" : "font-medium text-[var(--danger)]"}>
+                    <span className={s.result === "ACCEPTED" ? "font-medium text-[var(--success)]" : "font-medium text-[var(--danger)]"}>
                       {SCAN_LABEL[s.result]}
                     </span>
                     <span className="block text-[var(--ink-dim)]">{formatTime(s.scannedAt, s.session.venue.timezone)}</span>

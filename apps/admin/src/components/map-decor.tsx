@@ -1,4 +1,4 @@
-import { CANVAS_WIDTH, MAP_ITEM_COLOR, hasStage, type MapItem } from "@ticketera/core";
+import { CANVAS_WIDTH, MAP_ITEM_COLOR, hasStage, mapItemLabel, type MapItem } from "@ticketera/core";
 
 /**
  * Lo que no se vende del plano de un boliche (escenario, barras, DJ, entrada, baños, textos), dentro de un
@@ -30,10 +30,8 @@ export function MapDecor({ items = [] }: { items?: MapItem[] }) {
             strokeDasharray={item.kind === "LABEL" ? "6 4" : undefined}
           />
           <text
-            x={item.x + item.width / 2}
-            y={item.y + item.height / 2 + 5}
+            {...mapItemLabel(item)}
             textAnchor="middle"
-            fontSize={Math.min(16, Math.max(10, item.height / 2.6))}
             fontWeight="700"
             letterSpacing="1"
             fill="#1a1a18"

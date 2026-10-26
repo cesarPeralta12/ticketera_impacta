@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { entranceFor, entranceLabel, entranceText, reentryText } from "./entrance";
+import { entranceFor, entranceLabel, entranceText, isExitScan, reentryText } from "./entrance";
 
 const norte = { name: "Acceso norte", sectionIds: ["campo"] };
 const sur = { name: "Acceso sur", sectionIds: ["palco"] };
@@ -46,6 +46,23 @@ describe("por qué puerta entra una entrada", () => {
     // Sin zonas en su tipo, entra por las de siempre (todas las de ingreso).
     expect(entranceText([principal, vip, salida], "platea", [])).toBe("Ingreso por cualquier puerta");
     expect(entranceText([salida], "platea")).toBeNull();
+  });
+
+  it("salida: puerta de salida, de ida y vuelta, o la misma entrada si el recinto no tiene salida y la entrada permite reingreso", () => {
+    const base = { inside: true, reentry: false, venueHasExitGate: false };
+    expect(isExitScan({ ...base, direction: "OUT", inside: false })).toBe(true);
+    expect(isExitScan({ ...base, direction: "BOTH" })).toBe(true);
+    expect(isExitScan({ ...base, direction: "BOTH", inside: false })).toBe(false);
+    // Sin reingreso, la segunda lectura en la entrada no es una salida (sigue siendo "ya usada").
+    expect(isExitScan({ ...base, direction: "IN" })).toBe(false);
+    // Con reingreso y sin puerta de salida en el recinto: sale al baño por la misma puerta.
+    expect(isExitScan({ ...base, direction: "IN", reentry: true })).toBe(true);
+    expect(isExitScan({ ...base, direction: null, reentry: true })).toBe(true);
+    expect(isExitScan({ ...base, direction: "IN", reentry: true, inside: false })).toBe(false);
+    // Si el recinto tiene puerta de salida, se sale por ella.
+    expect(isExitScan({ ...base, direction: "IN", reentry: true, venueHasExitGate: true })).toBe(false);
+    // La puerta del VIP con la persona en General: es un cambio de zona, no una salida.
+    expect(isExitScan({ ...base, direction: "IN", reentry: true, leadsToOtherZone: true })).toBe(false);
   });
 
   it("solo las entradas con reingreso lo dicen", () => {

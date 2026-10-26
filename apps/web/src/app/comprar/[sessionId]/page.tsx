@@ -175,7 +175,7 @@ export default async function BuyPage({ params, searchParams }: Props) {
       {turnEndsAt && <TurnCountdown endsAt={turnEndsAt.toISOString()} sessionId={session.id} />}
 
       {holdCode && (
-        <p role="status" className={`rounded-xl border px-4 py-3 text-sm ${unlocked ? "border-[var(--accent)]/40 bg-[var(--accent)]/10" : "border-[var(--accent-2)]/40 text-[var(--accent-2)]"}`}>
+        <p role="status" className={`rounded-xl border px-4 py-3 text-sm ${unlocked ? "border-[var(--highlight)]/40 bg-[var(--highlight)]/10" : "border-[var(--accent-2)]/40 text-[var(--accent-2)]"}`}>
           {unlocked
             ? `Código de reserva "${unlocked.name}": sus ${unlocked._count.seats} lugares apartados están habilitados para ti en el mapa.`
             : "Ese código de reserva no es válido para esta función."}

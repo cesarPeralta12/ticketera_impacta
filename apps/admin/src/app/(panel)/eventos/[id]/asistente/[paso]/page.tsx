@@ -182,7 +182,7 @@ export default async function WizardPage({ params }: Props) {
                           <span>
                             <strong>{t.name}</strong> · {t.section?.name}
                             {t.presale && <span className="badge ml-2 bg-[var(--warn-soft)] text-[var(--warn)]">preventa</span>}
-                            {t.kind === "TABLE" && <span className="badge ml-2 bg-[#f3e8ff] text-[#7c3aed]">mesa de {t.peoplePerUnit}</span>}
+                            {t.kind === "TABLE" && <span className="badge ml-2 bg-[var(--accent-soft)] text-[var(--accent-hover)]">mesa de {t.peoplePerUnit}</span>}
                           </span>
                           <span className="font-mono">
                             {formatMoney(t.unitAmount, t.currency)} · {t.capacity} lugares
@@ -259,7 +259,7 @@ export default async function WizardPage({ params }: Props) {
             </p>
           ) : event.status === "PENDING_REVIEW" ? (
             <p className="text-sm">
-              Enviado a Impacta: sale en la web cuando lo aprueben.{" "}
+              Enviado a iPass: sale en la web cuando lo aprueben.{" "}
               <Link href={`/eventos/${event.id}`} className="text-[var(--accent)] underline">
                 Ir al evento
               </Link>
@@ -274,7 +274,7 @@ export default async function WizardPage({ params }: Props) {
                     ? guestList
                       ? "Al activarlo se puede entrar con invitación (no aparece en la web)."
                       : "Al publicarlo sale a la venta en la web."
-                    : "Se envía a Impacta, que lo revisa y lo publica."}
+                    : "Se envía a iPass, que lo revisa y lo publica."}
               </p>
               <button type="submit" disabled={!ready} className="btn btn-primary w-fit disabled:cursor-not-allowed disabled:opacity-50">
                 {!staff.platform ? "Enviar a revisión" : guestList ? "Activar evento" : "Publicar evento"}

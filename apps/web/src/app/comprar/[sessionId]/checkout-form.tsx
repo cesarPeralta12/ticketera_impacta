@@ -221,7 +221,8 @@ export function CheckoutForm({
         ids.length ? <input key={type} type="hidden" name={`seats:${type}`} value={ids.join(",")} /> : null,
       )}
 
-      {(seated.length > 0 || zones.length > 0) && (
+      {/* El mapa: para elegir butaca o zona, o al menos para ver por qué puerta se entra. */}
+      {(seated.length > 0 || zones.length > 0 || items.some((i) => i.kind === "ENTRANCE")) && (
         <section className="card space-y-4 p-4 sm:p-6">
           <h2 className="font-display text-xl">
             {seated.length > 0 ? (seated.every((t) => t.table) ? "1. Elige tu mesa en el mapa" : "1. Elige tus butacas") : "Mapa del recinto"}
@@ -259,7 +260,7 @@ export function CheckoutForm({
                 {t.presale && <span className="font-semibold text-[var(--accent-2)]">(preventa)</span>}
                 {t.discountPercent ? <span className="font-semibold text-[var(--accent-2)]"> (-{t.discountPercent}% preventa)</span> : null}
                 {t.table && (
-                  <span className="text-[#d9a6ff]">
+                  <span className="text-[#D985B8]">
                     {" "}
                     · mesa para {t.table.people}
                     {t.consumption ? `, incluye ${t.consumption} de consumo` : ""}
@@ -268,7 +269,7 @@ export function CheckoutForm({
                 :{" "}
                 <span className="text-[var(--ink)]">{formatMoney(t.unitAmount, t.currency)}</span>
                 {(seats[t.ticketTypeId]?.length ?? 0) > 0 && (
-                  <span className="text-[var(--accent)]">× {seats[t.ticketTypeId]!.length}</span>
+                  <span className="text-[var(--accent-text)]">× {seats[t.ticketTypeId]!.length}</span>
                 )}
               </li>
             ))}
@@ -300,7 +301,7 @@ export function CheckoutForm({
                 key={type.id}
                 // Solo el primer tipo de la zona lleva el ancla: el mapa salta a ella.
                 id={type.sectionId && general.findIndex((t) => t.sectionId === type.sectionId) === index ? `zona-${type.sectionId}` : undefined}
-                className={`flex items-center justify-between gap-4 px-5 py-4 transition-colors ${type.sectionId && flash === type.sectionId ? "bg-[var(--accent)]/15" : ""}`}
+                className={`flex items-center justify-between gap-4 px-5 py-4 transition-colors ${type.sectionId && flash === type.sectionId ? "bg-[var(--highlight)]/15" : ""}`}
               >
                 <div>
                   <p className="font-semibold">
@@ -311,7 +312,7 @@ export function CheckoutForm({
                       </span>
                     )}
                     {type.table && (
-                      <span className="ml-2 rounded-full bg-[#C04BFF]/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#d9a6ff]">
+                      <span className="ml-2 rounded-full bg-[#AD468D]/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#D985B8]">
                         Mesa · {type.table.people} personas
                       </span>
                     )}
@@ -337,7 +338,7 @@ export function CheckoutForm({
                     </p>
                   )}
                   {type.presaleUntil && <p className="text-xs text-[var(--accent-2)]">Hasta {type.presaleUntil}</p>}
-                  <p className="font-display text-lg text-[var(--accent)]">
+                  <p className="font-display text-lg text-[var(--accent-text)]">
                     {type.listAmount !== null && (
                       <span className="mr-2 text-sm text-[var(--ink-dim)] line-through">{formatMoney(type.listAmount, type.currency)}</span>
                     )}
@@ -397,7 +398,7 @@ export function CheckoutForm({
         </dl>
         <p className="text-xs text-[var(--ink-dim)]">
           Las entradas salen a tu nombre y con tu carnet, que se verifica en la puerta.{" "}
-          <Link href={`/cuenta/datos?next=${encodeURIComponent(`/comprar/${sessionId}`)}`} className="text-[var(--accent)] underline underline-offset-4">
+          <Link href={`/cuenta/datos?next=${encodeURIComponent(`/comprar/${sessionId}`)}`} className="text-[var(--accent-text)] underline underline-offset-4">
             Editar mis datos
           </Link>
         </p>

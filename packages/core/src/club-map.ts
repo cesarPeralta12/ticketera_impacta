@@ -38,7 +38,17 @@ const DEFAULT_SIZE: Record<MapItemKind, [number, number]> = {
   LABEL: [140, 32],
 };
 
-export type MapItem = { id: string; kind: MapItemKind; label: string; x: number; y: number; width: number; height: number };
+export type MapItem = {
+  id: string;
+  kind: MapItemKind;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Nombre escrito de abajo hacia arriba (ej. una puerta en una pared de costado). */
+  vertical?: boolean;
+};
 
 export const MAX_MAP_ITEMS = 40;
 export const MIN_ITEM_SIZE = 20;
@@ -79,9 +89,18 @@ export function parseMapItems(input: unknown): MapItem[] | null {
       y: round(clamp(y, 0, CANVAS_HEIGHT - h)),
       width: round(w),
       height: round(h),
+      ...(r.vertical === true ? { vertical: true } : {}),
     });
   }
   return items;
+}
+
+/** Dónde va el nombre de un elemento: centrado en su caja; si es vertical, girado 90° (se lee de abajo hacia arriba). */
+export function mapItemLabel(item: MapItem): { x: number; y: number; fontSize: number; transform?: string } {
+  const cx = item.x + item.width / 2;
+  const cy = item.y + item.height / 2;
+  const fontSize = Math.min(16, Math.max(10, (item.vertical ? item.width : item.height) / 2.6));
+  return { x: cx, y: cy + 5, fontSize, ...(item.vertical ? { transform: `rotate(-90 ${cx} ${cy})` } : {}) };
 }
 
 /** ¿El plano ya dibuja su propio escenario? (si no, los mapas muestran el de siempre arriba al centro). */

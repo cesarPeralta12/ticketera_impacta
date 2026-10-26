@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
-import { CATEGORY_LABEL, formatDateTime, sellableCapacity } from "@ticketera/core";
+import { CATEGORY_COLOR, CATEGORY_LABEL, formatDateTime, sellableCapacity } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { EVENT_STATUS } from "@/lib/labels";
 import { enterOrganizationAction } from "@/lib/actions/platform";
@@ -52,7 +52,7 @@ export default async function EventsPage() {
         <div>
           <p className="eyebrow">{events.length} evento(s)</p>
           <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            {isGlobalView(staff) ? "Eventos de Impacta" : isNightlife(staff) ? "Noches" : "Eventos"}
+            {isGlobalView(staff) ? "Eventos de iPass" : isNightlife(staff) ? "Noches" : "Eventos"}
             <Help title="Cómo se arma un evento">
               «+ Nuevo evento» abre el asistente: datos, lugar y fecha, entradas (con modelos General, VIP, Mesa, Free y
               Preventa), revisar con la vista previa del comprador y publicar. Para un evento chico que se vende con entradas
@@ -63,11 +63,11 @@ export default async function EventsPage() {
         {!staff.readOnly && (
           <div className="flex flex-wrap justify-end gap-2">
             {!isNightlife(staff) && (
-              <Link href="/eventos/rapido" className="btn" title="Evento chico con entradas impresas para vender en mano">
+              <Link href="/eventos/rapido" data-tour="evento-pequeno" className="btn" title="Evento chico con entradas impresas para vender en mano">
                 + Evento pequeño
               </Link>
             )}
-            <Link href="/eventos/nuevo" className="btn btn-primary">
+            <Link href="/eventos/nuevo" data-tour="nuevo-evento" className="btn btn-primary">
               {isNightlife(staff) ? "+ Nuevo boliche" : "+ Nuevo evento"}
             </Link>
           </div>
@@ -89,25 +89,29 @@ export default async function EventsPage() {
           )}
         </div>
       ) : (
-        <ul className="flex flex-col gap-2.5">
+        <ul data-tour="lista-eventos" className="flex flex-col gap-2.5">
           {events.map((event) => {
             const [first] = event.sessions;
             const capacity = event.sessions.reduce((sum, s) => sum + sellableCapacity(s.ticketTypes), 0);
             const sold = event.sessions.reduce((sum, s) => sum + s._count.tickets, 0);
             const status = EVENT_STATUS[event.status];
+            const color = CATEGORY_COLOR[event.category] ?? CATEGORY_COLOR.OTRO;
+            const percent = capacity > 0 ? Math.min(100, Math.round((sold / capacity) * 100)) : 0;
             return (
               <li key={event.id}>
                 <Link
                   href={`/eventos/${event.id}`}
-                  className="card flex flex-wrap items-center justify-between gap-4 px-5 py-4 transition-colors hover:border-[var(--accent)]"
+                  style={{ borderLeft: `4px solid ${color}` }}
+                  className="card flex flex-wrap items-center justify-between gap-4 px-5 py-4"
                 >
                   <div>
                     <div className="flex items-center gap-2.5">
                       <span className="font-medium">{event.title}</span>
                       <span className={`badge ${status.className}`}>{status.text}</span>
-                      {event.small && <span className="badge bg-[var(--accent-soft)] text-[var(--accent)]">Pequeño</span>}
+                      {event.small && <span className="badge badge-highlight">Pequeño</span>}
                     </div>
-                    <p className="mt-0.5 text-sm text-[var(--ink-muted)]">
+                    <p className="mt-0.5 flex items-center gap-1.5 text-sm text-[var(--ink-muted)]">
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
                       {CATEGORY_LABEL[event.category]}
                       {first && ` · ${first.venue.name}`}
                     </p>
@@ -121,6 +125,11 @@ export default async function EventsPage() {
                     <p>
                       {sold} / {capacity} vendidas
                     </p>
+                    {capacity > 0 && (
+                      <span className="ml-auto mt-1.5 block h-1.5 w-32 overflow-hidden rounded-full bg-[var(--surface-2)]" aria-hidden>
+                        <span className="block h-full rounded-full" style={{ width: `${percent}%`, background: "var(--grad-brand)" }} />
+                      </span>
+                    )}
                   </div>
                 </Link>
               </li>

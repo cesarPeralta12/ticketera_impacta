@@ -74,7 +74,7 @@ export default async function MyEventsPage() {
       <div>
         <p className="eyebrow">{session.user.name}</p>
         <h1 className="font-display text-4xl">Mis eventos</h1>
-        <Link href="/mis-entradas" className="mt-2 inline-block text-sm text-[var(--accent)] underline underline-offset-4">
+        <Link href="/mis-entradas" className="mt-2 inline-block text-sm text-[var(--accent-text)] underline underline-offset-4">
           Ver mis entradas y transferirlas a otra persona →
         </Link>
       </div>
@@ -82,7 +82,7 @@ export default async function MyEventsPage() {
       {orders.length === 0 ? (
         <p className="text-[var(--ink-muted)]">
           Todavía no compraste con esta cuenta.{" "}
-          <Link href="/" className="text-[var(--accent)] underline underline-offset-4">
+          <Link href="/" className="text-[var(--accent-text)] underline underline-offset-4">
             Ver eventos
           </Link>
         </p>

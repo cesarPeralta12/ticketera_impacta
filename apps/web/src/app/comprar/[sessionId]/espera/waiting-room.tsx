@@ -80,7 +80,7 @@ export function WaitingRoom({ sessionId }: { sessionId: string }) {
       {status.state === "connecting" && <p className="text-[var(--ink-muted)]">Entrando a la sala de espera…</p>}
       {status.state === "waiting" && (
         <>
-          <p className="font-display text-7xl text-[var(--accent)]">{status.position}</p>
+          <p className="font-display text-7xl text-[var(--accent-text)]">{status.position}</p>
           <p className="text-[var(--ink-muted)]">
             tu lugar en la fila · {status.waiting === 1 ? "1 persona esperando" : `${status.waiting} personas esperando`}
           </p>

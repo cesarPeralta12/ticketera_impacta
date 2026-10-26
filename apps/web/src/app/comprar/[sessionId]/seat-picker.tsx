@@ -7,6 +7,7 @@ import {
   MAP_ITEM_COLOR,
   formatMoney,
   hasStage,
+  mapItemLabel,
   reservadoSize,
   tableHeight,
   zoneLabelPoint,
@@ -106,15 +107,15 @@ export function SeatPicker({
       >
         <defs>
           <linearGradient id="escenario" x1="0" x2="1">
-            <stop offset="0" stopColor="#f5b700" stopOpacity="0" />
-            <stop offset="0.5" stopColor="#f5b700" stopOpacity="0.7" />
-            <stop offset="1" stopColor="#f5b700" stopOpacity="0" />
+            <stop offset="0" stopColor="#F5B700" stopOpacity="0" />
+            <stop offset="0.5" stopColor="#F5B700" stopOpacity="0.7" />
+            <stop offset="1" stopColor="#F5B700" stopOpacity="0" />
           </linearGradient>
         </defs>
         {!hasStage(items) && (
           <>
             <rect x={CANVAS_WIDTH / 2 - 160} y={18} width={320} height={16} rx={8} fill="url(#escenario)" />
-            <text x={CANVAS_WIDTH / 2} y={56} textAnchor="middle" fontSize="11" letterSpacing="4" fill="#6b687a">
+            <text x={CANVAS_WIDTH / 2} y={56} textAnchor="middle" fontSize="11" letterSpacing="4" fill="#7D89A3">
               ESCENARIO
             </text>
           </>
@@ -135,13 +136,11 @@ export function SeatPicker({
               strokeDasharray={item.kind === "LABEL" ? "6 4" : undefined}
             />
             <text
-              x={item.x + item.width / 2}
-              y={item.y + item.height / 2 + 5}
+              {...mapItemLabel(item)}
               textAnchor="middle"
-              fontSize={Math.min(16, Math.max(10, item.height / 2.6))}
               fontWeight="700"
               letterSpacing="2"
-              fill={item.kind === "LABEL" ? "#c9c6d6" : MAP_ITEM_COLOR[item.kind]}
+              fill={item.kind === "LABEL" ? "#C3CCDD" : MAP_ITEM_COLOR[item.kind]}
             >
               {item.label.toUpperCase()}
             </text>
@@ -174,22 +173,22 @@ export function SeatPicker({
               <title>{`${z.name} · ${detail}`}</title>
               <path
                 d={zonePath(z.zone)}
-                fill={sold ? "#2a2a36" : z.color}
+                fill={sold ? "#2A3751" : z.color}
                 fillOpacity={sold ? 0.6 : count > 0 ? 0.55 : 0.22}
-                stroke={count > 0 ? "#f5b700" : z.color}
+                stroke={count > 0 ? "#F5B700" : z.color}
                 strokeWidth={count > 0 ? 3.5 : 2}
                 strokeDasharray={sold ? "6 5" : undefined}
               />
-              <text x={p.x} y={p.y - (big ? 6 : 0)} textAnchor="middle" fontSize={big ? 17 : 13} fontWeight="700" fill={sold ? "#8a8798" : z.color}>
+              <text x={p.x} y={p.y - (big ? 6 : 0)} textAnchor="middle" fontSize={big ? 17 : 13} fontWeight="700" fill={sold ? "#7D89A3" : z.color}>
                 {z.name.toUpperCase()}
               </text>
               {big && (
-                <text x={p.x} y={p.y + 14} textAnchor="middle" fontSize="13" fontWeight="600" fill="#c9c6d6">
+                <text x={p.x} y={p.y + 14} textAnchor="middle" fontSize="13" fontWeight="600" fill="#C3CCDD">
                   {detail}
                 </text>
               )}
               {count > 0 && (
-                <text x={p.x} y={p.y + (big ? 34 : 18)} textAnchor="middle" fontSize="15" fontWeight="800" fill="#f5b700">
+                <text x={p.x} y={p.y + (big ? 34 : 18)} textAnchor="middle" fontSize="15" fontWeight="800" fill="#F5B700">
                   × {count}
                 </text>
               )}
@@ -202,7 +201,7 @@ export function SeatPicker({
             <text x={l.x} y={l.y} textAnchor="middle" fontSize="15" fontWeight="700" fill={l.color}>
               {l.name.toUpperCase()}
             </text>
-            <text x={l.x} y={l.y + 18} textAnchor="middle" fontSize="14" fontWeight="600" fill="#c9c6d6">
+            <text x={l.x} y={l.y + 18} textAnchor="middle" fontSize="14" fontWeight="600" fill="#C3CCDD">
               {l.detail}
             </text>
           </g>
@@ -213,7 +212,7 @@ export function SeatPicker({
             const st = section.seatedTables!;
             const chosen = section.seats.some((seat) => seat.group === String(t.number) && selected.has(seat.id));
             const free = section.seats.some((seat) => seat.group === String(t.number) && !seat.taken);
-            const fill = chosen ? "#f5b700" : free ? section.color : "#2a2a36";
+            const fill = chosen ? "#F5B700" : free ? section.color : "#2A3751";
             return (
               <g key={`${section.ticketTypeId}-${t.number}`} pointerEvents="none">
                 {st.shape === "round" ? (
@@ -221,7 +220,7 @@ export function SeatPicker({
                 ) : (
                   <rect x={t.x - st.size} y={t.y - tableHeight(st.size) / 2} width={st.size * 2} height={tableHeight(st.size)} rx={4} fill={fill} fillOpacity={chosen ? 0.45 : 0.18} stroke={fill} strokeWidth={1.5} />
                 )}
-                <text x={t.x} y={t.y + 4} textAnchor="middle" fontSize="11" fontWeight="800" fill={free ? "#f5f3ef" : "#6b687a"}>
+                <text x={t.x} y={t.y + 4} textAnchor="middle" fontSize="11" fontWeight="800" fill={free ? "#F5F6F8" : "#7D89A3"}>
                   {t.number}
                 </text>
               </g>
@@ -236,19 +235,19 @@ export function SeatPicker({
             const rect = section.round?.shape === "rect";
             // Accesibilidad: además del color, la butaca ocupada lleva × y la elegida ✓ (en lounges va el número).
             const mark = !section.round && (seat.taken || isSelected) ? (
-              <text x={seat.x} y={seat.y + 3.5} textAnchor="middle" fontSize="10" fontWeight="900" fill={isSelected ? "#0b0b10" : "#6b687a"} pointerEvents="none" aria-hidden>
+              <text x={seat.x} y={seat.y + 3.5} textAnchor="middle" fontSize="10" fontWeight="900" fill={isSelected ? "#192438" : "#7D89A3"} pointerEvents="none" aria-hidden>
                 {isSelected ? "✓" : "×"}
               </text>
             ) : null;
             const number = section.round && seat.short ? (
-              <text x={seat.x} y={seat.y + 5} textAnchor="middle" fontSize="13" fontWeight="800" fill={isSelected ? "#0b0b10" : seat.taken ? "#6b687a" : "#f5f3ef"} pointerEvents="none">
+              <text x={seat.x} y={seat.y + 5} textAnchor="middle" fontSize="13" fontWeight="800" fill={isSelected ? "#192438" : seat.taken ? "#7D89A3" : "#F5F6F8"} pointerEvents="none">
                 {seat.short}
               </text>
             ) : null;
             if (seat.taken) {
               return (
                 <g key={seat.id} aria-hidden>
-                  <Spot x={seat.x} y={seat.y} r={r} rect={rect} fill="#2a2a36" />
+                  <Spot x={seat.x} y={seat.y} r={r} rect={rect} fill="#2A3751" />
                   {number}
                   {mark}
                 </g>
@@ -261,8 +260,8 @@ export function SeatPicker({
                 y={seat.y}
                 rect={rect}
                 r={isSelected ? r + 2 : r}
-                fill={isSelected ? "#f5b700" : section.round ? `${section.color}33` : "transparent"}
-                stroke={isSelected ? "#f5b700" : section.color}
+                fill={isSelected ? "#F5B700" : section.round ? `${section.color}33` : "transparent"}
+                stroke={isSelected ? "#F5B700" : section.color}
                 strokeWidth={2}
                 role="checkbox"
                 aria-checked={isSelected}
@@ -286,10 +285,10 @@ export function SeatPicker({
           <span className="h-3 w-3 rounded-full border-2 border-[var(--border-light)]" /> Libre
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="flex h-3 w-3 items-center justify-center rounded-full bg-[var(--accent)] text-[8px] font-black text-[#0b0b10]">✓</span> Tu selección
+          <span className="flex h-3 w-3 items-center justify-center rounded-full bg-[var(--highlight)] text-[8px] font-black text-[var(--highlight-ink)]">✓</span> Tu selección
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="flex h-3 w-3 items-center justify-center rounded-full bg-[#2a2a36] text-[9px] font-black text-[#6b687a]">×</span> Ocupada
+          <span className="flex h-3 w-3 items-center justify-center rounded-full bg-[#2A3751] text-[9px] font-black text-[#7D89A3]">×</span> Ocupada
         </span>
         {zones.length > 0 && (
           <span className="flex items-center gap-1.5">

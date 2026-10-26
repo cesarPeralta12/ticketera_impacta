@@ -31,13 +31,23 @@ export async function assignDoorAction(_prev: FormState, formData: FormData): Pr
   const gate = gateId ? await prisma.accessPoint.findFirst({ where: { id: gateId, venueId: session.venueId } }) : null;
   if (!gate) return { error: "Elige la puerta de esta cuenta (debe ser una puerta del recinto de la función)." };
 
+  const where = { userId_sessionId: { userId: operator.id, sessionId: session.id } };
+  const previous = await prisma.doorAssignment.findUnique({ where, select: { accessPoint: { select: { id: true, name: true } } } });
   await prisma.doorAssignment.upsert({
-    where: { userId_sessionId: { userId: operator.id, sessionId: session.id } },
+    where,
     create: { userId: operator.id, sessionId: session.id, accessPointId: gate.id },
     update: { accessPointId: gate.id },
   });
   revalidatePath(`/usuarios/${operator.id}`);
-  return { ok: true };
+  // Una segunda puerta en la misma función reemplaza a la primera: se avisa, para no creer que cubre las dos.
+  const before = previous?.accessPoint;
+  return {
+    ok: true,
+    message:
+      before && before.id !== gate.id
+        ? `Ahora controla ${gate.name} (antes: ${before.name}). Cada portero trabaja una sola puerta por función: para la otra, asigna a otro portero.`
+        : `Asignado a ${gate.name}.`,
+  };
 }
 
 export async function unassignDoorAction(_prev: FormState, formData: FormData): Promise<FormState> {

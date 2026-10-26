@@ -9,6 +9,6 @@ export function promoState(
   if (p.endsAt && p.endsAt <= now) return { text: "Vencido", className: "bg-[var(--danger-soft)] text-[var(--danger)]" };
   if (p.maxUses !== null && p.uses >= p.maxUses) return { text: "Agotado", className: "bg-[var(--warn-soft)] text-[var(--warn)]" };
   if (p.startsAt && p.startsAt > now) return { text: "Programado", className: "bg-[var(--warn-soft)] text-[var(--warn)]" };
-  return { text: "Activo", className: "bg-[var(--accent-soft)] text-[var(--accent)]" };
+  return { text: "Activo", className: "bg-[var(--success-soft)] text-[var(--success)]" };
 }
 

@@ -14,6 +14,7 @@ import {
   reservadoSize,
   defaultMapItem,
   hasStage,
+  mapItemLabel,
   nextTableNumber,
   zoneLabelPoint,
   zonePath,
@@ -65,6 +66,10 @@ type DesignerProps = {
   seats: { x: number; y: number; color: string }[];
   /** Imagen del plano real para calcar (si se subió). */
   background?: PlanBackgroundInfo;
+  /** Con lounges (boliche) o solo los elementos del plano: escenario, puertas, barras… (cualquier recinto). */
+  lounges?: boolean;
+  /** Puertas del recinto: se ponen en el plano con su nombre, para que el comprador vea por dónde entra. */
+  doors?: string[];
 };
 type Notice = { ok: boolean; text: string } | null;
 
@@ -88,6 +93,8 @@ function PlanEditor({
   zones,
   seats,
   background,
+  lounges = true,
+  doors = [],
   message,
   setMessage,
 }: DesignerProps & { message: Notice; setMessage: (notice: Notice) => void }) {
@@ -415,9 +422,20 @@ function PlanEditor({
     changed();
   }
 
-  function addItem(kind: MapItemKind) {
-    const at = kind === "STAGE" ? { x: CANVAS_WIDTH / 2, y: 50 } : { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
-    const item = defaultMapItem(kind, at, newKey("i"));
+  function addItem(kind: MapItemKind, label?: string) {
+    // El escenario va arriba; el resto, al centro. Las entradas, al borde de abajo, una al lado de la otra.
+    const at = kind === "STAGE" ? { x: CANVAS_WIDTH / 2, y: 50 } : { x: CANVAS_WIDTH / 2, y: kind === "ENTRANCE" ? CANVAS_HEIGHT - 30 : CANVAS_HEIGHT / 2 };
+    const base = defaultMapItem(kind, at, newKey("i"));
+    // Con el nombre de la puerta, la caja se ensancha para que entre (en mayúsculas ocupa ~10 px por letra).
+    const width = label ? clamp(label.length * 10 + 30, base.width, 300) : base.width;
+    const entrances = items.filter((i) => i.kind === "ENTRANCE");
+    const left =
+      kind === "ENTRANCE"
+        ? entrances.length
+          ? Math.max(...entrances.map((i) => i.x + i.width)) + 24
+          : 40
+        : base.x - (width - base.width) / 2;
+    const item = { ...base, x: Math.round(clamp(left, 0, CANVAS_WIDTH - width)), width, ...(label ? { label: label.slice(0, 30) } : {}) };
     remember();
     setItems((its) => [...its, item]);
     pick({ type: "item", id: item.id }, false);
@@ -429,6 +447,20 @@ function PlanEditor({
     remember();
     setItems((its) => its.map((i) => (i.id === id ? { ...i, ...patch } : i)));
     changed();
+  }
+
+  /** Gira el nombre (y la caja, sobre su centro): una puerta en una pared de costado queda parada. */
+  function setVertical(item: MapItem, vertical: boolean) {
+    if (Boolean(item.vertical) === vertical) return;
+    const [cx, cy] = [item.x + item.width / 2, item.y + item.height / 2];
+    const [width, height] = [item.height, item.width];
+    updateItem(item.id, {
+      vertical,
+      width,
+      height,
+      x: Math.round(clamp(cx - width / 2, 0, CANVAS_WIDTH - width)),
+      y: Math.round(clamp(cy - height / 2, 0, CANVAS_HEIGHT - height)),
+    });
   }
 
   /** Quita lo elegido (los lounges con ventas se pueden mover, no quitar). */
@@ -596,9 +628,30 @@ function PlanEditor({
           </button>
         ))}
       </div>
+      {doors.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium">Puertas del recinto:</span>
+          {doors.map((door) => {
+            const placed = items.some((i) => i.kind === "ENTRANCE" && i.label.toLowerCase() === door.toLowerCase());
+            return (
+              <button
+                key={door}
+                type="button"
+                onClick={() => addItem("ENTRANCE", door)}
+                disabled={placed}
+                title={placed ? "Ya está en el plano" : "Ponerla en el plano con su nombre"}
+                className="btn px-2.5 py-1 text-xs disabled:opacity-50"
+                style={{ borderColor: MAP_ITEM_COLOR.ENTRANCE }}
+              >
+                {placed ? "✓" : "+"} {door}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {placingGroup && (
-        <p className="rounded-md bg-[#f3e8ff] px-3 py-2 text-sm text-[#7b2fbf]">
+        <p className="rounded-md bg-[var(--accent-soft)] px-3 py-2 text-sm text-[var(--accent-hover)]">
           Toca el plano donde va cada lounge de <strong>{placingGroup.name}</strong> (se numeran solos). Arrástralos para
           moverlos.{" "}
           <button type="button" onClick={() => setPlacing(null)} className="font-medium underline">
@@ -619,7 +672,7 @@ function PlanEditor({
         onPointerUp={onUp}
         onPointerCancel={onUp}
         role="application"
-        aria-label="Plano del boliche"
+        aria-label={lounges ? "Plano del boliche" : "Plano del recinto"}
       >
         {showBackground && <PlanBackground background={background} />}
         {!hasStage(items) && (
@@ -668,10 +721,8 @@ function PlanEditor({
                 strokeDasharray={isSel || item.kind === "LABEL" ? "6 4" : undefined}
               />
               <text
-                x={item.x + item.width / 2}
-                y={item.y + item.height / 2 + 5}
+                {...mapItemLabel(item)}
                 textAnchor="middle"
-                fontSize={Math.min(16, Math.max(10, item.height / 2.6))}
                 fontWeight="700"
                 letterSpacing="1"
                 fill="#1a1a18"
@@ -795,6 +846,25 @@ function PlanEditor({
             {MAP_ITEM_LABEL[selectedItem.kind]}: texto
             <input value={selectedItem.label} maxLength={30} onChange={(e) => updateItem(selectedItem.id, { label: e.target.value })} className="field w-48" />
           </label>
+          <div className="label">
+            Texto
+            <div className="flex h-[38px] items-center gap-1 rounded-md bg-[var(--surface-2)] p-1 text-xs" role="group" aria-label="Orientación del texto">
+              {[false, true].map((vertical) => {
+                const on = Boolean(selectedItem.vertical) === vertical;
+                return (
+                  <button
+                    key={String(vertical)}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setVertical(selectedItem, vertical)}
+                    className={`rounded px-2.5 py-1 ${on ? "bg-[var(--surface)] font-semibold text-[var(--ink)] shadow-sm" : "text-[var(--ink-muted)]"}`}
+                  >
+                    {vertical ? "Vertical" : "Horizontal"}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <label className="label">
             Ancho
             <input
@@ -839,11 +909,12 @@ function PlanEditor({
         </div>
       )}
 
+      {lounges && (
       <div className="space-y-2">
         <p className="text-sm font-medium">Lounges y mesas (cada círculo es uno; el comprador elige el suyo en el mapa)</p>
         {groups.length === 0 && <p className="text-sm text-[var(--ink-muted)]">Todavía no hay lounges en el plano.</p>}
         {groups.map((g) => (
-          <div key={g.key} className={`flex flex-wrap items-end gap-3 rounded-md border p-3 ${placing === g.key ? "border-[#c04bff]" : "border-[var(--border)]"}`}>
+          <div key={g.key} className={`flex flex-wrap items-end gap-3 rounded-md border p-3 ${placing === g.key ? "border-[var(--accent)]" : "border-[var(--border)]"}`}>
             <label className="label">
               Color
               <input type="color" value={g.color} onChange={(e) => updateGroup(g.key, { color: e.target.value })} className="h-[38px] w-12 rounded border border-[var(--border)]" />
@@ -882,6 +953,7 @@ function PlanEditor({
           + Nuevo grupo de lounges
         </button>
       </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-3 border-t border-[var(--border)] pt-3">
         <button type="button" onClick={save} disabled={pending || !dirty} className="btn btn-dark disabled:opacity-50">
@@ -889,16 +961,18 @@ function PlanEditor({
         </button>
         {dirty && !pending && <span className="text-sm text-[var(--warn)]">Tienes cambios sin guardar.</span>}
         {message && (
-          <span role={message.ok ? "status" : "alert"} className={`text-sm ${message.ok ? "text-[var(--accent)]" : "text-[var(--danger)]"}`}>
+          <span role={message.ok ? "status" : "alert"} className={`text-sm ${message.ok ? "text-[var(--success)]" : "text-[var(--danger)]"}`}>
             {message.text}
           </span>
         )}
       </div>
-      <p className="text-xs text-[var(--ink-dim)]">
-        Después, en los precios de cada noche, elige el grupo (ej. &ldquo;Lounges VIP&rdquo;) como sección, marca &ldquo;Es una mesa o
-        lounge&rdquo; con cuántas personas entran y el consumo incluido: cada lounge se vende una vez y su gente entra con un QR por
-        persona.
-      </p>
+      {lounges && (
+        <p className="text-xs text-[var(--ink-dim)]">
+          Después, en los precios de cada noche, elige el grupo (ej. &ldquo;Lounges VIP&rdquo;) como sección, marca &ldquo;Es una mesa o
+          lounge&rdquo; con cuántas personas entran y el consumo incluido: cada lounge se vende una vez y su gente entra con un QR por
+          persona.
+        </p>
+      )}
     </div>
   );
 }

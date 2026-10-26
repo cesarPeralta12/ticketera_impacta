@@ -28,7 +28,7 @@ export function BuyerPreview({ url }: { url: string }) {
           Abrir en otra pestaña ↗
         </a>
       </div>
-      <div className={`overflow-hidden rounded-xl border border-[var(--border)] bg-[#0b0b10] ${device === "mobile" ? "mx-auto w-[390px] max-w-full" : "w-full"}`}>
+      <div className={`overflow-hidden rounded-xl border border-[var(--border)] bg-[#111a2b] ${device === "mobile" ? "mx-auto w-[390px] max-w-full" : "w-full"}`}>
         <iframe
           key={device}
           src={url}

@@ -91,7 +91,7 @@ export function BarTerminal({ sessionId, timeZone, readOnly = false }: { session
         </p>
       )}
       {done && (
-        <p role="status" className="rounded-md bg-[var(--accent-soft)] px-3 py-2 text-sm font-medium text-[var(--accent)]">
+        <p role="status" className="rounded-md bg-[var(--success-soft)] px-3 py-2 text-sm font-medium text-[var(--success)]">
           {done}
         </p>
       )}
@@ -107,7 +107,7 @@ export function BarTerminal({ sessionId, timeZone, readOnly = false }: { session
             </div>
             <div className="text-right">
               <p className="eyebrow">Saldo</p>
-              <p className={`font-mono text-2xl font-semibold ${v.left === 0 ? "text-[var(--danger)]" : "text-[var(--accent)]"}`}>
+              <p className={`font-mono text-2xl font-semibold ${v.left === 0 ? "text-[var(--danger)]" : "text-[var(--success)]"}`}>
                 {formatMoney(v.left, v.currency)}
               </p>
               <p className="text-xs text-[var(--ink-dim)]">

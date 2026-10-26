@@ -1,5 +1,6 @@
 "use client";
 
+import { MapDecor } from "@/components/map-decor";
 import { PlanBackground, type PlanBackgroundInfo } from "@/components/plan-background";
 /**
  * Editor de zonas de entrada general (sin butacas): se dibujan como una forma en el mismo mapa que las butacas
@@ -18,6 +19,7 @@ import {
   zoneLabelPoint,
   zonePath,
   zonesOverlap,
+  type MapItem,
   type ZoneShape,
   type ZoneShapeName,
 } from "@ticketera/core";
@@ -57,7 +59,7 @@ function freeSpot(zones: DesignerZone[], seats: Props["seats"]) {
 
 const num = (v: string) => (v === "" ? Number.NaN : Number(v));
 
-export function ZoneDesigner({ venueId, zones, seats, background }: Props & { background?: PlanBackgroundInfo }) {
+export function ZoneDesigner({ venueId, zones, seats, background, items = [] }: Props & { background?: PlanBackgroundInfo; items?: MapItem[] }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [capacity, setCapacity] = useState(200);
@@ -169,10 +171,8 @@ export function ZoneDesigner({ venueId, zones, seats, background }: Props & { ba
       <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]">
         <svg ref={svgRef} viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="w-full touch-none select-none" style={{ background: "#fbfbf9" }}>
           <PlanBackground background={background} />
-          <rect x={CANVAS_WIDTH / 2 - 160} y={16} width={320} height={20} rx={4} fill="#1a1a18" />
-          <text x={CANVAS_WIDTH / 2} y={30} textAnchor="middle" fontSize="10" letterSpacing="2" fill="#fff">
-            ESCENARIO
-          </text>
+          {/* Escenario, puertas y demás del plano (sin escenario propio, el de siempre arriba al centro). */}
+          <MapDecor items={items} />
 
           {seats.map((s, i) => (
             <circle key={i} cx={s.x} cy={s.y} r={4.5} fill={s.color} opacity={0.45} />

@@ -1,30 +1,57 @@
 @import "tailwindcss";
 
-/* Paleta del panel (prototipo del compañero): fondo claro, acento verde azulado, look de dashboard. */
+/* Identidad iPass (guía de implementación visual): azul noche para navegación, blanco hielo de fondo, magenta
+   para acciones y marca, ámbar para destacar. Verde, rojo y amarillo oscuro quedan solo para estados. */
 :root {
-  --bg: #f6f6f3;
+  --ipass-blue: #60718b;
+  --ipass-magenta: #ad468d;
+  --ipass-magenta-dark: #913673;
+  --ipass-yellow: #f5b700;
+  --ipass-navy: #192438;
+  --ipass-ice: #f5f6f8;
+  --ipass-pink: #d985b8;
+
+  --bg: var(--ipass-ice);
   --surface: #ffffff;
-  --surface-2: #eeede7;
-  --border: #e1dfd7;
-  --ink: #14181b;
-  --ink-muted: #62655f;
-  --ink-dim: #9a9c92;
-  --accent: #0f8a6b;
+  --surface-2: #eef0f4;
+  --border: #e6eaf0;
+  --ink: var(--ipass-navy);
+  --ink-muted: var(--ipass-blue);
+  --ink-dim: #8592a8;
+  /* Acción principal (botones, enlaces, selección). */
+  --accent: var(--ipass-magenta);
+  --accent-hover: var(--ipass-magenta-dark);
   --accent-ink: #ffffff;
-  --accent-soft: #e3f3ee;
-  --warn: #b45309;
-  --warn-soft: #fdf1e0;
-  --danger: #b91c1c;
-  --danger-soft: #fdecec;
+  --accent-soft: #f7e9f2;
+  --highlight: var(--ipass-yellow);
+  --highlight-ink: var(--ipass-navy);
+  --highlight-soft: #fff4dc;
+  /* Estados */
+  --success: #16846c;
+  --success-soft: #e3f3ee;
+  --warn: #b77900;
+  --warn-soft: #fdf3dc;
+  --danger: #c62842;
+  --danger-soft: #fcebee;
+  --info: #3c649e;
+  --info-soft: #e8eef7;
 
-  /* Menú lateral */
-  --side-bg: #14181b;
-  --side-ink: #e9ece8;
-  --side-dim: #8d948f;
-  --side-border: #262c30;
-  --side-hover: #1e2428;
+  --grad-brand: linear-gradient(90deg, var(--ipass-magenta) 0%, var(--ipass-pink) 100%);
+  --grad-accent: linear-gradient(135deg, var(--ipass-magenta) 0%, var(--ipass-magenta-dark) 100%);
+  --shadow-card: 0 1px 2px rgb(25 36 56 / 0.04), 0 6px 20px -12px rgb(25 36 56 / 0.16);
+  --shadow-lift: 0 2px 4px rgb(25 36 56 / 0.05), 0 16px 32px -14px rgb(25 36 56 / 0.26);
+  --radius-card: 12px;
+  --radius-button: 8px;
 
-  --font-body: var(--font-manrope), "Segoe UI", sans-serif;
+  /* Menú lateral: azul noche */
+  --side-bg: var(--ipass-navy);
+  --side-ink: #f5f6f8;
+  --side-dim: #9ba9c4;
+  --side-border: rgb(255 255 255 / 0.09);
+  --side-hover: rgb(255 255 255 / 0.06);
+
+  --font-heading: var(--font-poppins), "Segoe UI", sans-serif;
+  --font-body: var(--font-inter), "Segoe UI", sans-serif;
   --font-mono: var(--font-mono-plex), ui-monospace, monospace;
 }
 
@@ -32,6 +59,7 @@
   --color-background: var(--bg);
   --color-foreground: var(--ink);
   --font-sans: var(--font-body);
+  --font-heading: var(--font-heading);
   --font-mono: var(--font-mono);
 }
 
@@ -49,12 +77,30 @@ body {
   font-family: var(--font-body);
 }
 
+/* Títulos en Poppins; tablas y formularios en Inter. */
+h1,
+h2,
+h3,
+.page-title,
+.font-heading {
+  font-family: var(--font-heading);
+}
+
 /* Piezas reutilizables del panel */
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.875rem;
-  box-shadow: 0 1px 2px rgb(20 24 27 / 0.04);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+/* Las tarjetas que son enlaces se levantan un poco al pasar el mouse. */
+a.card {
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+a.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lift);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 
 .field {
@@ -89,11 +135,11 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
-  border-radius: 0.375rem;
+  border-radius: var(--radius-button);
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
-  transition: opacity 0.15s, border-color 0.15s;
+  transition: opacity 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--ink);
@@ -102,18 +148,23 @@ body {
 .btn:hover {
   border-color: var(--ink);
 }
+.btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
 .btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--grad-accent);
+  border-color: transparent;
   color: var(--accent-ink);
 }
-.btn-primary:hover {
-  opacity: 0.9;
-  border-color: var(--accent);
+.btn-primary:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px -8px rgb(173 70 141 / 0.7);
 }
 .btn-dark {
   background: var(--ink);
@@ -130,8 +181,8 @@ body {
 }
 
 .eyebrow {
-  font-family: var(--font-mono);
   font-size: 0.6875rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--ink-dim);
@@ -139,29 +190,35 @@ body {
 
 .badge {
   display: inline-block;
-  border-radius: 0.25rem;
+  border-radius: 0.375rem;
   padding: 0.125rem 0.5rem;
-  font-family: var(--font-mono);
   font-size: 0.625rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
+/* Etiqueta destacada: ámbar con texto azul noche (nunca texto blanco sobre amarillo). */
+.badge-highlight {
+  background: var(--highlight);
+  color: var(--highlight-ink);
+}
 
-/* Menú lateral oscuro: la sección activa se ve de un vistazo */
+/* Menú lateral: azul noche liso; la sección activa en magenta. */
 .sidebar {
   background: var(--side-bg);
   color: var(--side-ink);
 }
 .side-title {
   padding: 0.5rem 0.75rem 0.25rem;
-  font-family: var(--font-mono);
   font-size: 0.625rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--side-dim);
 }
 .nav-link {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.625rem;
@@ -170,17 +227,30 @@ body {
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
   color: var(--side-dim);
-  transition: background-color 0.12s, color 0.12s;
+  transition: background-color 0.15s, color 0.15s;
+}
+.nav-link svg {
+  transition: color 0.15s, transform 0.2s;
 }
 .nav-link:hover {
   background: var(--side-hover);
   color: var(--side-ink);
 }
+.nav-link:hover svg {
+  color: var(--ipass-yellow);
+  transform: scale(1.1);
+}
+/* Activa: fondo magenta, texto e ícono blancos. */
 .nav-link-active,
 .nav-link-active:hover {
   background: var(--accent);
   color: var(--accent-ink);
   font-weight: 600;
+  box-shadow: 0 8px 20px -10px rgb(173 70 141 / 0.9);
+}
+.nav-link-active svg,
+.nav-link-active:hover svg {
+  color: #fff;
 }
 .side-btn {
   width: 100%;
@@ -203,7 +273,10 @@ body {
   letter-spacing: -0.01em;
 }
 .btn-primary {
-  box-shadow: 0 1px 2px rgb(15 138 107 / 0.35);
+  box-shadow: 0 1px 2px rgb(173 70 141 / 0.35);
+}
+table thead tr {
+  background: color-mix(in srgb, var(--surface-2) 45%, transparent);
 }
 table tbody tr {
   transition: background-color 0.1s;
@@ -252,9 +325,159 @@ table tbody tr:hover {
   }
 }
 
-/* Recorrido guiado: la sección del menú del paso actual. */
-.tour-target {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 0.5rem;
+/* Recorrido guiado: oscurece la página y deja a la vista lo que se explica, con un anillo que late. */
+.tour-spot {
+  position: fixed;
+  z-index: 60;
+  border-radius: 0.75rem;
+  /* 150vmax cubre siempre la pantalla (una sombra de miles de píxeles Chrome a veces no la dibuja). */
+  box-shadow: 0 0 0 150vmax rgb(25 36 56 / 0.55);
+  outline: 2px solid var(--ipass-yellow);
+  pointer-events: none;
+  transition: top 0.35s ease, left 0.35s ease, width 0.35s ease, height 0.35s ease;
+}
+.tour-spot::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  border: 2px solid var(--ipass-yellow);
+  animation: tour-ring 1.6s ease-out infinite;
+}
+.tour-dim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgb(25 36 56 / 0.45);
+  pointer-events: none;
+  animation: fade-in 0.3s ease-out both;
+}
+.tour-card {
+  transition: top 0.35s ease, left 0.35s ease, right 0.35s ease, bottom 0.35s ease;
+  animation: fade-up 0.35s ease-out both;
+}
+.tour-step {
+  animation: fade-up 0.3s ease-out both;
+}
+@keyframes tour-ring {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.08);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Colores por función (no uno distinto por tarjeta): azul = estructura y conteos, magenta = ventas e ingresos,
+   ámbar = lo que está a la venta o pendiente. Sirven para los números del resumen y los accesos rápidos. */
+.tone-blue {
+  --tone: var(--ipass-blue);
+  --tone-ink: #ffffff;
+}
+.tone-magenta {
+  --tone: var(--ipass-magenta);
+  --tone-ink: #ffffff;
+}
+.tone-amber {
+  --tone: var(--ipass-yellow);
+  --tone-ink: var(--ipass-navy);
+}
+.tone-tile {
+  background: var(--tone);
+  color: var(--tone-ink);
+}
+
+/* Números del resumen: tarjetas blancas con borde superior de 3 px según la función. */
+.stats > .card,
+.stats > .card:hover {
+  border-top: 3px solid var(--tone, var(--ipass-blue));
+}
+.stats .eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--ink-muted);
+}
+.stats .eyebrow::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: var(--tone, var(--ipass-blue));
+}
+
+/* Punto "en vivo" que late. */
+.live-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: var(--success);
+  animation: live-pulse 1.8s ease-out infinite;
+  vertical-align: middle;
+}
+
+/* Animaciones: la página entra suave y los números del resumen aparecen uno tras otro. */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes live-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(22 132 108 / 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgb(22 132 108 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(22 132 108 / 0);
+  }
+}
+.page-enter {
+  animation: fade-up 0.35s ease-out both;
+}
+.stats > * {
+  animation: fade-up 0.45s ease-out both;
+}
+.stats > :nth-child(2) {
+  animation-delay: 60ms;
+}
+.stats > :nth-child(3) {
+  animation-delay: 120ms;
+}
+.stats > :nth-child(4) {
+  animation-delay: 180ms;
+}
+.stats > :nth-child(5) {
+  animation-delay: 240ms;
+}
+.stats > :nth-child(6) {
+  animation-delay: 300ms;
+}
+
+/* Quien pide menos movimiento en su equipo no ve animaciones. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }

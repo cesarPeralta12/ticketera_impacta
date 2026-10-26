@@ -33,7 +33,7 @@ export async function bootstrapPlatform(input: {
   const organization =
     (await prisma.organization.findFirst({ where: { isPlatform: true } })) ??
     (await prisma.organization.create({
-      data: { name: input.organizationName ?? "Impacta", slug: "impacta", currency: DEFAULT_CURRENCY, isPlatform: true },
+      data: { name: input.organizationName ?? "iPass", slug: "impacta", currency: DEFAULT_CURRENCY, isPlatform: true },
     }));
 
   const owner = await createStaffUser({

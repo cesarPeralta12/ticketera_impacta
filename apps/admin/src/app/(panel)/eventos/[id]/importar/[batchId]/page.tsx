@@ -168,22 +168,29 @@ export default async function ImportBatchPage({ params }: Props) {
 
           {editable && (
             <section className="card flex flex-wrap items-start justify-between gap-4 p-6">
-              <ActionForm action={confirmImportAction} className="flex flex-col gap-3">
-                <input type="hidden" name="batchId" value={batch.id} />
-                {batch.errors.length > 0 && batch.validRows > 0 && (
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" name="skipErrors" />
-                    Importar solo las {batch.validRows} filas listas y dejar fuera las {batch.errors.length} con error
-                  </label>
-                )}
-                <button type="submit" disabled={batch.validRows === 0} className="btn btn-primary w-fit disabled:cursor-not-allowed disabled:opacity-50">
-                  Confirmar e importar {batch.ticketCount} entrada(s)
-                </button>
-                <p className="text-xs text-[var(--ink-dim)]">
-                  Se emiten todas juntas o ninguna. Ocupan cupo y suman {formatMoney(declared, currency)} al reporte (lo
-                  declarado como cobrado).
-                </p>
-              </ActionForm>
+              {batch.errors.length > 0 ? (
+                // Con errores no se emite nada (ni las filas buenas): se corrige el Excel y se sube de nuevo.
+                <div className="flex flex-col gap-3">
+                  <p className="text-sm text-[var(--danger)]">
+                    Hay {batch.errors.length} fila(s) con error. No se emite ninguna entrada hasta que el archivo esté
+                    sin errores: corrígelas en el Excel y vuelve a subirlo.
+                  </p>
+                  <Link href={`/eventos/${event.id}/importar`} className="btn btn-primary w-fit">
+                    Subir el archivo corregido
+                  </Link>
+                </div>
+              ) : (
+                <ActionForm action={confirmImportAction} className="flex flex-col gap-3">
+                  <input type="hidden" name="batchId" value={batch.id} />
+                  <button type="submit" disabled={batch.validRows === 0} className="btn btn-primary w-fit disabled:cursor-not-allowed disabled:opacity-50">
+                    Confirmar e importar {batch.ticketCount} entrada(s)
+                  </button>
+                  <p className="text-xs text-[var(--ink-dim)]">
+                    Se emiten todas juntas o ninguna. Ocupan cupo y suman {formatMoney(declared, currency)} al reporte (lo
+                    declarado como cobrado).
+                  </p>
+                </ActionForm>
+              )}
               <ActionForm action={discardImportAction}>
                 <input type="hidden" name="batchId" value={batch.id} />
                 <button type="submit" className="btn">
@@ -308,7 +315,7 @@ export default async function ImportBatchPage({ params }: Props) {
 }
 
 function Stat({ label, value, tone }: { label: string; value: number | string; tone?: "ok" | "bad" }) {
-  const color = tone === "ok" ? "text-[var(--accent)]" : tone === "bad" ? "text-[var(--danger)]" : "";
+  const color = tone === "ok" ? "text-[var(--success)]" : tone === "bad" ? "text-[var(--danger)]" : "";
   return (
     <div className="card p-4">
       <dt className="text-xs text-[var(--ink-dim)]">{label}</dt>

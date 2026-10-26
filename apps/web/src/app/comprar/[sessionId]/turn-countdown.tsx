@@ -45,7 +45,7 @@ export function TurnCountdown({ endsAt, sessionId }: { endsAt: string; sessionId
   }, [router, sessionId]);
 
   return (
-    <p className="rounded-xl border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-4 py-3 text-sm">
+    <p className="rounded-xl border border-[var(--highlight)]/40 bg-[var(--highlight)]/10 px-4 py-3 text-sm">
       Es tu turno: tienes{" "}
       <span className="font-mono font-semibold tabular-nums">
         {String(m).padStart(2, "0")}:{String(s).padStart(2, "0")}

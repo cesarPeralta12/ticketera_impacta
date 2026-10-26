@@ -58,7 +58,7 @@ export default async function OrganizerPage({ params }: Props) {
           </p>
         </div>
         <span
-          className={`badge ${active ? "bg-[var(--accent-soft)] text-[var(--accent)]" : "bg-[var(--danger-soft)] text-[var(--danger)]"}`}
+          className={`badge ${active ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--danger-soft)] text-[var(--danger)]"}`}
         >
           {active ? "Activo" : "Suspendido"}
         </span>

@@ -151,7 +151,7 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
               {order.paidAt && formatDateTime(order.paidAt, tz)} · Cajero: {cashier?.name ?? "—"}
               <br />
               {reentryText(t.ticketType.maxEntries)
-                ? `${reentryText(t.ticketType.maxEntries)}: al salir, haz leer el QR en la puerta de salida. No la compartas.`
+                ? `${reentryText(t.ticketType.maxEntries)}: al salir y al volver, haz leer tu QR en la puerta. No la compartas.`
                 : "Válida para un ingreso. No la compartas: el QR se anula al entrar."}
             </p>
           </li>

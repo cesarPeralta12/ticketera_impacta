@@ -29,7 +29,7 @@ export function ClubOfferView({
       key: `mesa-${t.name}`,
       title: `${t.name} · ${money(t.price)}`,
       text: `${t.people} personas, cada una con su QR${t.consumption ? ` · incluye ${money(t.consumption)} de consumo` : ""}${t.left > 0 && t.left <= 5 ? ` · ¡quedan ${t.left}!` : t.left === 0 ? " · agotadas" : ""}`,
-      tone: "#C04BFF",
+      tone: "#AD468D",
     });
   }
   for (const d of offer.drinks) {
@@ -46,13 +46,13 @@ export function ClubOfferView({
       <ul className="flex flex-wrap gap-1.5">
         {offer.free && <Chip tone="#35C48F">Free hasta {formatClock(offer.free.until, timeZone)}</Chip>}
         {offer.tables[0] && (
-          <Chip tone="#C04BFF">
+          <Chip tone="#AD468D">
             Mesas desde {money(offer.tables[0].price)}
             {offer.tables[0].consumption ? " con consumo" : ""}
           </Chip>
         )}
         {offer.drinks[0] && <Chip tone="#F5B700">Entrada + trago {money(offer.drinks[0].price)}</Chip>}
-        {offer.entryFrom !== null && <Chip tone="#9A96A6">Entrada desde {money(offer.entryFrom)}</Chip>}
+        {offer.entryFrom !== null && <Chip tone="#9BA9C4">Entrada desde {money(offer.entryFrom)}</Chip>}
       </ul>
     );
   }

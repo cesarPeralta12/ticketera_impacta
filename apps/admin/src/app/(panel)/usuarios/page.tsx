@@ -28,11 +28,11 @@ export default async function UsersPage() {
       <div>
         {organizer && <p className="eyebrow">{staff.organization.name}</p>}
         <h1 className="text-2xl font-semibold tracking-tight">
-          {organizer ? "Cuentas del organizador" : "Usuarios de Impacta"}
+          {organizer ? "Cuentas del organizador" : "Usuarios de iPass"}
         </h1>
         <p className="text-sm text-[var(--ink-muted)]">
           {organizer
-            ? "Solo Impacta crea cuentas. Cada una ve únicamente los eventos de este organizador: el administrador, todo lo suyo; el portero, la app móvil de puerta; el cajero, la boletería."
+            ? "Solo iPass crea cuentas. Cada una ve únicamente los eventos de este organizador: el administrador, todo lo suyo; el portero, la app móvil de puerta; el cajero, la boletería."
             : "No hay registro público: las cuentas se crean aquí. Cada rol ve solo lo suyo: el portero, la app móvil de puerta; el cajero, la boletería; el cliente, sus eventos mientras su espacio esté abierto."}{" "}
           La contraseña es temporal: la persona la cambia al entrar por primera vez.
         </p>
@@ -40,7 +40,7 @@ export default async function UsersPage() {
 
       {!organizer && (
         <p role="note" className="rounded-xl border border-[var(--warn)]/40 bg-[var(--warn-soft)] px-4 py-3 text-sm text-[var(--warn)]">
-          Estás creando cuentas de <strong>Impacta</strong>: solo ven los eventos de Impacta. Para el portero, el cajero o el administrador de un
+          Estás creando cuentas de <strong>iPass</strong>: solo ven los eventos de iPass. Para el portero, el cajero o el administrador de un
           organizador, entra primero en él: <Link href="/organizadores" className="font-semibold underline">Organizadores → Ver → Gestionar sus cuentas</Link>.
         </p>
       )}
@@ -69,7 +69,7 @@ export default async function UsersPage() {
                 </td>
                 <td className="px-5 py-3">
                   <span
-                    className={`badge ${m.user.active ? "bg-[var(--accent-soft)] text-[var(--accent)]" : "bg-[var(--surface-2)] text-[var(--ink-dim)]"}`}
+                    className={`badge ${m.user.active ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--surface-2)] text-[var(--ink-dim)]"}`}
                   >
                     {m.user.active ? "Activo" : "Desactivado"}
                   </span>
@@ -95,7 +95,7 @@ export default async function UsersPage() {
         </table>
       </div>
 
-      <section className="card p-6">
+      <section data-tour="crear-cuenta" className="card p-6">
         <h2 className="eyebrow mb-4">Nueva cuenta</h2>
         <ActionForm action={createStaffAction} resetOnSuccess successMessage="Cuenta creada." className="flex flex-wrap items-end gap-3">
           <label className="label">

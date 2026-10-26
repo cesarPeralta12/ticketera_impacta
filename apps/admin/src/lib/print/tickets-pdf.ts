@@ -13,6 +13,7 @@ import {
 } from "pdf-lib";
 import QRCode from "qrcode";
 import { code128Widths } from "@ticketera/core";
+import { IPASS_LOGO } from "./ipass-logo";
 
 /**
  * Entradas impresas en PDF (vectorial: el QR y el código de barras no se pixelan). Formatos:
@@ -59,6 +60,8 @@ const mm = (v: number) => v * MM;
 const SAFE = mm(4);
 const INK = rgb(0.08, 0.09, 0.1);
 const MUTED = rgb(0.38, 0.39, 0.37);
+const MAGENTA = rgb(173 / 255, 70 / 255, 141 / 255);
+const BLUE = rgb(96 / 255, 113 / 255, 139 / 255);
 
 type Box = { x: number; y: number; w: number; h: number };
 type Fonts = { regular: PDFFont; bold: PDFFont; mono: PDFFont };
@@ -146,6 +149,20 @@ function dashedLine(page: PDFPage, x1: number, y1: number, x2: number, y2: numbe
   page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness: 0.6, color: MUTED, dashArray: [3, 3] });
 }
 
+/**
+ * Logo iPass (vectorial) de `height` puntos de alto, con su esquina de arriba a la izquierda en (x, top); devuelve
+ * su ancho. En la térmica va en negro (no imprime color).
+ */
+function drawLogo(page: PDFPage, x: number, top: number, height: number, mono = false): number {
+  const scale = height / IPASS_LOGO.height;
+  page.drawSvgPath(IPASS_LOGO.i, { x, y: top, scale, color: mono ? INK : MAGENTA });
+  page.drawSvgPath(IPASS_LOGO.pass, { x, y: top, scale, color: mono ? INK : BLUE });
+  return IPASS_LOGO.width * scale;
+}
+
+/** El organizador se nombra junto al logo solo si no es la misma plataforma (sería "iPass" dos veces). */
+const organizer = (orgName: string) => (orgName.trim().toLowerCase() === "ipass" ? null : orgName);
+
 /** Arte de fondo ajustado para cubrir la caja (se recorta lo que sobra, centrado). */
 function drawCover(page: PDFPage, image: PDFImage, box: Box) {
   const scale = Math.max(box.w / image.width, box.h / image.height);
@@ -167,7 +184,10 @@ function drawWideTicket(page: PDFPage, t: PrintableTicket, box: Box, fonts: Font
   if (opts.stub) {
     const sx = box.x + SAFE;
     let y = box.y + box.h - SAFE;
-    y = lines(page, wrap(t.orgName, fonts.regular, 7, stubW - 2 * SAFE, 1), sx, y, fonts.regular, 7, MUTED);
+    drawLogo(page, sx, y, mm(4));
+    y -= mm(4);
+    const org = organizer(t.orgName);
+    if (org) y = lines(page, wrap(org, fonts.regular, 7, stubW - 2 * SAFE, 1), sx, y - mm(1), fonts.regular, 7, MUTED);
     y -= mm(2);
     y = lines(page, ["TALÓN"], sx, y, fonts.bold, 8, MUTED);
     y -= mm(1);
@@ -195,7 +215,6 @@ function drawWideTicket(page: PDFPage, t: PrintableTicket, box: Box, fonts: Font
   const textW = qrX - tx - mm(4);
   type Block = { text: string[]; font: PDFFont; size: number; color?: ReturnType<typeof rgb>; gap?: number; before?: number };
   const blocks: Block[] = [
-    { text: wrap(t.orgName, fonts.regular, 7, textW, 1), font: fonts.regular, size: 7, color: MUTED },
     { text: wrap(t.eventTitle, fonts.bold, 13, textW, 2), font: fonts.bold, size: 13, gap: 1.15, before: 2 },
     { text: wrap(t.dayLine, fonts.bold, 9, textW, 1), font: fonts.bold, size: 9, before: 1 },
     { text: wrap(t.timeLine, fonts.regular, 8, textW, 2), font: fonts.regular, size: 8, color: MUTED },
@@ -205,12 +224,17 @@ function drawWideTicket(page: PDFPage, t: PrintableTicket, box: Box, fonts: Font
     ...(t.holder ? [{ text: wrap(t.holder, fonts.regular, 8, textW, 1), font: fonts.regular, size: 8, color: MUTED }] : []),
     ...(t.conditions.length ? [{ text: wrap(t.conditions.join(" · "), fonts.regular, 7, textW, 2), font: fonts.regular, size: 7, color: MUTED, before: 1 }] : []),
   ];
+  // Arriba de todo, el logo iPass (y al lado, el organizador si no es iPass).
+  const logoH = mm(5);
   const textTop = main.y + main.h - SAFE;
-  const textHeight = blocks.reduce((h, b) => h + (b.before ?? 0) + b.text.length * b.size * (b.gap ?? 1.25), 0);
+  const textHeight = logoH + blocks.reduce((h, b) => h + (b.before ?? 0) + b.text.length * b.size * (b.gap ?? 1.25), 0);
   if (art) {
     page.drawRectangle({ x: tx - mm(2), y: textTop - textHeight - mm(2), width: textW + mm(4), height: textHeight + mm(4), color: rgb(1, 1, 1), opacity: 0.88 });
   }
-  let y = textTop;
+  const logoW = drawLogo(page, tx, textTop, logoH);
+  const org = organizer(t.orgName);
+  if (org) lines(page, wrap(`Organiza: ${org}`, fonts.regular, 7, textW - logoW - mm(3), 1), tx + logoW + mm(3), textTop - logoH / 2 + 3.5, fonts.regular, 7, MUTED);
+  let y = textTop - logoH;
   for (const b of blocks) y = lines(page, b.text, tx, y - (b.before ?? 0), b.font, b.size, b.color ?? INK, b.gap ?? 1.25);
 
   // Serie grande abajo a la izquierda y código de barras (si la entrada se lee con lector láser).
@@ -230,7 +254,12 @@ function drawThermal(page: PDFPage, t: PrintableTicket, box: Box, fonts: Fonts) 
   const tx = box.x + mm(3);
   const w = box.w - mm(6);
   let y = box.y + box.h - mm(3);
-  y = lines(page, wrap(t.orgName, fonts.regular, 7, w, 1), tx, y, fonts.regular, 7, MUTED);
+  const logoH = mm(6);
+  const logoW = (IPASS_LOGO.width / IPASS_LOGO.height) * logoH;
+  drawLogo(page, box.x + (box.w - logoW) / 2, y, logoH, true);
+  y -= logoH + mm(1.5);
+  const org = organizer(t.orgName);
+  if (org) y = lines(page, wrap(`Organiza: ${org}`, fonts.regular, 7, w, 1), tx, y, fonts.regular, 7, MUTED);
   y = lines(page, wrap(t.eventTitle, fonts.bold, 12, w, 2), tx, y - 1, fonts.bold, 12, INK, 1.15);
   y = lines(page, wrap(t.dayLine, fonts.bold, 8, w, 1), tx, y, fonts.bold, 8);
   y = lines(page, wrap(t.timeLine, fonts.regular, 7, w, 2), tx, y, fonts.regular, 7);
@@ -274,8 +303,8 @@ function cropMarks(page: PDFPage, trim: Box) {
 /** Arma el PDF. Lo grande (cientos de entradas) se dibuja igual: son vectores. */
 export async function ticketsPdf(tickets: PrintableTicket[], format: PaperFormat, artImage: TicketArtImage = null): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
-  pdf.setTitle(`Entradas · ${tickets[0]?.eventTitle ?? "Impacta"}`);
-  pdf.setCreator("Impacta");
+  pdf.setTitle(`Entradas · ${tickets[0]?.eventTitle ?? "iPass"}`);
+  pdf.setCreator("iPass");
   const fonts: Fonts = {
     regular: await pdf.embedFont(StandardFonts.Helvetica),
     bold: await pdf.embedFont(StandardFonts.HelveticaBold),

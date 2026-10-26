@@ -150,7 +150,7 @@ export default async function PromoDetailPage({ params }: Props) {
                   <td className="px-3 py-2 text-right font-mono">{money(r.discountAmount)}</td>
                   <td className="px-3 py-2 text-right font-mono">{money(r.order.totalAmount)}</td>
                   <td className="px-5 py-2">
-                    <span className={`badge ${r.order.status === "PAID" ? "bg-[var(--accent-soft)] text-[var(--accent)]" : "bg-[var(--surface-2)] text-[var(--ink-dim)]"}`}>
+                    <span className={`badge ${r.order.status === "PAID" ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--surface-2)] text-[var(--ink-dim)]"}`}>
                       {ORDER_STATUS[r.order.status] ?? r.order.status}
                     </span>
                   </td>

@@ -81,13 +81,13 @@ export async function uploadImportAction(_prev: FormState, formData: FormData): 
   redirect(batchPath(batch));
 }
 
-/** Paso 3: confirma. Todo o nada; con errores, solo si se marca "dejar fuera las filas con error". */
+/** Paso 3: confirma. Todo o nada: con una sola fila con error no se emite ninguna entrada. */
 export async function confirmImportAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireEditor();
   const batch = await ownBatch(staff, String(formData.get("batchId") ?? ""));
   if (!batch) return { error: "Importación no encontrada." };
   try {
-    await confirmImport({ batchId: batch.id, staffId: staff.id, skipErrors: formData.get("skipErrors") === "on" });
+    await confirmImport({ batchId: batch.id, staffId: staff.id });
   } catch (error) {
     if (error instanceof DomainError) return { error: error.message };
     throw error;

@@ -31,7 +31,7 @@ export default async function ClientsPage() {
         <p className="eyebrow">{clients.length} cliente(s)</p>
         <h1 className="text-2xl font-semibold tracking-tight">Clientes</h1>
         <p className="text-sm text-[var(--ink-muted)]">
-          Productoras u organizadores para los que IMPACTA gestiona eventos. Cada evento se asigna a un cliente; sus
+          Productoras u organizadores para los que iPass gestiona eventos. Cada evento se asigna a un cliente; sus
           cuentas (rol cliente, en Usuarios) solo ven esos eventos y solo mientras su espacio esté abierto.
         </p>
       </div>
@@ -54,7 +54,7 @@ export default async function ClientsPage() {
                       {e.title}
                     </Link>
                     {clientAccessOpen(e, now) ? (
-                      <span className="badge bg-[var(--accent-soft)] text-[var(--accent)]">
+                      <span className="badge bg-[var(--success-soft)] text-[var(--success)]">
                         Espacio abierto hasta {formatDateTime(e.clientAccessUntil!, DEFAULT_TIMEZONE)}
                       </span>
                     ) : (
@@ -82,7 +82,7 @@ export default async function ClientsPage() {
         ))}
       </ul>
 
-      <section className="card p-6">
+      <section data-tour="nuevo-cliente" className="card p-6">
         <h2 className="eyebrow mb-4">Nuevo cliente</h2>
         <ActionForm action={createClientAction} resetOnSuccess successMessage="Cliente creado." className="flex flex-wrap items-end gap-3">
           <label className="label">

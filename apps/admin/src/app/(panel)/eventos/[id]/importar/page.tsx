@@ -81,7 +81,7 @@ export default async function ImportPage({ params }: Props) {
           </section>
 
           {staff.readOnly ? (
-            <p className="card p-6 text-sm text-[var(--ink-muted)]">Tu cuenta es de solo lectura: las importaciones las hace Impacta.</p>
+            <p className="card p-6 text-sm text-[var(--ink-muted)]">Tu cuenta es de solo lectura: las importaciones las hace iPass.</p>
           ) : (
             <section className="card space-y-3 p-6">
               <h2 className="eyebrow">2. Sube el archivo</h2>

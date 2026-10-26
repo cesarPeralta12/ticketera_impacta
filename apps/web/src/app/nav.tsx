@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Logo } from "@/components/logo";
 import { auth, signOut } from "@/lib/auth";
 import { SignOutButton } from "./sign-out-button";
 
@@ -7,14 +8,14 @@ export async function Nav() {
   // Las secciones del sitio. En el celular van en una segunda fila (con la cuenta no entran en una sola).
   const sections = (
     <>
+      <Link href="/festivales" className="font-semibold text-[var(--highlight)] transition-colors hover:text-[var(--ink)]">
+        Festivales
+      </Link>
       <Link href="/" className="text-[var(--ink-muted)] transition-colors hover:text-[var(--ink)]">
         Eventos
       </Link>
-      <Link href="/boliches" className="font-semibold text-[#d9a6ff] transition-colors hover:text-[var(--ink)]">
+      <Link href="/boliches" className="font-semibold text-[var(--ipass-pink)] transition-colors hover:text-[var(--ink)]">
         Boliches
-      </Link>
-      <Link href="/eventos-pequenos" className="font-semibold text-[#5fe0bd] transition-colors hover:text-[var(--ink)]">
-        Eventos pequeños
       </Link>
     </>
   );
@@ -22,8 +23,8 @@ export async function Nav() {
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--bg)]/85 backdrop-blur-md">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
-        <Link href="/" className="font-display text-xl leading-none tracking-wide text-[var(--ink)] sm:text-2xl">
-          Impacta<span className="text-[var(--accent)]">.</span>
+        <Link href="/" aria-label="iPass, ir al inicio" className="shrink-0">
+          <Logo className="h-7 w-auto sm:h-8" />
         </Link>
         <nav className="flex items-center gap-3 whitespace-nowrap text-[13px] sm:gap-5 sm:text-sm">
           <div className="hidden items-center gap-5 sm:flex">{sections}</div>

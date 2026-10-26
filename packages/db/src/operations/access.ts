@@ -1,5 +1,6 @@
 import {
   deriveTicketKey,
+  isExitScan,
   parseDynamicPayload,
   parseManualWithOtp,
   parseTicketPayload,
@@ -51,8 +52,9 @@ const OFFLINE_STEP_WINDOW = 2;
  *   puertas la leen a la vez, solo una la acepta.
  * - Si la puerta tiene secciones asignadas, rechaza entradas de otras secciones; si da a una zona (VIP), solo
  *   entran los tipos de entrada que abren esa zona.
- * - Presencia: una puerta de salida (o de ida y vuelta con la entrada adentro) registra la salida; con reingreso
- *   permitido, la entrada vuelve a pasar mientras no supere sus ingresos; ya adentro, una puerta a otra zona es un
+ * - Presencia: una puerta de salida (o de ida y vuelta con la entrada adentro) registra la salida; si el recinto no
+ *   tiene ninguna puerta de salida, una entrada con reingreso sale y vuelve por la misma puerta de entrada. Con
+ *   reingreso, la entrada vuelve a pasar mientras no supere sus ingresos; ya adentro, una puerta a otra zona es un
  *   cambio de zona. Sin reingreso (lo de siempre), una segunda lectura es "ya utilizada".
  * - También recibe lecturas hechas sin conexión (offline = true, con la hora real del
  *   dispositivo). Si al sincronizar la entrada ya había sido usada en otro lado, queda
@@ -161,8 +163,20 @@ export async function scanTicket(input: {
         : null;
       const type = ticket.ticketType;
       const zoneIds = type.zones.map((z) => z.id);
-      // Una puerta de salida, o de ida y vuelta con la entrada adentro: es una salida (ni zonas ni horario).
-      const exiting = gate?.direction === "OUT" || (gate?.direction === "BOTH" && ticket.inside);
+      // Salida (ni zonas ni horario): puerta de salida, de ida y vuelta con la entrada adentro o, si el recinto no tiene
+      // puerta de salida, la misma entrada con reingreso y la persona adentro (sale al baño y vuelve por la misma puerta).
+      const reentry = type.maxEntries !== 1;
+      const sameDoor = reentry && ticket.inside && (gate?.direction ?? "IN") === "IN";
+      const venueHasExitGate = sameDoor
+        ? (await prisma.accessPoint.count({ where: { venueId: ticket.session.venueId, direction: { not: "IN" } } })) > 0
+        : true;
+      const exiting = isExitScan({
+        direction: gate?.direction,
+        inside: ticket.inside,
+        reentry,
+        venueHasExitGate,
+        leadsToOtherZone: Boolean(gate?.zoneId && gate.zoneId !== ticket.zoneId && (zoneIds.length === 0 || zoneIds.includes(gate.zoneId))),
+      });
       const deadline = entryDeadlineOf(ticket);
       const canReenter = ticket.status === "USED" && !ticket.inside && (type.maxEntries === 0 || ticket.entries < type.maxEntries);
       if (exiting) {

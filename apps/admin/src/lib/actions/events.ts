@@ -58,7 +58,7 @@ const eventSchema = z.object({
     .literal("on")
     .optional()
     .transform((v) => v === "on"),
-  /** Casilla "evento pequeño": sale también en la sección "Eventos pequeños" de la web. */
+  /** Casilla "evento pequeño": sale también con el filtro "Eventos pequeños" de la web. */
   small: z
     .literal("on")
     .optional()
@@ -385,6 +385,8 @@ const ticketTypeSchema = z.object({
   exclusive: z.literal("on").optional(),
   /** QR dinámico: cambia cada 30 s, solo QR y solo venta online. */
   qrDynamic: z.literal("on").optional(),
+  /** Reingreso: "yes" = sale y vuelve con el mismo QR las veces que quiera; "no" (o vacío) = un solo ingreso. */
+  reentry: z.enum(["yes", "no"]).optional(),
   /** Descuento de preventa sobre el mismo tipo de entrada. */
   discountPercent: z.string().optional(),
   discountStartsAt: z.string().optional(),
@@ -564,6 +566,7 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
         // El QR dinámico solo se lee con QR: el código de barras y el NFC son fijos.
         accessMethods: qrMode === "DYNAMIC" ? ["QR" as const] : [...readAccessMethods(formData)],
         qrMode,
+        maxEntries: data.reentry === "yes" ? 0 : 1,
         salesStartAt: window.salesStartAt,
         salesEndAt: window.salesEndAt,
         sortOrder: await tx.ticketType.count({ where: { sessionId: session.id } }),

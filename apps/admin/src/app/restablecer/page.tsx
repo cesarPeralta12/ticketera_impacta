@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { MIN_PASSWORD_LENGTH, isEmailTokenValid } from "@ticketera/db";
+import { Logo } from "@/components/logo";
 import { ResetForm } from "./reset-form";
 
 export const metadata: Metadata = { title: "Contraseña nueva" };
@@ -15,7 +16,8 @@ export default async function ResetPasswordPage({ searchParams }: Props) {
   return (
     <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-6 px-6">
       <div>
-        <p className="eyebrow">Panel de Impacta</p>
+        <Logo className="mb-4 h-10 w-auto" />
+        <p className="eyebrow">Panel de iPass</p>
         <h1 className="text-xl font-semibold tracking-tight">Elige tu contraseña nueva</h1>
       </div>
       <div className="card p-6">

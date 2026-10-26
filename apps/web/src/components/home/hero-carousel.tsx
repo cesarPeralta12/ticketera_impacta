@@ -113,7 +113,7 @@ export function HeroCarousel({ slides }: { slides: HeroSlide[] }) {
             <div className="relative mx-auto flex h-full w-full max-w-6xl flex-col justify-end px-6 pb-24 sm:pb-28">
               <div className="hero-rise max-w-3xl space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full px-3 py-1 text-xs font-extrabold uppercase tracking-wide" style={{ background: s.categoryColor, color: "#0b0b10" }}>
+                  <span className="rounded-full px-3 py-1 text-xs font-extrabold uppercase tracking-wide" style={{ background: s.categoryColor, color: "#192438" }}>
                     {s.category}
                   </span>
                   {s.soon && <span className="tag tag-soon">{s.soon}</span>}
@@ -131,7 +131,7 @@ export function HeroCarousel({ slides }: { slides: HeroSlide[] }) {
                 </p>
 
                 {s.offer && (
-                  <p className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent)]/50 bg-[var(--accent)]/10 px-3 py-1.5 text-sm font-semibold text-[var(--accent)]">
+                  <p className="inline-flex items-center gap-2 rounded-lg border border-[var(--highlight)]/50 bg-[var(--highlight)]/10 px-3 py-1.5 text-sm font-semibold text-[var(--accent-text)]">
                     <span aria-hidden>★</span> {s.offer}
                   </p>
                 )}
@@ -144,7 +144,7 @@ export function HeroCarousel({ slides }: { slides: HeroSlide[] }) {
                     <p className="leading-tight">
                       <span className="block text-[11px] uppercase tracking-wide text-[var(--ink-muted)]">Desde</span>
                       <span className="flex items-baseline gap-2">
-                        <span className="font-display text-3xl text-[var(--accent)]">{s.price}</span>
+                        <span className="font-display text-3xl text-[var(--accent-text)]">{s.price}</span>
                         {s.listPrice && <span className="text-sm text-[var(--ink-dim)] line-through">{s.listPrice}</span>}
                       </span>
                     </p>
@@ -178,7 +178,7 @@ export function HeroCarousel({ slides }: { slides: HeroSlide[] }) {
                     {i === index && (
                       <span
                         key={`${index}-${paused ? "p" : "r"}`}
-                        className="hero-progress absolute inset-0 bg-[var(--accent)]"
+                        className="hero-progress absolute inset-0 bg-[var(--highlight)]"
                         style={{ ["--hero-ms" as string]: `${SLIDE_MS}ms`, animationPlayState: paused ? "paused" : "running", ...(reduced ? { transform: "scaleX(1)" } : {}) }}
                       />
                     )}

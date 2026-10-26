@@ -28,9 +28,12 @@ import { Help } from "@/components/help";
 
 export const metadata: Metadata = { title: "Recinto" };
 
-type Props = { params: Promise<{ id: string }> };
+type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ editor?: string }> };
 
-export default async function VenuePage({ params }: Props) {
+/** Los editores del mapa van en pestañas (uno a la vez) para que la página no sea interminable. */
+type EditorTab = "boliche" | "plano" | "zonas" | "butacas" | "mesas";
+
+export default async function VenuePage({ params, searchParams }: Props) {
   await connection();
   const staff = await requireStaff(ROLES.manage);
   const venue = await prisma.venue.findFirst({
@@ -90,7 +93,23 @@ export default async function VenuePage({ params }: Props) {
     .map((s) => ({ id: s.id, name: s.name, color: s.color, capacity: s.capacity, layout: isZoneLayout(s.layout) ? (s.layout as ZoneShape) : null }));
   // Plano real de fondo para calcar (lo ve solo el panel).
   const plan = venue.planImage ? { url: `/recintos/${venue.id}/fondo?v=${venue.planImage.updatedAt.getTime()}`, opacity: venue.planImage.opacity } : null;
-  const backgroundSeats = sections.flatMap((s) => (s.seatingMode === "RESERVED" ? positioned(s.seats).map((p) => ({ ...p, color: s.color })) : []));
+  const backgroundSeats = sections.flatMap((s) => (s.seatingMode === "RESERVED" ? positioned(s.seats).map((p) => ({ ...p, color: s.color, sectionId: s.id })) : []));
+
+  const tableSections = sections.filter((s) => isSeatedTablesLayout(s.layout)).length;
+  const doorNames = venue.accessPoints.map((g) => g.name);
+  const editors: { key: EditorTab; label: string; count: number }[] = [
+    isNightlife(staff)
+      ? { key: "boliche", label: "Plano del boliche", count: tableGroups.length }
+      : { key: "plano", label: "Escenario y puertas", count: mapItems.length },
+    { key: "zonas", label: "Zonas de pie", count: zones.length },
+    { key: "butacas", label: "Butacas numeradas", count: seated.length },
+    { key: "mesas", label: "Mesas con sillas", count: tableSections },
+  ];
+  // Sin elegir: el editor de lo que el recinto ya tiene (en un boliche, su plano).
+  const requested = (await searchParams).editor;
+  const editor: EditorTab =
+    editors.find((e) => e.key === requested)?.key ??
+    (isNightlife(staff) ? "boliche" : seated.length ? "butacas" : tableSections ? "mesas" : "zonas");
 
   return (
     <div className="space-y-8">
@@ -258,13 +277,29 @@ export default async function VenuePage({ params }: Props) {
             </ActionForm>
           )}
         </details>
-        {isNightlife(staff) && (
+        <nav aria-label="Editores del mapa" className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-[var(--border)]">
+          {editors.map((e) => (
+            <Link
+              key={e.key}
+              href={`/recintos/${venue.id}?editor=${e.key}`}
+              scroll={false}
+              aria-current={editor === e.key ? "page" : undefined}
+              className={`-mb-px flex items-center gap-1.5 whitespace-nowrap border-b-2 px-4 py-2 text-sm ${
+                editor === e.key ? "border-[var(--accent)] font-semibold text-[var(--ink)]" : "border-transparent text-[var(--ink-muted)] hover:text-[var(--ink)]"
+              }`}
+            >
+              {e.label}
+              {e.count > 0 && <span className="rounded-full bg-[var(--surface-2)] px-1.5 text-[11px] font-medium text-[var(--ink-muted)]">{e.count}</span>}
+            </Link>
+          ))}
+        </nav>
+        {editor === "boliche" && (
           <section className="card space-y-3 p-6">
             <h2 className="eyebrow">Plano del boliche</h2>
             <p className="text-sm text-[var(--ink-muted)]">
               Ubica el escenario, las barras, el DJ, la entrada y los baños, y pon cada lounge o mesa como un círculo donde está
               en el local. El comprador ve este plano y elige su lounge tocándolo. La pista y otros sectores de pie se dibujan
-              abajo, en &ldquo;Zonas de entrada general&rdquo;.
+              en la pestaña &ldquo;Zonas de pie&rdquo;.
             </p>
             <ClubMapDesigner
               version={`${venue.updatedAt.getTime()}-${tableGroups.map((g) => `${g.sectionId}:${g.tables.length}`).join(",")}`}
@@ -274,31 +309,65 @@ export default async function VenuePage({ params }: Props) {
               zones={zones.flatMap((z) => (z.layout ? [{ id: z.id, name: z.name, color: z.color, layout: z.layout }] : []))}
               seats={sections.flatMap((s) => (s.seatingMode === "RESERVED" && !isTablesLayout(s.layout) ? positioned(s.seats).map((p) => ({ ...p, color: s.color })) : []))}
               background={plan}
+              doors={doorNames}
             />
           </section>
         )}
-        <section className="space-y-3">
-          <h2 className="eyebrow">Zonas de entrada general (sin butacas)</h2>
-          <p className="text-sm text-[var(--ink-muted)]">
-            Cada zona se dibuja en el mapa con la forma que elijas (rectángulo, óvalo, trapecio o arco) y su aforo. El comprador la ve en el mismo
-            mapa de las butacas y elige cuántas entradas quiere de la lista de abajo.
-          </p>
-          <ZoneDesigner venueId={venue.id} zones={zones} seats={backgroundSeats} background={plan} />
-        </section>
+        {editor === "plano" && (
+          <section className="card space-y-3 p-6">
+            <h2 className="eyebrow">Escenario, puertas y más</h2>
+            <p className="text-sm text-[var(--ink-muted)]">
+              Ubica el escenario y las puertas por donde entra la gente (también barras, baños o un texto). No se venden: el
+              comprador los ve en el mapa de la web para orientarse, y la puerta también sale en el mapa de &ldquo;Ingreso en
+              vivo&rdquo;. Las puertas se crean abajo, en &ldquo;Puertas de acceso&rdquo;.
+            </p>
+            <ClubMapDesigner
+              version={`${venue.updatedAt.getTime()}`}
+              venueId={venue.id}
+              items={mapItems}
+              groups={[]}
+              lounges={false}
+              zones={zones.flatMap((z) => (z.layout ? [{ id: z.id, name: z.name, color: z.color, layout: z.layout }] : []))}
+              seats={backgroundSeats}
+              background={plan}
+              doors={doorNames}
+            />
+          </section>
+        )}
+        {editor === "zonas" && (
+          <section className="space-y-3">
+            <h2 className="eyebrow">Zonas de entrada general (sin butacas)</h2>
+            <p className="text-sm text-[var(--ink-muted)]">
+              Cada zona se dibuja en el mapa con la forma que elijas (rectángulo, óvalo, trapecio o arco) y su aforo. El comprador la ve en el mismo
+              mapa de las butacas y elige cuántas entradas quiere de la lista de abajo.
+            </p>
+            <ZoneDesigner venueId={venue.id} zones={zones} seats={backgroundSeats} background={plan} items={mapItems} />
+          </section>
+        )}
 
-        <section className="space-y-3">
-          <h2 className="eyebrow">Mesas con sillas</h2>
-          <p className="text-sm text-[var(--ink-muted)]">
-            Para cenas, galas o shows con mesas: cada silla es un lugar numerado. Elige si la mesa se vende completa, por silla
-            o de N a M sillas. Las secciones de mesas que ya creaste aparecen en &ldquo;Secciones&rdquo;.
-          </p>
-          <SeatedTablesDesigner venueId={venue.id} background={backgroundSeats} plan={plan} />
-        </section>
+        {editor === "mesas" && (
+          <section className="space-y-3">
+            <h2 className="eyebrow">Mesas con sillas</h2>
+            <p className="text-sm text-[var(--ink-muted)]">
+              Para cenas, galas o shows con mesas: cada silla es un lugar numerado. Elige si la mesa se vende completa, por silla
+              o de N a M sillas. Las secciones de mesas que ya creaste aparecen en &ldquo;Secciones&rdquo;.
+            </p>
+            <SeatedTablesDesigner
+              venueId={venue.id}
+              background={backgroundSeats}
+              plan={plan}
+              items={mapItems}
+              existing={sections.flatMap((s) => (isSeatedTablesLayout(s.layout) ? [{ id: s.id, name: s.name, color: s.color, layout: s.layout }] : []))}
+            />
+          </section>
+        )}
 
-        <section className="space-y-3">
-          <h2 className="eyebrow">Mapa de butacas numeradas</h2>
-          <SeatDesigner venueId={venue.id} background={plan} existingSections={seated} zones={zones.flatMap((z) => (z.layout ? [{ id: z.id, name: z.name, color: z.color, layout: z.layout }] : []))} />
-        </section>
+        {editor === "butacas" && (
+          <section className="space-y-3">
+            <h2 className="eyebrow">Mapa de butacas numeradas</h2>
+            <SeatDesigner venueId={venue.id} background={plan} existingSections={seated} zones={zones.flatMap((z) => (z.layout ? [{ id: z.id, name: z.name, color: z.color, layout: z.layout }] : []))} items={mapItems} />
+          </section>
+        )}
         </>
       )}
 
@@ -393,7 +462,8 @@ export default async function VenuePage({ params }: Props) {
           Marca qué secciones entran por cada puerta. Una puerta sin secciones marcadas acepta todas. Con secciones
           asignadas, una entrada solo vale en sus puertas: así, aunque se corte internet, dos puertas nunca aceptan la
           misma entrada. <strong>Dirección</strong>: una puerta de salida registra que la persona salió (para reingresar,
-          si su entrada lo permite); una de &ldquo;entrada y salida&rdquo; decide sola según si la persona está adentro.
+          si su entrada lo permite); una de &ldquo;entrada y salida&rdquo; decide sola según si la persona está adentro. Sin
+          ninguna puerta de salida, las entradas con reingreso salen y vuelven por la misma puerta de entrada.
         </p>
         {venue.accessPoints.length === 0 ? (
           <p className="mb-4 text-sm text-[var(--ink-dim)]">Sin puertas cargadas.</p>
