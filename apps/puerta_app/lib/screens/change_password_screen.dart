@@ -84,17 +84,17 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
           children: [
             Row(
               children: [
-                const BrandMark(size: 28),
+                const BrandMark(height: 26),
                 const Spacer(),
                 TextButton(onPressed: () => widget.service.logout(), child: const Text('Salir')),
               ],
             ),
             const SizedBox(height: 28),
             const StaggerIn(
-              child: Icon(Icons.lock_reset_rounded, size: 54, color: Brand.yellow),
+              child: Icon(Icons.lock_reset_rounded, size: 54, color: Brand.accent),
             ),
             const SizedBox(height: 14),
-            const StaggerIn(index: 1, child: Text('ELIGE TU CONTRASEÑA', style: Type.title)),
+            const StaggerIn(index: 1, child: Text('Elige tu contraseña', style: Type.title)),
             const SizedBox(height: 8),
             const StaggerIn(index: 1, child: Text('Tu cuenta tiene una contraseña temporal. Elige una propia para continuar.', style: Type.muted)),
             const SizedBox(height: 26),

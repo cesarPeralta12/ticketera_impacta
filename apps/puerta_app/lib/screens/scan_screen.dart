@@ -261,7 +261,7 @@ class _ScanScreenState extends State<ScanScreen> {
   @override
   Widget build(BuildContext context) {
     final style = _outcome == null ? null : OutcomeStyle.of(_outcome!);
-    final frameColor = style?.color ?? (_locked ? Brand.yellow : Colors.white);
+    final frameColor = style?.color ?? (_locked ? Brand.highlight : Colors.white);
     final used = _counts.used;
     final total = _counts.total;
     final zoneLabel = (_outcome?.verdict.ok ?? false) && (_gate?.zoneId != null) && _outcome?.movement != Movement.exit ? _gate?.name : null;
@@ -289,7 +289,7 @@ class _ScanScreenState extends State<ScanScreen> {
                     children: [
                       const Icon(Icons.no_photography_outlined, size: 64, color: Brand.red),
                       const SizedBox(height: 14),
-                      const Text('NO SE PUDO USAR LA CÁMARA', textAlign: TextAlign.center, style: Type.title),
+                      const Text('No se pudo usar la cámara', textAlign: TextAlign.center, style: Type.title),
                       const SizedBox(height: 8),
                       Text('Revisa el permiso de la cámara en los ajustes del teléfono.\n(${error.errorCode.name})', textAlign: TextAlign.center, style: Type.muted),
                     ],
@@ -329,7 +329,7 @@ class _ScanScreenState extends State<ScanScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(widget.meta.title.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: Type.title.copyWith(fontSize: 21)),
+                          Text(widget.meta.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: Type.title.copyWith(fontSize: 17)),
                           const SizedBox(height: 6),
                           Wrap(
                             spacing: 6,
@@ -338,7 +338,7 @@ class _ScanScreenState extends State<ScanScreen> {
                               Pill(_gate == null ? _gateLabel : '${_gate!.name} · $_gateLabel', icon: (_gate?.direction ?? GateDirection.inward).icon, color: _gateColor, small: true),
                               ListenableBuilder(
                                 listenable: _settings,
-                                builder: (context, _) => _settings.autoAccept ? const Pill('Ingreso rápido', icon: Icons.bolt_rounded, color: Brand.yellow, small: true) : const SizedBox.shrink(),
+                                builder: (context, _) => _settings.autoAccept ? const Pill('Ingreso rápido', icon: Icons.bolt_rounded, color: Brand.highlight, small: true) : const SizedBox.shrink(),
                               ),
                             ],
                           ),
@@ -421,7 +421,7 @@ class _ScanScreenState extends State<ScanScreen> {
                                 ],
                               ),
                             ),
-                            Text('${_counts.inside} adentro ahora', style: Type.muted.copyWith(fontSize: 12.5), maxLines: 1, overflow: TextOverflow.ellipsis),
+                            Text('${_counts.inside} adentro', style: Type.muted.copyWith(fontSize: 12.5), maxLines: 1, overflow: TextOverflow.ellipsis),
                           ],
                         ),
                       ),
@@ -443,8 +443,8 @@ class _ScanScreenState extends State<ScanScreen> {
                           child: Container(
                             width: 52,
                             height: 52,
-                            decoration: BoxDecoration(color: Brand.yellow, borderRadius: BorderRadius.circular(16)),
-                            child: const Icon(Icons.keyboard_alt_outlined, color: Brand.yellowInk),
+                            decoration: BoxDecoration(color: Brand.accent, borderRadius: BorderRadius.circular(16)),
+                            child: const Icon(Icons.keyboard_alt_outlined, color: Brand.accentInk),
                           ),
                         ),
                       ),

@@ -258,7 +258,7 @@ class _ConfirmSheetState extends State<_ConfirmSheet> with SingleTickerProviderS
       Movement.entry => 'ACEPTAR INGRESO',
     };
     final rows = <(IconData, String, String)>[
-      (Icons.confirmation_number_outlined, 'Tipo de entrada', t.type ?? '—'),
+      (Icons.confirmation_number_outlined, 'Tipo', t.type ?? '—'),
       if (widget.sectionName != null) (Icons.grid_view_rounded, 'Sector', widget.sectionName!),
       if (t.seat != null) (Icons.event_seat_outlined, 'Asiento', t.seat!),
       if (t.document != null && t.document!.isNotEmpty) (Icons.badge_outlined, 'Carnet', t.document!),
@@ -288,7 +288,7 @@ class _ConfirmSheetState extends State<_ConfirmSheet> with SingleTickerProviderS
               ],
             ),
             const SizedBox(height: 12),
-            Text((t.holder ?? 'Sin nombre'), style: const TextStyle(fontFamily: Fonts.display, fontSize: 38, height: 1.05, color: Brand.text), maxLines: 2, overflow: TextOverflow.ellipsis),
+            Text((t.holder ?? 'Sin nombre'), style: const TextStyle(fontFamily: Fonts.display, fontSize: 27, fontWeight: FontWeight.w700, height: 1.15, letterSpacing: -0.4, color: Brand.text), maxLines: 2, overflow: TextOverflow.ellipsis),
             const SizedBox(height: 16),
             for (final (icon, label, value) in rows)
               Padding(
@@ -430,7 +430,7 @@ class _ExitSheetState extends State<_ExitSheet> with SingleTickerProviderStateMi
               ],
             ),
             const SizedBox(height: 12),
-            Text(t.holder ?? 'Sin nombre', style: const TextStyle(fontFamily: Fonts.display, fontSize: 38, height: 1.05, color: Brand.text), maxLines: 2, overflow: TextOverflow.ellipsis),
+            Text(t.holder ?? 'Sin nombre', style: const TextStyle(fontFamily: Fonts.display, fontSize: 27, fontWeight: FontWeight.w700, height: 1.15, letterSpacing: -0.4, color: Brand.text), maxLines: 2, overflow: TextOverflow.ellipsis),
             const SizedBox(height: 8),
             Text(
               [if (t.type != null) t.type!, if (since != null) 'Ingresó a las $since'].join(' · '),
@@ -510,7 +510,7 @@ Future<String?> showManualEntry(BuildContext context) {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('ESCRIBIR EL CÓDIGO', style: Type.title),
+          const Text('Escribir el código', style: Type.title),
           const SizedBox(height: 4),
           const Text('Por si el lector no puede leer la entrada.', style: Type.muted),
           const SizedBox(height: 18),
@@ -550,10 +550,10 @@ Future<void> showRecentScans(BuildContext context, Future<List<RecentScan>> Func
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Padding(padding: EdgeInsets.fromLTRB(22, 0, 22, 12), child: Text('ÚLTIMAS LECTURAS', style: Type.title)),
+              const Padding(padding: EdgeInsets.fromLTRB(22, 0, 22, 12), child: Text('Últimas lecturas', style: Type.title)),
               Expanded(
                 child: !snapshot.hasData
-                    ? const Center(child: CircularProgressIndicator(color: Brand.yellow))
+                    ? const Center(child: CircularProgressIndicator(color: Brand.accent))
                     : list.isEmpty
                         ? Center(child: Text('Todavía no leíste ninguna entrada.', style: Type.muted.copyWith(fontSize: 15)))
                         : ListView.separated(

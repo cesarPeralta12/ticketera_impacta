@@ -41,7 +41,7 @@ class PuertaApp extends StatelessWidget {
       settings: settings,
       feedback: feedback,
       child: MaterialApp(
-        title: 'Impacta Puerta',
+        title: 'iPass Puerta',
         debugShowCheckedModeBanner: false,
         themeMode: ThemeMode.dark,
         darkTheme: buildTheme().copyWith(scaffoldBackgroundColor: Colors.transparent),

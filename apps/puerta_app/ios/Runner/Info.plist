@@ -11,7 +11,7 @@
 	<key>NFCReaderUsageDescription</key>
 	<string>El NFC se usa para leer las entradas en pulseras o tarjetas.</string>
 	<key>CFBundleDisplayName</key>
-	<string>Impacta Puerta</string>
+	<string>iPass Puerta</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

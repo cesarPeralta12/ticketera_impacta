@@ -76,17 +76,17 @@ class _AccountSheet extends StatelessWidget {
                     width: 58,
                     height: 58,
                     alignment: Alignment.center,
-                    decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [Color(0xFFFFD34D), Brand.yellow])),
-                    child: Text(name.characters.first.toUpperCase(), style: const TextStyle(fontFamily: Fonts.display, fontSize: 28, color: Brand.yellowInk)),
+                    decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Brand.pink, Brand.accent])),
+                    child: Text(name.characters.first.toUpperCase(), style: const TextStyle(fontFamily: Fonts.display, fontSize: 24, fontWeight: FontWeight.w700, color: Brand.accentInk)),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(name, style: Type.heading.copyWith(fontSize: 22), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        Text(name, style: Type.title.copyWith(fontSize: 20), maxLines: 1, overflow: TextOverflow.ellipsis),
                         const SizedBox(height: 4),
-                        Wrap(spacing: 8, children: [Pill(roleLabel(service.role), icon: Icons.verified_user_outlined, color: Brand.yellow, small: true)]),
+                        Wrap(spacing: 8, children: [Pill(roleLabel(service.role), icon: Icons.verified_user_outlined, color: Brand.pink, small: true)]),
                       ],
                     ),
                   ),
@@ -175,8 +175,8 @@ class _Toggle extends StatelessWidget {
               duration: const Duration(milliseconds: 220),
               width: 44,
               height: 44,
-              decoration: BoxDecoration(color: value ? Brand.yellow.withValues(alpha: 0.16) : Brand.surface3, borderRadius: BorderRadius.circular(14)),
-              child: Icon(icon, color: value ? Brand.yellow : Brand.muted, size: 22),
+              decoration: BoxDecoration(color: value ? Brand.accent.withValues(alpha: 0.16) : Brand.surface3, borderRadius: BorderRadius.circular(14)),
+              child: Icon(icon, color: value ? Brand.pink : Brand.muted, size: 22),
             ),
             const SizedBox(width: 14),
             Expanded(

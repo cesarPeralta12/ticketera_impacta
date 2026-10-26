@@ -150,14 +150,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
           children: [
-            const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('ELIGE EL EVENTO', style: Type.title)),
+            const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('Elige el evento', style: Type.title)),
             for (final a in list)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: PressScale(
                   onTap: () => Navigator.pop(context, a),
                   child: SoftCard(
-                    borderColor: a.sessionId == _selected?.sessionId ? Brand.yellow : null,
+                    borderColor: a.sessionId == _selected?.sessionId ? Brand.accent : null,
                     padding: const EdgeInsets.all(16),
                     child: Row(
                       children: [
@@ -171,7 +171,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ],
                           ),
                         ),
-                        if (a.sessionId == _selected?.sessionId) const Icon(Icons.check_circle, color: Brand.yellow),
+                        if (a.sessionId == _selected?.sessionId) const Icon(Icons.check_circle, color: Brand.accent),
                       ],
                     ),
                   ),
@@ -212,7 +212,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       body: SafeArea(
         bottom: false,
         child: RefreshIndicator(
-          color: Brand.yellow,
+          color: Brand.accent,
           backgroundColor: Brand.surface3,
           onRefresh: _load,
           child: ListView(
@@ -221,7 +221,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             children: [
               Row(
                 children: [
-                  const BrandMark(size: 28, suffix: 'PUERTA'),
+                  const BrandMark(height: 26, suffix: 'PUERTA'),
                   const Spacer(),
                   PressScale(
                     onTap: _openAccount,
@@ -235,10 +235,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            gradient: const LinearGradient(colors: [Color(0xFFFFD34D), Brand.yellow]),
-                            boxShadow: [BoxShadow(color: Brand.yellow.withValues(alpha: 0.3), blurRadius: 14)],
+                            gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Brand.pink, Brand.accent]),
+                            boxShadow: [BoxShadow(color: Brand.accent.withValues(alpha: 0.3), blurRadius: 14)],
                           ),
-                          child: Text(first.isEmpty ? 'P' : first.characters.first.toUpperCase(), style: const TextStyle(fontFamily: Fonts.display, fontSize: 22, color: Brand.yellowInk)),
+                          child: Text(first.isEmpty ? 'P' : first.characters.first.toUpperCase(), style: const TextStyle(fontFamily: Fonts.display, fontSize: 19, fontWeight: FontWeight.w700, color: Brand.accentInk)),
                         ),
                         // Lecturas guardadas que todavía no se subieron.
                         if (_s.pendingCount > 0)
@@ -258,7 +258,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 22),
               StaggerIn(
-                child: Text('Hola, $first', style: Type.heading.copyWith(fontSize: 26)),
+                child: Text('Hola, $first', style: Type.title.copyWith(fontSize: 24)),
               ),
               const SizedBox(height: 2),
               const StaggerIn(index: 1, child: Text('Esto es lo que tienes para hoy.', style: Type.muted)),
@@ -363,7 +363,7 @@ class _LoadingState extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 60),
       child: Column(
         children: [
-          const SizedBox(width: 36, height: 36, child: CircularProgressIndicator(strokeWidth: 3.5, color: Brand.yellow)),
+          const SizedBox(width: 36, height: 36, child: CircularProgressIndicator(strokeWidth: 3.5, color: Brand.accent)),
           const SizedBox(height: 16),
           Text('Buscando tus eventos…', style: Type.muted.copyWith(fontSize: 15)),
         ],
@@ -393,7 +393,7 @@ class _EmptyState extends StatelessWidget {
               child: const Icon(Icons.event_busy_rounded, size: 52, color: Brand.muted),
             ),
             const SizedBox(height: 22),
-            const Text('NO TIENES EVENTOS ASIGNADOS', textAlign: TextAlign.center, style: Type.title),
+            const Text('No tienes eventos asignados', textAlign: TextAlign.center, style: Type.title),
             const SizedBox(height: 10),
             Text(
               'Pídele al administrador que te asigne una función en el panel y desliza hacia abajo para actualizar.',
@@ -421,11 +421,11 @@ class _EventHero extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Brand.yellow.withValues(alpha: 0.28)),
+        border: Border.all(color: Brand.accent.withValues(alpha: 0.28)),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Brand.yellow.withValues(alpha: 0.16), const Color(0xFF12161C)],
+          colors: [Brand.accent.withValues(alpha: 0.16), const Color(0xFF12161C)],
         ),
       ),
       child: Column(
@@ -435,7 +435,7 @@ class _EventHero extends StatelessWidget {
             children: [
               const PulseDot(color: Brand.green, size: 8),
               const SizedBox(width: 4),
-              Text('EVENTO EN CURSO', style: Type.label.copyWith(color: Brand.yellow)),
+              Text('EVENTO EN CURSO', style: Type.label.copyWith(color: Brand.highlight)),
               const Spacer(),
               if (canChange)
                 PressScale(
@@ -445,7 +445,7 @@ class _EventHero extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          Text(assignment.title.toUpperCase(), style: Type.hero.copyWith(fontSize: 34), maxLines: 3, overflow: TextOverflow.ellipsis),
+          Text(assignment.title, style: Type.hero, maxLines: 3, overflow: TextOverflow.ellipsis),
           const SizedBox(height: 14),
           Wrap(
             spacing: 8,
@@ -571,7 +571,7 @@ class _DataCard extends StatelessWidget {
                   width: 46,
                   height: 46,
                   decoration: BoxDecoration(color: Brand.surface3, borderRadius: BorderRadius.circular(14)),
-                  child: const Icon(Icons.cloud_download_outlined, color: Brand.yellow),
+                  child: const Icon(Icons.cloud_download_outlined, color: Brand.accent),
                 ),
                 const SizedBox(width: 14),
                 const Expanded(
@@ -608,7 +608,7 @@ class _DataCard extends StatelessWidget {
                     children: [
                       _Stat(icon: Icons.login_rounded, color: Brand.green, label: 'Adentro ahora', value: counts.inside),
                       const SizedBox(height: 12),
-                      _Stat(icon: Icons.confirmation_number_outlined, color: Brand.yellow, label: 'Entradas de tu puerta', value: total),
+                      _Stat(icon: Icons.confirmation_number_outlined, color: Brand.accent, label: 'Tus entradas', value: total),
                       if (syncedAt != null) ...[
                         const SizedBox(height: 12),
                         Row(
@@ -716,9 +716,9 @@ class _SyncButtonState extends State<_SyncButton> with SingleTickerProviderState
     final child = Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        IconTheme(data: IconThemeData(color: widget.refresh ? Brand.text : Brand.yellowInk), child: icon),
+        IconTheme(data: IconThemeData(color: widget.refresh ? Brand.text : Brand.accentInk), child: icon),
         const SizedBox(width: 10),
-        Text(label, style: TextStyle(fontFamily: Fonts.body, fontWeight: FontWeight.w800, fontSize: 16.5, color: widget.refresh ? Brand.text : Brand.yellowInk)),
+        Text(label, style: TextStyle(fontFamily: Fonts.body, fontWeight: FontWeight.w800, fontSize: 16.5, color: widget.refresh ? Brand.text : Brand.accentInk)),
       ],
     );
     return PressScale(
@@ -727,7 +727,7 @@ class _SyncButtonState extends State<_SyncButton> with SingleTickerProviderState
         duration: const Duration(milliseconds: 240),
         height: 54,
         decoration: BoxDecoration(
-          color: widget.refresh ? Brand.surface2 : Brand.yellow,
+          color: widget.refresh ? Brand.surface2 : Brand.accent,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: widget.refresh ? Brand.stroke : Colors.transparent),
         ),
@@ -744,10 +744,13 @@ class _MethodTile extends StatelessWidget {
   final VoidCallback onTap;
 
   Color get _color => switch (method) {
-        AccessMethod.qr => Brand.yellow,
+        AccessMethod.qr => Brand.accent,
         AccessMethod.barcode => Brand.blue,
         AccessMethod.nfc => Brand.violet,
       };
+
+  /// Sobre el magenta el ícono va en blanco; sobre los tonos claros, en azul noche.
+  Color get _iconColor => method == AccessMethod.qr ? Brand.accentInk : Brand.ink;
 
   @override
   Widget build(BuildContext context) {
@@ -767,14 +770,14 @@ class _MethodTile extends StatelessWidget {
               width: 60,
               height: 60,
               decoration: BoxDecoration(color: _color, borderRadius: BorderRadius.circular(18), boxShadow: [BoxShadow(color: _color.withValues(alpha: 0.35), blurRadius: 18, offset: const Offset(0, 6))]),
-              child: Icon(method.icon, size: 32, color: Brand.ink),
+              child: Icon(method.icon, size: 32, color: _iconColor),
             ),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(method.label.toUpperCase(), style: Type.title.copyWith(fontSize: 24)),
+                  Text(method.label, style: Type.title.copyWith(fontSize: 19)),
                   const SizedBox(height: 2),
                   Text(method.hint, style: Type.muted.copyWith(fontSize: 14)),
                 ],

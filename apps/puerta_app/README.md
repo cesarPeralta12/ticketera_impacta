@@ -1,6 +1,6 @@
 # impacta_puerta
 
-App de puerta de Impacta: lee QR, código de barras y NFC
+App de puerta de iPass: lee QR, código de barras y NFC
 
 ## Getting Started
 

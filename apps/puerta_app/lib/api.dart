@@ -1,4 +1,4 @@
-/// Cliente de la API de puerta (`/api/v1`) del panel de Impacta.
+/// Cliente de la API de puerta (`/api/v1`) del panel de iPass.
 library;
 
 import 'dart:async';
@@ -32,7 +32,7 @@ class ApiException implements Exception {
 }
 
 /// Versión de la app: viaja en cada petición para que el panel muestre qué versión tiene cada teléfono.
-const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.3.2');
+const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.4.0');
 
 /// Par de tokens: el de acceso es corto; el de renovación lo cambia por uno nuevo (y él mismo se renueva).
 class TokenPair {

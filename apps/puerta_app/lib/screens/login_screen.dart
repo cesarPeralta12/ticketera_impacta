@@ -89,11 +89,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         onLongPress: () => setState(() => _showServer = !_showServer),
                         child: Column(
                           children: [
-                            const _LogoBadge(),
-                            const SizedBox(height: 20),
-                            const BrandMark(size: 44),
-                            const SizedBox(height: 6),
-                            Text('CONTROL DE ACCESO', style: Type.label.copyWith(letterSpacing: 4, color: Brand.yellow)),
+                            const AppIconTile(size: 84),
+                            const SizedBox(height: 22),
+                            const BrandMark(height: 46),
+                            const SizedBox(height: 10),
+                            Text('CONTROL DE ACCESO', style: Type.label.copyWith(letterSpacing: 3.6, color: Brand.highlight)),
                           ],
                         ),
                       ),
@@ -101,7 +101,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 40),
                     StaggerIn(
                       index: 1,
-                      child: Text('Inicia sesión', style: Type.heading.copyWith(fontSize: 24)),
+                      child: Text('Inicia sesión', style: Type.title.copyWith(fontSize: 24)),
                     ),
                     const SizedBox(height: 4),
                     const StaggerIn(index: 1, child: Text('Con tu cuenta de portero o de administración.', style: Type.muted)),
@@ -179,56 +179,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Insignia del logo: cuadrado amarillo con el visor de lectura.
-class _LogoBadge extends StatefulWidget {
-  const _LogoBadge();
-
-  @override
-  State<_LogoBadge> createState() => _LogoBadgeState();
-}
-
-class _LogoBadgeState extends State<_LogoBadge> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 2400))..repeat();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 92,
-      height: 92,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFFD34D), Brand.yellow]),
-        boxShadow: [BoxShadow(color: Brand.yellow.withValues(alpha: 0.38), blurRadius: 36, offset: const Offset(0, 14))],
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          const Icon(Icons.qr_code_scanner_rounded, size: 52, color: Brand.yellowInk),
-          // Línea de lectura que baja y sube.
-          AnimatedBuilder(
-            animation: _c,
-            builder: (context, _) {
-              final t = (_c.value < 0.5 ? _c.value * 2 : (1 - _c.value) * 2);
-              return Positioned(
-                top: 20 + t * 52,
-                left: 16,
-                right: 16,
-                child: Container(height: 3, decoration: BoxDecoration(color: Brand.yellowInk.withValues(alpha: 0.75), borderRadius: BorderRadius.circular(2))),
-              );
-            },
-          ),
-        ],
       ),
     );
   }

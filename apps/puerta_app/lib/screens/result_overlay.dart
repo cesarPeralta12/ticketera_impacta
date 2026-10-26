@@ -19,8 +19,8 @@ class OutcomeStyle {
       return switch (o.movement ?? Movement.entry) {
         Movement.entry => const OutcomeStyle(Brand.green, Brand.greenDeep, Icons.check_rounded),
         Movement.reentry => const OutcomeStyle(Brand.green, Brand.greenDeep, Icons.replay_rounded),
-        Movement.exit => const OutcomeStyle(Brand.blue, Color(0xFF123F7A), Icons.logout_rounded),
-        Movement.zoneChange => const OutcomeStyle(Brand.violet, Color(0xFF4B1B7E), Icons.star_rounded),
+        Movement.exit => const OutcomeStyle(Brand.blue, Brand.blueDeep, Icons.logout_rounded),
+        Movement.zoneChange => const OutcomeStyle(Brand.violet, Brand.violetDeep, Icons.star_rounded),
       };
     }
     if (o.verdict.isWarning) return const OutcomeStyle(Brand.amber, Brand.amberDeep, Icons.priority_high_rounded);
@@ -108,7 +108,7 @@ class _ResultOverlayState extends State<ResultOverlay> with TickerProviderStateM
                       child: Text(
                         o.title,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontFamily: Fonts.display, fontSize: 46, height: 1.02, color: Colors.white, letterSpacing: 0.6),
+                        style: const TextStyle(fontFamily: Fonts.display, fontSize: 31, fontWeight: FontWeight.w800, height: 1.1, color: Colors.white, letterSpacing: -0.3),
                       ),
                     ),
                   ),
@@ -126,14 +126,14 @@ class _ResultOverlayState extends State<ResultOverlay> with TickerProviderStateM
                             textAlign: TextAlign.center,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontFamily: Fonts.body, fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white, height: 1.1),
+                            style: const TextStyle(fontFamily: Fonts.body, fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white, height: 1.2),
                           ),
                         if (o.detail != null) ...[
                           const SizedBox(height: 10),
                           Text(
                             o.detail!,
                             textAlign: TextAlign.center,
-                            style: TextStyle(fontFamily: Fonts.body, fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.92), height: 1.25),
+                            style: TextStyle(fontFamily: Fonts.body, fontSize: 15, fontWeight: FontWeight.w500, color: Colors.white.withValues(alpha: 0.92), height: 1.35),
                           ),
                         ],
                         if (chips.isNotEmpty) ...[

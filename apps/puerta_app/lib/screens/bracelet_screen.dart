@@ -138,7 +138,7 @@ class _BraceletScreenState extends State<BraceletScreen> {
                 children: [
                   RoundIconButton(icon: Icons.arrow_back_rounded, tooltip: 'Volver', onTap: () => Navigator.of(context).maybePop()),
                   const SizedBox(width: 14),
-                  const Expanded(child: Text('GRABAR PULSERAS', style: Type.title)),
+                  const Expanded(child: Text('Grabar pulseras', style: Type.title)),
                 ],
               ),
             ),
@@ -202,7 +202,7 @@ class _BraceletScreenState extends State<BraceletScreen> {
         const SizedBox(height: 6),
         Expanded(
           child: _searching
-              ? const Center(child: CircularProgressIndicator(color: Brand.yellow))
+              ? const Center(child: CircularProgressIndicator(color: Brand.accent))
               : _results.isEmpty
                   ? Padding(
                       padding: const EdgeInsets.all(34),

@@ -5,6 +5,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import 'tokens.dart';
 
@@ -63,8 +64,8 @@ class _GlowPainter extends CustomPainter {
       canvas.drawCircle(center, radius, paint);
     }
 
-    glow(Offset(size.width * (0.85 - 0.2 * t), size.height * (0.05 + 0.08 * t)), size.width * 0.9, Brand.yellow, 0.16);
-    glow(Offset(size.width * (0.05 + 0.25 * t), size.height * (0.95 - 0.12 * t)), size.width * 0.95, Brand.green, 0.13);
+    glow(Offset(size.width * (0.85 - 0.2 * t), size.height * (0.05 + 0.08 * t)), size.width * 0.95, Brand.slate, 0.30);
+    glow(Offset(size.width * (0.1 + 0.25 * t), size.height * (0.02 + 0.1 * t)), size.width * 0.95, Brand.accent, 0.26);
   }
 
   @override
@@ -259,7 +260,7 @@ class Pill extends StatelessWidget {
             child: Text(
               label,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontFamily: Fonts.body, fontSize: small ? 12 : 13.5, fontWeight: FontWeight.w700, color: fg, letterSpacing: 0.2),
+              style: TextStyle(fontFamily: Fonts.body, fontSize: small ? 11 : 12.5, fontWeight: FontWeight.w600, color: fg, letterSpacing: 0.1),
             ),
           ),
         ],
@@ -287,7 +288,7 @@ class SoftCard extends StatelessWidget {
         color: gradient == null ? (color ?? Brand.surface) : null,
         gradient: gradient ??
             (color == null
-                ? const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF151A21), Color(0xFF0F1318)])
+                ? const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF1C2842), Color(0xFF162034)])
                 : null),
         borderRadius: BorderRadius.circular(radius),
         border: Border.all(color: borderColor ?? Brand.stroke),
@@ -312,32 +313,52 @@ class SectionLabel extends StatelessWidget {
       );
 }
 
-/// "IMPACTA." con el punto amarillo de la marca.
+/// Logo de iPass (SVG de la marca) sobre fondo oscuro, con un rótulo opcional al lado ("PUERTA").
 class BrandMark extends StatelessWidget {
-  const BrandMark({super.key, this.size = 30, this.suffix});
+  const BrandMark({super.key, this.height = 26, this.suffix});
 
-  final double size;
+  final double height;
   final String? suffix;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.baseline,
-      textBaseline: TextBaseline.alphabetic,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text('IMPACTA', style: TextStyle(fontFamily: Fonts.display, fontSize: size, color: Brand.text, letterSpacing: 1)),
-        Text('.', style: TextStyle(fontFamily: Fonts.display, fontSize: size, color: Brand.yellow)),
+        SvgPicture.asset('assets/brand/ipass-logo-blanco.svg', height: height, semanticsLabel: 'iPass'),
         if (suffix != null) ...[
-          SizedBox(width: size * 0.3),
-          Text(suffix!, style: TextStyle(fontFamily: Fonts.body, fontSize: size * 0.42, fontWeight: FontWeight.w700, color: Brand.muted, letterSpacing: 3)),
+          SizedBox(width: height * 0.45),
+          Container(width: 1.5, height: height * 0.7, color: Brand.stroke),
+          SizedBox(width: height * 0.45),
+          Text(suffix!, style: TextStyle(fontFamily: Fonts.body, fontSize: height * 0.46, fontWeight: FontWeight.w600, color: Brand.muted, letterSpacing: 2.4)),
         ],
       ],
     );
   }
 }
 
-/// Botón principal amarillo, grande, con rebote y estado de carga.
+/// Ícono de la app (la "i" de iPass sobre magenta), con brillo.
+class AppIconTile extends StatelessWidget {
+  const AppIconTile({super.key, this.size = 92});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(size * 0.27),
+        boxShadow: [BoxShadow(color: Brand.accent.withValues(alpha: 0.45), blurRadius: size * 0.4, offset: Offset(0, size * 0.14))],
+      ),
+      child: ClipRRect(borderRadius: BorderRadius.circular(size * 0.27), child: Image.asset('assets/brand/icon-512.png', fit: BoxFit.cover)),
+    );
+  }
+}
+
+/// Botón principal magenta, grande, con rebote y estado de carga.
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({super.key, required this.label, required this.onPressed, this.icon, this.loading = false, this.color, this.textColor});
 
@@ -351,8 +372,8 @@ class PrimaryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = onPressed != null && !loading;
-    final bg = color ?? Brand.yellow;
-    final fg = textColor ?? Brand.yellowInk;
+    final bg = color ?? Brand.accent;
+    final fg = textColor ?? Brand.accentInk;
     return PressScale(
       onTap: enabled ? onPressed : null,
       scale: 0.97,
@@ -361,6 +382,7 @@ class PrimaryButton extends StatelessWidget {
         height: 58,
         decoration: BoxDecoration(
           color: enabled ? bg : bg.withValues(alpha: 0.35),
+          gradient: enabled && color == null ? const LinearGradient(colors: [Brand.accent, Brand.accentDark]) : null,
           borderRadius: BorderRadius.circular(18),
           boxShadow: enabled ? [BoxShadow(color: bg.withValues(alpha: 0.32), blurRadius: 22, offset: const Offset(0, 8))] : null,
         ),
@@ -374,7 +396,7 @@ class PrimaryButton extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (icon != null) ...[Icon(icon, color: fg, size: 22), const SizedBox(width: 10)],
-                    Text(label, style: TextStyle(fontFamily: Fonts.body, fontSize: 17.5, fontWeight: FontWeight.w800, color: fg, letterSpacing: 0.5)),
+                    Text(label, style: TextStyle(fontFamily: Fonts.body, fontSize: 15.5, fontWeight: FontWeight.w700, color: fg, letterSpacing: 0.4)),
                   ],
                 ),
         ),
@@ -404,7 +426,7 @@ class GhostButton extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[Icon(icon, color: color, size: 20), const SizedBox(width: 9)],
-            Text(label, style: TextStyle(fontFamily: Fonts.body, fontSize: 16, fontWeight: FontWeight.w700, color: color)),
+            Text(label, style: TextStyle(fontFamily: Fonts.body, fontSize: 14.5, fontWeight: FontWeight.w600, color: color)),
           ],
         ),
       ),
@@ -432,13 +454,13 @@ class RoundIconButton extends StatelessWidget {
         height: 46,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: active ? Brand.yellow.withValues(alpha: 0.16) : Colors.black.withValues(alpha: 0.38),
-          border: Border.all(color: active ? Brand.yellow.withValues(alpha: 0.55) : Brand.stroke),
+          color: active ? Brand.accent.withValues(alpha: 0.16) : Colors.black.withValues(alpha: 0.38),
+          border: Border.all(color: active ? Brand.accent.withValues(alpha: 0.55) : Brand.stroke),
         ),
         child: Stack(
           alignment: Alignment.center,
           children: [
-            Icon(icon, size: 22, color: active ? Brand.yellow : Brand.text),
+            Icon(icon, size: 22, color: active ? Brand.accent : Brand.text),
             if (badge != null)
               Positioned(
                 right: 3,

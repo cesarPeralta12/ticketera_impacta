@@ -126,8 +126,7 @@ Future<void> _loadFonts() async {
     final loader = FontLoader('MaterialIcons')..addFont(Future.value(ByteData.sublistView(icons.readAsBytesSync())));
     await loader.load();
   }
-  await load('Anton', ['Anton-Regular.ttf']);
-  await load('Barlow', ['Barlow-Regular.ttf', 'Barlow-Medium.ttf', 'Barlow-SemiBold.ttf', 'Barlow-Bold.ttf']);
+  await load('Poppins', ['Poppins-Regular.ttf', 'Poppins-Medium.ttf', 'Poppins-SemiBold.ttf', 'Poppins-Bold.ttf', 'Poppins-ExtraBold.ttf']);
 }
 
 final _shot = GlobalKey();
