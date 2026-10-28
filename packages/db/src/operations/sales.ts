@@ -13,10 +13,8 @@ import {
 import { prisma } from "../client";
 import { createPendingOrder } from "./orders";
 import { applyPaymentUpdate, startPayment } from "./payments";
+import { assertCanSell, methodAllowed, type PosMethod } from "./sales-scope";
 import { DomainError, audit, loadInventory, lockInventory } from "./shared";
-
-export const POS_METHODS = ["EFECTIVO", "QR", "TARJETA"] as const;
-export type PosMethod = (typeof POS_METHODS)[number];
 
 export const POS_METHOD_LABEL: Record<PosMethod, string> = {
   EFECTIVO: "Efectivo",
@@ -46,6 +44,13 @@ export async function sellAtBoxOffice(
   });
   if (dynamicType) {
     throw new DomainError("INVALID_ITEMS", `"${dynamicType.name}" es de QR dinámico: solo se vende online (no en boletería).`);
+  }
+  // Lo que la cuenta puede vender (cajero con funciones asignadas) y con qué medios cobra.
+  const session = await prisma.eventSession.findUnique({ where: { id: input.sessionId }, select: { id: true, eventId: true, event: { select: { organizationId: true } } } });
+  if (!session) throw new DomainError("NOT_FOUND", "Función no encontrada.");
+  const access = await assertCanSell(prisma, { userId: options.staffId, organizationId: session.event.organizationId, session, now: options.now });
+  if (!methodAllowed(access, options.method)) {
+    throw new DomainError("NOT_ALLOWED", `Tu cuenta no cobra con ${POS_METHOD_LABEL[options.method]}: usa otro medio de cobro.`);
   }
   const buyer = {
     ...input.buyer,

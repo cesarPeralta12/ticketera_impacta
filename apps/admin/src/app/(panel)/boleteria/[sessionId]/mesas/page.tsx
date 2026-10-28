@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { formatDateTime, formatMoney } from "@ticketera/core";
 import { getTableStates, prisma, type TableLiveStatus } from "@ticketera/db";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { staffCanSell } from "@/lib/sales-access";
 import { ROLES, can, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Mesas" };
@@ -27,6 +28,16 @@ export default async function TablesPage({ params }: Props) {
     select: { id: true, eventId: true, startsAt: true, event: { select: { title: true } }, venue: { select: { name: true, timezone: true } } },
   });
   if (!session) notFound();
+  if (!(await staffCanSell(staff, session))) {
+    return (
+      <div className="space-y-4">
+        <Link href="/boleteria" className="text-sm text-[var(--ink-dim)] hover:text-[var(--ink)]">
+          ← Boletería
+        </Link>
+        <p className="card p-5 text-sm text-[var(--ink-muted)]">No tienes asignada esta función: pídele a iPass que te la asigne.</p>
+      </div>
+    );
+  }
   const groups = await getTableStates(session.id);
   const all = groups.flatMap((g) => g.tables);
   const count = (s: TableLiveStatus) => all.filter((t) => t.status === s).length;

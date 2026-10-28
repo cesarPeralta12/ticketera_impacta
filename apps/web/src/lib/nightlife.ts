@@ -1,5 +1,5 @@
-import { DEFAULT_TIMEZONE, currentPrice, peopleIn, saleState, utcToZonedInput } from "@ticketera/core";
-import { getSessionAvailability, onlineOnSaleWhere, prisma } from "@ticketera/db";
+import { DEFAULT_TIMEZONE, currentPrice, peopleIn, saleState, utcToZonedInput, withPhases } from "@ticketera/core";
+import { getSessionStock, onlineOnSaleWhere, prisma } from "@ticketera/db";
 
 export type When = "hoy" | "finde" | "semana";
 export const WHEN_LABEL: Record<When, string> = { hoy: "Hoy", finde: "Este finde", semana: "Próximos 7 días" };
@@ -109,8 +109,13 @@ export async function listClubs(filters: { city?: string; when?: When }) {
       });
       const [first] = nights;
       if (!first) return null;
-      const shown = nights.slice(0, 8);
-      const availability = await Promise.all(shown.map((n) => getSessionAvailability(n.id, now)));
+      // Con fases, solo la que se vende ahora.
+      const shown = await Promise.all(
+        nights.slice(0, 8).map(async (n) => {
+          const stock = await getSessionStock(n.id, now);
+          return { ...n, ticketTypes: withPhases(n.ticketTypes, stock, now), remaining: stock.remaining };
+        }),
+      );
       return {
         slug: event.slug,
         title: event.title,
@@ -119,12 +124,12 @@ export async function listClubs(filters: { city?: string; when?: When }) {
         organizer: event.organization.isPlatform ? null : event.organization.name,
         venue: first.venue,
         currency: first.ticketTypes[0]!.currency,
-        nights: shown.map((n, i) => ({
+        nights: shown.map((n) => ({
           id: n.id,
           startsAt: n.startsAt,
-          left: n.ticketTypes.filter((t) => saleState(t, now) === "open").reduce((sum, t) => sum + (availability[i]!.get(t.id) ?? 0), 0),
+          left: n.ticketTypes.filter((t) => saleState(t, now) === "open").reduce((sum, t) => sum + (n.remaining.get(t.id) ?? 0), 0),
         })),
-        offer: clubOffer(first.ticketTypes, availability[0]!, now),
+        offer: clubOffer(shown[0]!.ticketTypes, shown[0]!.remaining, now),
       };
     }),
   );

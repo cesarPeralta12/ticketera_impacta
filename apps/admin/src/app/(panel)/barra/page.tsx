@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { formatDateTime, formatMoney } from "@ticketera/core";
-import { prisma } from "@ticketera/db";
+import { prisma, salesAccess, sellableSessionsWhere } from "@ticketera/db";
 import { ROLES, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Barra" };
@@ -14,8 +14,10 @@ export default async function BarPage() {
   await connection();
   const staff = await requireStaff(ROLES.pos);
   const now = new Date();
+  const access = await salesAccess(prisma, staff.id, staff.organization.id, now);
   const nights = await prisma.eventSession.findMany({
     where: {
+      ...sellableSessionsWhere(access),
       cancelledAt: null,
       startsAt: { gt: new Date(now.getTime() - NIGHT_HOURS * 60 * 60_000), lt: new Date(now.getTime() + 14 * 24 * 60 * 60_000) },
       event: { organizationId: staff.organization.id, status: "PUBLISHED" },
@@ -44,8 +46,9 @@ export default async function BarPage() {
       </div>
       {nights.length === 0 ? (
         <p className="card p-5 text-sm text-[var(--ink-muted)]">
-          No hay noches con consumo incluido en estos días. Se activan al cargar una mesa o una entrada con consumo en
-          los precios de una noche.
+          {access.all
+            ? "No hay noches con consumo incluido en estos días. Se activan al cargar una mesa o una entrada con consumo en los precios de una noche."
+            : "No tienes noches asignadas con consumo incluido en estos días. Pídele a iPass que te asigne las noches donde vas a cobrar."}
         </p>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">

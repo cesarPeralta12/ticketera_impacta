@@ -37,6 +37,22 @@ export default async function PromosPage() {
         </p>
       </div>
 
+      <div className="card flex flex-wrap items-center justify-between gap-3 border-[var(--accent)]/40 p-4">
+        <p className="text-sm">
+          <strong>Promotores con cuenta de venta:</strong> venden con cobro por QR desde su panel, con su código y su comisión por evento.
+        </p>
+        <span className="flex gap-2">
+          <Link href="/promotores" className="btn text-sm">
+            Ver promotores
+          </Link>
+          {staff.platform && !staff.readOnly && (
+            <Link href="/promotores#nuevo" className="btn btn-primary text-sm">
+              + Nuevo promotor
+            </Link>
+          )}
+        </span>
+      </div>
+
       {promoters.length > 0 && (
         <section className="card overflow-x-auto">
           <h2 className="eyebrow border-b border-[var(--border)] px-5 py-3">Por promotor (RRPP) · solo ventas pagadas</h2>

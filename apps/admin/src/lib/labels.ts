@@ -21,11 +21,12 @@ export const ROLE_LABEL = {
   OPERATOR: "Operador de puerta",
   CASHIER: "Cajero (boletería y barra)",
   CLIENT: "Cliente (solo lectura)",
+  PROMOTER: "Promotor (vende con QR)",
 } as const;
 
 export const MODE_LABEL = { TICKETING: "Venta de entradas", GUEST_LIST: "Lista de invitados" } as const;
 
-export const CHANNEL_LABEL = { ONLINE: "Online", POS: "Boletería", GUEST: "Invitaciones", PRINTED: "Impresas", IMPORT: "Importadas" } as const;
+export const CHANNEL_LABEL = { ONLINE: "Online", POS: "Boletería", GUEST: "Invitaciones", PRINTED: "Impresas", IMPORT: "Importadas", PROMOTER: "Promotores" } as const;
 
 export const SCAN_LABEL = {
   ACCEPTED: "Aceptada",
@@ -41,6 +42,7 @@ export const SCAN_LABEL = {
   OUT_OF_HOURS: "Fuera de horario",
   NOT_ACTIVATED: "Impresa sin vender (no activada)",
   NOT_INSIDE: "Salida sin haber entrado",
+  ZONE_FULL: "Zona llena",
 } as const;
 
 /** Qué hizo una lectura aceptada (ver PresenceMovement). Vacío en las lecturas de antes de las zonas: ingreso. */

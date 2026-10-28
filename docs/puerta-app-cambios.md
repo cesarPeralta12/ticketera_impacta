@@ -116,3 +116,19 @@ lectura 1 `entry`, lectura 2 `exit`, lectura 3 `reentry`; con `maxEntries: 1` �
 
 **Mientras la app no se actualice**, el mismo resultado se logra sin tocar la app: en el recinto, poner la puerta como
 **"Entrada y salida"** (`BOTH`), que la app 1.3.0 ya maneja.
+
+## 5. Nombres de zona y zona llena (octubre 2026, opcional para la app)
+
+Todo es **nuevo y se agrega sin quitar nada**: la app actual sigue funcionando igual si no lo usa.
+
+**Descarga** (`GET /api/v1/sessions/{id}/download`):
+
+- `gates[].zoneName`: el nombre de la zona a la que da la puerta (ej. `"Ultra VIP"`), o `null`. Sirve para que el
+  portero vea "Puerta Ultra VIP · Zona Ultra VIP" en la pantalla de lectura.
+- `zones`: un mapa `{ zoneId: nombre }` de todas las zonas del recinto. Con `tickets[].zoneIds` (que ya existía) la app
+  puede mostrar "Incluye: VIP y Ultra VIP" al leer una entrada.
+
+**Lectura** (`POST /api/v1/scans`): nuevo resultado posible `ZONE_FULL` ("Zona llena"). Solo aparece si en el panel la
+zona tiene aforo y está marcada **"Bloquear al llenarse"** (por defecto está apagado). La app puede mostrarlo como
+rechazo en rojo, igual que `WRONG_GATE`. Sin conexión, el teléfono no sabe cuánta gente hay adentro: una lectura sin
+conexión que la app dejó pasar se registra igual al sincronizar (la persona ya entró).

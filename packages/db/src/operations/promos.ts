@@ -77,7 +77,8 @@ export async function resolvePromo(
     discountValue: promo.discountValue,
     combinableWithPresale: promo.combinableWithPresale,
   });
-  if (discount <= 0) throw invalid("Ese código no aplica a las entradas que elegiste (por ejemplo, ya tienen precio de preventa).");
+  // El código de un promotor puede no tener descuento: sirve para que la venta sume a su comisión.
+  if (discount <= 0 && !promo.promoterId) throw invalid("Ese código no aplica a las entradas que elegiste (por ejemplo, ya tienen precio de preventa).");
   return { promo, discount };
 }
 

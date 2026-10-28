@@ -57,7 +57,7 @@ export async function getEventReport(eventId: string) {
       prisma.order.count({ where: { channel: "ONLINE", status: "PAID", items: { some: { ticketType: bySession } } } }),
     ]);
 
-  const channels: OrderChannel[] = ["ONLINE", "POS", "GUEST", "PRINTED", "IMPORT"];
+  const channels: OrderChannel[] = ["ONLINE", "POS", "PROMOTER", "GUEST", "PRINTED", "IMPORT"];
   const byChannel: ChannelLine[] = channels
     .map((channel) => ({
       channel,
@@ -66,8 +66,8 @@ export async function getEventReport(eventId: string) {
       // Impresas: emitidas (ocupan cupo) y, de ellas, las vendidas (las que suman a la recaudación).
       ...(channel === "PRINTED" ? { sold: ticketsByChannel.filter((t) => t.order.channel === channel && t.printState === "SOLD").length } : {}),
     }))
-    // Impresas e importadas solo aparecen en los eventos que las usan.
-    .filter((c) => (c.channel !== "PRINTED" && c.channel !== "IMPORT") || c.tickets > 0);
+    // Promotores, impresas e importadas solo aparecen en los eventos que las usan.
+    .filter((c) => (c.channel !== "PRINTED" && c.channel !== "IMPORT" && c.channel !== "PROMOTER") || c.tickets > 0);
   const issued = byChannel.reduce((sum, c) => sum + c.tickets, 0);
 
   // Boletería: por cajero y medio de pago.

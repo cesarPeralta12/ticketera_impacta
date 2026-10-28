@@ -18,7 +18,10 @@ const hours = (n: number) => new Date(Date.now() + n * 3_600_000);
 async function setup() {
   const { session, types } = await createGeneralAdmissionEvent({ sectionCapacity: 100, types: [{ name: "General", capacity: 100, unitAmount: 10_000 }] });
   const full = await prisma.eventSession.findUniqueOrThrow({ where: { id: session.id }, include: { event: true } });
-  const actor = await prisma.staffUser.create({ data: { email: `adm-${unique().toLowerCase()}@prueba.test`, name: "Admin", passwordHash: "!" } });
+  // Administrador de la organización: crea códigos y vende en boletería.
+  const actor = await prisma.staffUser.create({
+    data: { email: `adm-${unique().toLowerCase()}@prueba.test`, name: "Admin", passwordHash: "!", memberships: { create: { organizationId: full.event.organizationId, role: "ADMIN" } } },
+  });
   return { session, type: types[0]!, eventId: full.eventId, orgId: full.event.organizationId, actorId: actor.id };
 }
 

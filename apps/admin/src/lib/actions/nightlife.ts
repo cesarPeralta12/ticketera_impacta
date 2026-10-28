@@ -4,11 +4,13 @@ import { revalidatePath } from "next/cache";
 import { MAX_REPEAT_WEEKS, peopleIn, tableLabel } from "@ticketera/core";
 import { DomainError, getConsumption, prisma, redeemConsumption, repeatWeeklyNights } from "@ticketera/db";
 import { intField, moneyField, type FormState } from "@/lib/forms";
+import { staffCanSell } from "@/lib/sales-access";
 import { READ_ONLY_MESSAGE, ROLES, requireEditor, requireStaff, type Staff } from "@/lib/session";
 
-/** Noche de la organización: la Barra y "Repetir noches" solo tocan las propias. */
+/** Noche de la organización: la Barra y "Repetir noches" solo tocan las propias (un cajero, solo las que tiene asignadas). */
 async function ownNight(staff: Staff, sessionId: string) {
-  return prisma.eventSession.findFirst({ where: { id: sessionId, event: { organizationId: staff.organization.id } } });
+  const night = await prisma.eventSession.findFirst({ where: { id: sessionId, event: { organizationId: staff.organization.id } } });
+  return night && (await staffCanSell(staff, night)) ? night : null;
 }
 
 export type ConsumptionView = {

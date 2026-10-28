@@ -32,8 +32,8 @@ export default async function UsersPage() {
         </h1>
         <p className="text-sm text-[var(--ink-muted)]">
           {organizer
-            ? "Solo iPass crea cuentas. Cada una ve únicamente los eventos de este organizador: el administrador, todo lo suyo; el portero, la app móvil de puerta; el cajero, la boletería."
-            : "No hay registro público: las cuentas se crean aquí. Cada rol ve solo lo suyo: el portero, la app móvil de puerta; el cajero, la boletería; el cliente, sus eventos mientras su espacio esté abierto."}{" "}
+            ? "Solo iPass crea cuentas. Cada una ve únicamente los eventos de este organizador: el administrador, todo lo suyo; el portero, la app móvil de puerta; el cajero, la boletería; el promotor, solo vender con QR los eventos que le asignes."
+            : "No hay registro público: las cuentas se crean aquí. Cada rol ve solo lo suyo: el portero, la app móvil de puerta; el cajero, la boletería; el cliente, sus eventos mientras su espacio esté abierto; el promotor, solo vender con QR los eventos que le asignes (en Promotores)."}{" "}
           La contraseña es temporal: la persona la cambia al entrar por primera vez.
         </p>
       </div>
@@ -80,6 +80,16 @@ export default async function UsersPage() {
                       Funciones y teléfonos
                     </Link>
                   )}
+                  {m.role === "CASHIER" && (
+                    <Link href={`/usuarios/${m.userId}`} className="btn text-xs">
+                      Qué puede vender
+                    </Link>
+                  )}
+                  {m.role === "PROMOTER" && (
+                    <Link href={`/promotores/${m.userId}`} className="btn text-xs">
+                      Eventos y comisión
+                    </Link>
+                  )}
                   {m.userId !== staff.id && (
                     <ActionForm action={toggleStaffActiveAction}>
                       <input type="hidden" name="userId" value={m.userId} />
@@ -111,6 +121,7 @@ export default async function UsersPage() {
             <select name="role" defaultValue="OPERATOR" className="field">
               <option value="OPERATOR">{ROLE_LABEL.OPERATOR}</option>
               <option value="CASHIER">{organizer ? "Cajero (boletería y barra)" : ROLE_LABEL.CASHIER}</option>
+              <option value="PROMOTER">{ROLE_LABEL.PROMOTER}</option>
               {!organizer && <option value="CLIENT">{ROLE_LABEL.CLIENT}</option>}
               <option value="ADMIN">{organizer ? "Organizador (solo lectura)" : ROLE_LABEL.ADMIN}</option>
               {!organizer && staff.role === "OWNER" && <option value="OWNER">{ROLE_LABEL.OWNER}</option>}

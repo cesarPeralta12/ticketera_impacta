@@ -1,5 +1,5 @@
 import { currentPrice, saleState, type CardSales } from "@ticketera/core";
-import { getSessionAvailability, onlineOnSaleWhere, prisma, type EventCategory, type Prisma } from "@ticketera/db";
+import { getSessionAvailability, onlineOnSaleWhere, prisma, withSessionPhases, type EventCategory, type Prisma } from "@ticketera/db";
 
 /** Lo que muestra la portada de cada evento: su próxima función, el precio desde y su estado de venta. */
 export type EventCard = {
@@ -26,7 +26,7 @@ export type EventCard = {
 /**
  * Eventos publicados con venta y al menos una función futura, ordenados por la próxima.
  * Los eventos con lista de invitados no se publican en el sitio: se entra solo con invitación.
- * `search` filtra por título, recinto o ciudad; `small`, solo los eventos pequeños.
+ * `search` filtra por título, recinto o ciudad; `small`, solo los eventos pequeños (la sección «Otros eventos»).
  */
 export async function listPublishedEvents(category?: EventCategory, search?: string, options: { small?: boolean } = {}): Promise<EventCard[]> {
   const now = new Date();
@@ -69,6 +69,8 @@ export async function listPublishedEvents(category?: EventCategory, search?: str
               discountEndsAt: true,
               sectionId: true,
               entryUntil: true,
+              phaseOrder: true,
+              phaseStartsAt: true,
               section: { select: { id: true, capacity: true } },
             },
           },
@@ -79,13 +81,15 @@ export async function listPublishedEvents(category?: EventCategory, search?: str
 
   const cards = await Promise.all(
     events.map(async (event): Promise<EventCard | null> => {
-      const [next] = event.sessions;
+      // Con fases, solo cuenta la que se vende ahora (una Fase Hot agotada no es el "desde").
+      const sessions = await Promise.all(event.sessions.map(async (s) => ({ ...s, ticketTypes: await withSessionPhases(s.id, s.ticketTypes, now) })));
+      const [next] = sessions;
       if (!next) return null;
 
       // "Desde Bs X": sin contar preventas que ya terminaron, con el descuento vigente si lo hay.
-      const prices = event.sessions
+      const prices = sessions
         .flatMap((s) => s.ticketTypes)
-        .filter((t) => saleState(t, now) !== "closed")
+        .filter((t) => saleState(t, now) !== "closed" && (!t.phase || t.phase.state === "active"))
         // Una "free hasta la 01:00" se anuncia aparte: el "desde" es la entrada más barata con precio.
         .filter((t) => !(t.entryUntil && currentPrice(t, now).unitAmount === 0))
         .map((t) => ({ ...t, ...currentPrice(t, now) }));

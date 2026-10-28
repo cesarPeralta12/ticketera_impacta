@@ -116,6 +116,18 @@ export async function createSeatedEvent(opts: { sections: { name: string; seats:
   };
 }
 
+/**
+ * Personal de iPass para las pruebas: vende y cobra en cualquier organización (como un administrador de la plataforma).
+ * Las pruebas de "qué puede vender cada cajero" crean sus cuentas con su propia organización.
+ */
+export async function platformStaff(name = "Staff") {
+  const suffix = randomCode(6).toLowerCase();
+  const org = await prisma.organization.create({ data: { name: `iPass ${suffix}`, slug: `ipass-${suffix}`, isPlatform: true, currency: "BOB" } });
+  return prisma.staffUser.create({
+    data: { email: `staff-${suffix}@prueba.test`, name, passwordHash: "!", memberships: { create: { organizationId: org.id, role: "ADMIN" } } },
+  });
+}
+
 export const buyer = (n: number) => ({
   name: `Comprador ${n}`,
   email: `comprador${n}@prueba.test`,

@@ -11,7 +11,7 @@ import { ReadOnlyProvider } from "@/components/read-only";
 import { exitOrganizationAction, previewAsAction } from "@/lib/actions/platform";
 import { signOut } from "@/lib/auth";
 import { ROLE_LABEL } from "@/lib/labels";
-import { PREVIEW_LABEL, PREVIEW_ROLES, ROLES, can, isGlobalView, isNightlife, requireStaff, type Staff } from "@/lib/session";
+import { HOME_BY_ROLE, PREVIEW_LABEL, PREVIEW_ROLES, ROLES, can, isGlobalView, isNightlife, requireStaff, type Staff } from "@/lib/session";
 
 type NavItem = { href: string; label: string; icon: NavIcon; badge?: number };
 type NavGroup = { title?: string; items: NavItem[] };
@@ -37,8 +37,10 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
           { href: "/", label: "Resumen general", icon: "home" },
           { href: "/organizadores", label: "Organizadores", icon: "briefcase" },
           { href: "/organizadores?tipo=boliche", label: "Boliches", icon: "glass" },
-          { href: "/aprobaciones", label: "Aprobaciones", icon: "check", badge: pending },
+          // Los eventos los arma iPass y se publican directo: Aprobaciones aparece solo si un organizador envió uno.
+          ...(pending > 0 ? [{ href: "/aprobaciones", label: "Aprobaciones", icon: "check" as const, badge: pending }] : []),
           { href: "/ordenes", label: "Ventas", icon: "receipt" },
+          { href: "/conciliacion", label: "Conciliación de cobros", icon: "check" },
           { href: "/compradores", label: "Compradores", icon: "user" },
           { href: "/ingresos", label: "Ingresos en puerta", icon: "door" },
         ],
@@ -50,6 +52,7 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
           { href: "/clientes", label: "Clientes", icon: "briefcase" },
           { href: "/recintos", label: "Recintos", icon: "map" },
           { href: "/promociones", label: "Promociones", icon: "tag" },
+          { href: "/promotores", label: "Promotores", icon: "users" },
           ...operate,
         ],
       },
@@ -71,9 +74,11 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
           { href: "/eventos", label: nightlife ? "Noches" : "Eventos", icon: "calendar" },
           { href: "/recintos", label: "Recintos", icon: "map" },
           { href: "/ordenes", label: "Ventas", icon: "receipt" },
+          ...(staff.platform ? [{ href: "/conciliacion", label: "Conciliación de cobros", icon: "check" as const }] : []),
           { href: "/compradores", label: "Compradores", icon: "user" },
           { href: "/ingresos", label: "Ingresos en puerta", icon: "door" },
           { href: "/promociones", label: nightlife ? "Promociones y RRPP" : "Promociones", icon: "tag" },
+          { href: "/promotores", label: "Promotores", icon: "users" },
           ...operate,
           { href: "/seguridad", label: "Seguridad", icon: "shield" },
           // Las cuentas de un organizador las crea IMPACTA (al entrar en él).
@@ -88,6 +93,8 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
       items: [
         ...operate,
         ...(can(staff, ROLES.client) ? [{ href: "/cliente", label: "Mis eventos", icon: "calendar" as const }] : []),
+        // Promotor: vende con cobro por QR sus eventos y ve su comisión, nada más.
+        ...(can(staff, ROLES.promoter) ? [{ href: "/promotor", label: "Vender y mi comisión", icon: "ticket" as const }] : []),
       ],
     },
   ];
@@ -146,7 +153,7 @@ function tourSteps(staff: Staff): TourStep[] {
     ];
   }
 
-  // iPass (vista general de la plataforma): organizadores, aprobaciones, eventos propios y cuentas.
+  // iPass (vista general de la plataforma): organizadores, eventos propios y cuentas.
   if (isGlobalView(staff)) {
     return [
       {
@@ -166,22 +173,13 @@ function tourSteps(staff: Staff): TourStep[] {
         ],
       },
       {
-        title: "Aprobaciones",
-        href: "/aprobaciones",
-        text: "Los eventos que un organizador envió para publicar.",
-        points: [
-          "Ves sus funciones, precios y cupos; «Ver el evento completo» lo abre dentro del organizador.",
-          "Apruébalo para que salga a la venta, o devuélvelo con lo que hay que corregir.",
-        ],
-      },
-      {
         title: "Eventos de iPass",
         href: "/eventos",
         target: '[data-tour="nuevo-evento"]',
         text: "Los eventos propios de iPass o de un cliente que iPass opera. El asistente te lleva paso a paso.",
         points: [
           "Datos, lugar y fecha, entradas (modelos listos) y revisión con la vista previa.",
-          "«Evento pequeño»: una sola pantalla con lotes de entradas impresas.",
+          "«Evento pequeño»: el acceso rápido, una sola pantalla (en la web o con entradas impresas).",
           "Dentro de cada evento: Vista previa, Importar Excel y Reporte.",
         ],
       },
@@ -276,12 +274,12 @@ function tourSteps(staff: Staff): TourStep[] {
             title: "Evento pequeño",
             href: "/eventos",
             target: '[data-tour="evento-pequeno"]',
-            text: "Para peñas, recitales u obras chicas que se venden en mano: todo en una sola pantalla.",
+            text: "El acceso rápido para peñas, recitales u obras chicas: todo en una sola pantalla.",
             points: [
               "Nombre, fecha, lugar y hasta 4 tipos de entrada.",
-              "Quedan lotes numerados listos para imprimir (PDF).",
-              "Se activan al marcarse vendidas: una fotocopia no entra.",
-              "En la web se encuentra con el filtro «Eventos pequeños» de Eventos.",
+              "En la web: queda publicado y sale en «Otros eventos».",
+              "Impresas: quedan lotes numerados listos para imprimir (PDF), que se activan al marcarse vendidos.",
+              "Para algo grande (mapa, butacas, fases), «+ Nuevo evento» con el asistente completo.",
             ],
           },
         ]
@@ -363,7 +361,7 @@ function tourSteps(staff: Staff): TourStep[] {
 }
 
 export default async function PanelLayout({ children }: { children: ReactNode }) {
-  const staff = await requireStaff([...ROLES.manage, ...ROLES.pos, ...ROLES.client]);
+  const staff = await requireStaff([...ROLES.manage, ...ROLES.pos, ...ROLES.client, ...ROLES.promoter]);
   if (staff.mustChangePassword) redirect("/cuenta/contrasena");
   const groups = await navigation(staff);
   // Debajo del logo: de quién es el panel (en la plataforma no hace falta, el menú ya dice "Plataforma").
@@ -379,7 +377,7 @@ export default async function PanelLayout({ children }: { children: ReactNode })
     <div className="flex min-h-dvh flex-col md:flex-row print:block">
       <aside className="sidebar flex flex-col md:sticky md:top-0 md:h-dvh md:w-64 md:shrink-0 print:hidden">
         <div className="flex items-center justify-between gap-3 px-5 py-5 md:block">
-          <Link href="/" aria-label="iPass, ir al inicio" className="block w-fit">
+          <Link href={HOME_BY_ROLE[staff.role]} aria-label="iPass, ir al inicio" className="block w-fit">
             <Logo negative className="h-8 w-auto md:h-9" />
           </Link>
           {subtitle && (

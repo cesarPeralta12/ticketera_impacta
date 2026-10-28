@@ -9,6 +9,10 @@ import { logAudit } from "@/lib/audit";
 
 export async function payOrderAction(formData: FormData) {
   const code = String(formData.get("code"));
+  // Solo las compras de la web se pagan aquí: la venta de un promotor se cobra con su QR (y con el pase directo se
+  // aprobaría sin cobrar).
+  const order = await prisma.order.findUnique({ where: { code }, select: { channel: true } });
+  if (order?.channel !== "ONLINE") redirect(`/orden/${code}`);
   let url: string;
   try {
     if (isDirectPass()) {

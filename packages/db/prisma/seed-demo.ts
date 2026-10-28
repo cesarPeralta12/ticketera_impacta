@@ -8,6 +8,7 @@
  * Cuentas de prueba (solo desarrollo local):
  *   Cliente  cliente@impacta.test  / Cliente2026!   (CLIENT: Producciones Andinas)
  *   Cajero   caja@impacta.test     / Caja2026!      (CASHIER: solo boletería)
+ *   Promotor promotor@impacta.test / Promotor2026!  (PROMOTER: vende Loko Fest con QR, 10% de comisión)
  *   Organizador  organizador@andeslive.test / Organizador2026!  (ADMIN de "Andes Live")
  *   Organizador  organizador@cumbre.test    / Organizador2026!  (ADMIN de "Cumbre Eventos")
  * Con SEED_PASSWORD definida, todas las cuentas usan esa contraseña (ver seedPassword).
@@ -60,7 +61,7 @@ const GUESTS = [
 async function ensureStaff(
   db: Db,
   orgId: string,
-  data: { email: string; name: string; password: string; role: "CLIENT" | "CASHIER" | "ADMIN" | "OPERATOR"; clientId?: string },
+  data: { email: string; name: string; password: string; role: "CLIENT" | "CASHIER" | "ADMIN" | "OPERATOR" | "PROMOTER"; clientId?: string },
 ) {
   // Devuelve la cuenta solo si la creó (si ya existía, no la toca).
   if (await db.prisma.staffUser.findUnique({ where: { email: data.email } })) return null;
@@ -112,6 +113,14 @@ export async function seedArchitectureDemo(db: Db, orgId: string) {
       data: { clientId: client.id, clientAccessEnabled: true, clientAccessUntil: await db.defaultClientAccessUntil(fest.id) },
     });
     log.push(`"${fest.title}" asignado al cliente`);
+  }
+
+  // ── Un promotor que vende el festival con cobro por QR (10% de comisión) ──
+  await ensureStaff(db, orgId, { email: "promotor@impacta.test", name: "Pablo Promotor", password: seedPassword("Promotor2026!"), role: "PROMOTER" });
+  const promoter = await prisma.staffUser.findUnique({ where: { email: "promotor@impacta.test" } });
+  if (promoter && fest && !(await prisma.promoterAssignment.findFirst({ where: { userId: promoter.id, eventId: fest.id } }))) {
+    await db.assignPromoter({ organizationId: orgId, userId: promoter.id, eventId: fest.id, rule: { commissionType: "PERCENT", commissionValue: 10 } });
+    log.push(`promotor@impacta.test vende "${fest.title}"`);
   }
 
   // ── Puertas con secciones: en Arena 26 cada acceso tiene su sector ──

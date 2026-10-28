@@ -119,6 +119,9 @@ export async function createStaffUser(input: {
   clientId?: string;
   /** Contraseña temporal: la tiene que cambiar al entrar. */
   mustChangePassword?: boolean;
+  /** Cajero: todo lo de la organización (ALL, por defecto) o solo lo asignado. */
+  salesScope?: "ALL" | "ASSIGNED";
+  phone?: string | null;
 }) {
   try {
     return await prisma.staffUser.create({
@@ -127,8 +130,9 @@ export async function createStaffUser(input: {
         email: input.email.trim().toLowerCase(),
         passwordHash: await hashPassword(input.password),
         mustChangePassword: input.mustChangePassword ?? false,
+        phone: input.phone?.trim() || null,
         memberships: {
-          create: { organizationId: input.organizationId, role: input.role, clientId: input.clientId ?? null },
+          create: { organizationId: input.organizationId, role: input.role, clientId: input.clientId ?? null, salesScope: input.salesScope ?? "ALL" },
         },
       },
     });

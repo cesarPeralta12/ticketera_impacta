@@ -10,6 +10,7 @@ import { getDoorDownload } from "../src/operations/mobile";
 import { duplicateSession, getConsumption, redeemConsumption, repeatWeeklyNights } from "../src/operations/nightlife";
 import { createPendingOrder } from "../src/operations/orders";
 import { applyPaymentUpdate, startPayment } from "../src/operations/payments";
+import { platformStaff } from "./fixtures";
 
 afterAll(() => prisma.$disconnect());
 
@@ -23,9 +24,7 @@ async function person(name = "Cliente") {
   });
 }
 
-async function bartender() {
-  return prisma.staffUser.create({ data: { email: `barra-${unique()}@prueba.test`, name: "Barra", passwordHash: "!" } });
-}
+const bartender = () => platformStaff("Barra");
 
 /** Un boliche con una noche: pista (aforo 100) y zona VIP (aforo 20) con mesas de 6. */
 async function club(opts: { startsInDays?: number } = {}) {

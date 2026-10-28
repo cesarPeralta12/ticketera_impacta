@@ -10,10 +10,12 @@ import {
   onlineSalesEnd,
   saleState,
   whenWhere,
+  withPhases,
 } from "@ticketera/core";
-import { getSessionAvailability } from "@ticketera/db";
+import { getSessionStock } from "@ticketera/db";
 import { ClubOfferView } from "@/components/club-offer";
 import { EventImage } from "@/components/event-image";
+import { PhaseList } from "@/components/phase-list";
 import { WhenWhereBlock } from "@/components/when-where";
 import type { getPublishedEvent } from "@/lib/events";
 import { clubOffer } from "@/lib/nightlife";
@@ -33,11 +35,14 @@ export async function EventView({ event, preview = false }: { event: ViewableEve
     event.sessions
       .filter((s) => onlineSalesEnd(s) > now)
       .map(async (s) => {
-        const remaining = await getSessionAvailability(s.id, now);
+        const stock = await getSessionStock(s.id, now);
+        const remaining = stock.remaining;
+        // Con fases, solo la que se vende ahora (las demás figuran cerradas o programadas).
+        const ticketTypes = withPhases(s.ticketTypes, stock, now);
         // Solo lo que se vende ahora: una preventa vencida no cuenta, una general que empieza después tampoco.
-        const open = s.ticketTypes.filter((t) => saleState(t, now) === "open");
+        const open = ticketTypes.filter((t) => saleState(t, now) === "open");
         const left = open.reduce((sum, t) => sum + (remaining.get(t.id) ?? 0), 0);
-        const priced = open.length ? open : s.ticketTypes.filter((t) => saleState(t, now) !== "closed");
+        const priced = open.length ? open : ticketTypes.filter((t) => saleState(t, now) !== "closed");
         const effective = priced.map((t) => ({ type: t, price: currentPrice(t, now) }));
         const minPrice = effective.reduce<number | null>((m, x) => (m === null || x.price.unitAmount < m ? x.price.unitAmount : m), null);
         // Boliche: la free se anuncia aparte ("Free hasta 01:00") y el "desde" es la entrada más barata con precio.
@@ -50,6 +55,8 @@ export async function EventView({ event, preview = false }: { event: ViewableEve
           .toSorted((a, b) => b.price.discountPercent! - a.price.discountPercent!)[0]?.price;
         return {
           ...s,
+          ticketTypes,
+          remaining,
           left,
           minPrice: free && paid.length ? Math.min(...paid) : minPrice,
           freeUntil: free?.entryUntil ?? null,
@@ -63,7 +70,9 @@ export async function EventView({ event, preview = false }: { event: ViewableEve
   // Boliche: cada función es una noche; se muestra lo que ofrece la próxima (mesas, free, entrada + trago).
   const club = event.category === "BOLICHE";
   const nextNight = club ? sessions.find((s) => s.left > 0) ?? sessions[0] : undefined;
-  const offer = nextNight ? clubOffer(nextNight.ticketTypes, await getSessionAvailability(nextNight.id, now), now) : null;
+  const offer = nextNight ? clubOffer(nextNight.ticketTypes, nextNight.remaining, now) : null;
+  // Fases de venta de la próxima función que las tenga (Fase Hot, Fase 1…).
+  const phased = sessions.find((s) => s.ticketTypes.some((t) => t.phase));
 
   return (
     <main className="pb-16">
@@ -114,6 +123,16 @@ export async function EventView({ event, preview = false }: { event: ViewableEve
                 {sessions.length > 1 && <span className="ml-2 font-sans text-sm font-normal text-[var(--ink-dim)]">{club ? "próxima noche" : "próxima función"}</span>}
               </h2>
               <WhenWhereBlock data={whenWhere({ session: sessions[0], venue: sessions[0].venue, event })} />
+            </div>
+          )}
+          {phased && (
+            <div className="mt-8 space-y-3">
+              {sessions.length > 1 && (
+                <p className="text-sm text-[var(--ink-dim)]">
+                  {club ? "Noche" : "Función"} del {formatDateTime(phased.startsAt, phased.venue.timezone)}
+                </p>
+              )}
+              <PhaseList types={phased.ticketTypes} remaining={phased.remaining} timeZone={phased.venue.timezone} now={now} />
             </div>
           )}
           {offer && nextNight && (

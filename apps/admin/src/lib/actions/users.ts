@@ -18,7 +18,7 @@ const staffSchema = z.object({
 });
 
 /** Roles que se pueden dar en la cuenta de un organizador: ahí no hay dueños ni clientes. */
-const ORGANIZER_ROLES: StaffRole[] = ["ADMIN", "OPERATOR", "CASHIER"];
+const ORGANIZER_ROLES: StaffRole[] = ["ADMIN", "OPERATOR", "CASHIER", "PROMOTER"];
 
 /**
  * Solo IMPACTA crea cuentas: las suyas, o las de un organizador cuando entró en él. La
@@ -31,7 +31,7 @@ export async function createStaffAction(_prev: FormState, formData: FormData): P
   const organization = staff.organization;
 
   if (!organization.isPlatform && !ORGANIZER_ROLES.includes(parsed.data.role)) {
-    return { fieldErrors: { role: "Para un organizador: administrador, operador de puerta o cajero." } };
+    return { fieldErrors: { role: "Para un organizador: administrador, operador de puerta, cajero o promotor." } };
   }
   if (parsed.data.role === "OWNER" && staff.role !== "OWNER") {
     return { fieldErrors: { role: "Solo un dueño puede crear otro dueño." } };
@@ -46,11 +46,14 @@ export async function createStaffAction(_prev: FormState, formData: FormData): P
     clientId = client.id;
   }
 
+  // Los cajeros nuevos y los promotores venden solo lo que se les asigne; los cajeros que ya existían siguen con todo.
+  const assignedOnly = parsed.data.role === "CASHIER" || parsed.data.role === "PROMOTER";
   const created = await createStaffUser({
     organizationId: organization.id,
     ...parsed.data,
     clientId,
     mustChangePassword: true,
+    salesScope: assignedOnly ? "ASSIGNED" : "ALL",
   });
   if (!created) return { fieldErrors: { email: "Ya existe una cuenta con ese email." } };
   await logAudit({
@@ -62,6 +65,8 @@ export async function createStaffAction(_prev: FormState, formData: FormData): P
       data: { role: parsed.data.role, organizationId: organization.id },
     });
   revalidatePath("/usuarios");
+  if (parsed.data.role === "CASHIER") return { ok: true, message: "Cuenta creada. Ahora toca «Qué puede vender» en su fila para asignarle eventos y funciones." };
+  if (parsed.data.role === "PROMOTER") return { ok: true, message: "Cuenta creada. Asígnale eventos y comisión en Promotores." };
   return { ok: true };
 }
 

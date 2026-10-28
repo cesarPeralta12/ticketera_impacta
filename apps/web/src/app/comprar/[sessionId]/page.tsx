@@ -19,11 +19,15 @@ import {
   peopleIn,
   saleState,
   whenWhere,
+  withPhases,
+  zonesText,
   type ZoneShape,
 } from "@ticketera/core";
-import { findHoldByCode, getHeldSeatIds, getQueueStatus, getSessionAvailability, getTakenSeatIds, getZoneAvailability, prisma } from "@ticketera/db";
+import { findHoldByCode, getHeldSeatIds, getQueueStatus, getSessionStock, getTakenSeatIds, getZoneAvailability, prisma } from "@ticketera/db";
+import { PhaseList } from "@/components/phase-list";
 import { WhenWhereBlock } from "@/components/when-where";
 import { requireBuyer } from "@/lib/customer";
+import { PROMO_COOKIE } from "@/lib/promo-cookie";
 import { queueCookieName } from "@/lib/queue-cookie";
 import { CheckoutForm, type GeneralType, type SeatedType } from "./checkout-form";
 import type { PickerZone } from "./seat-picker";
@@ -31,7 +35,7 @@ import { TurnCountdown } from "./turn-countdown";
 
 export const metadata: Metadata = { title: "Comprar entradas" };
 
-type Props = { params: Promise<{ sessionId: string }>; searchParams: Promise<{ codigo?: string | string[] }> };
+type Props = { params: Promise<{ sessionId: string }>; searchParams: Promise<{ codigo?: string | string[]; promo?: string | string[] }> };
 
 export default async function BuyPage({ params, searchParams }: Props) {
   const query = await searchParams;
@@ -45,7 +49,7 @@ export default async function BuyPage({ params, searchParams }: Props) {
       venue: true,
       ticketTypes: {
         orderBy: { sortOrder: "asc" },
-        include: { section: { include: { seats: { orderBy: [{ row: "asc" }, { number: "asc" }] } } } },
+        include: { section: { include: { seats: { orderBy: [{ row: "asc" }, { number: "asc" }] } } }, zones: { select: { name: true } } },
       },
     },
   });
@@ -75,27 +79,35 @@ export default async function BuyPage({ params, searchParams }: Props) {
 
   // Retenciones: lo apartado se ve ocupado, salvo las butacas de la retención cuyo código trae el enlace.
   const holdCode = typeof query.codigo === "string" ? query.codigo : undefined;
-  const [remaining, sold, zoneAvailability, unlocked, held] = await Promise.all([
-    getSessionAvailability(session.id),
+  // Enlace de un promotor: su código se aplica solo al elegir las entradas.
+  const linkPromo = (typeof query.promo === "string" ? query.promo : undefined) ?? (await cookies()).get(PROMO_COOKIE)?.value;
+  const [stock, sold, zoneAvailability, unlocked, held] = await Promise.all([
+    getSessionStock(session.id),
     getTakenSeatIds(session.id),
     getZoneAvailability(session.id),
     findHoldByCode(session.id, holdCode),
     getHeldSeatIds(prisma, session.id, holdCode),
   ]);
   const taken = new Set([...sold, ...held]);
+  const remaining = stock.remaining;
 
   // Lo que ya terminó (una preventa vencida) no se muestra; lo que todavía no empieza, sí,
   // con su fecha (solo en generales: una butaca tiene un único precio a la vez).
   const tz = session.venue.timezone;
   const now = new Date();
-  // Tampoco una "free hasta la 01:00" cuya hora ya pasó.
-  const types = session.ticketTypes.filter((t) => saleState(t) !== "closed" && !(t.entryUntil && t.entryUntil <= now));
+  // Tampoco una "free hasta la 01:00" cuya hora ya pasó. De las fases, solo la de ahora: las demás van en "Fases".
+  const phased = withPhases(session.ticketTypes, stock, now);
+  const types = phased.filter(
+    (t) => saleState(t) !== "closed" && !(t.entryUntil && t.entryUntil <= now) && (!t.phase || t.phase.state === "active"),
+  );
   const general: GeneralType[] = types
     .filter((t) => t.section?.seatingMode !== "RESERVED")
     .map((t) => ({
       id: t.id,
       sectionId: t.sectionId,
       name: t.name,
+      phase: t.phase ? `Fase ${t.phase.position} de ${t.phase.total}` : null,
+      includes: zonesText(t.zones.map((z) => z.name)),
       detail: t.section ? `${t.section.name} · ${t.kind === "TABLE" ? "Mesa" : "Entrada general"}` : null,
       unitAmount: currentPrice(t, now).unitAmount,
       listAmount: currentPrice(t, now).discountPercent ? t.unitAmount : null,
@@ -123,6 +135,7 @@ export default async function BuyPage({ params, searchParams }: Props) {
       currency: t.currency,
       presale: t.presale,
       maxPerOrder: Math.min(t.maxPerOrder, MAX_TICKETS_PER_ORDER),
+      includes: zonesText(t.zones.map((z) => z.name)),
       table: t.kind === "TABLE" ? { people: peopleIn(t) } : null,
       round: isTablesLayout(t.section!.layout) ? { radius: t.section!.layout.radius, shape: t.section!.layout.shape } : null,
       seatedTables: isSeatedTablesLayout(t.section!.layout)
@@ -184,6 +197,8 @@ export default async function BuyPage({ params, searchParams }: Props) {
 
       <WhenWhereBlock data={whenWhere({ session, venue: session.venue, event: session.event })} />
 
+      <PhaseList types={phased} remaining={remaining} timeZone={tz} now={now} />
+
       {general.length === 0 && seated.length === 0 ? (
         <p className="card p-5 text-[var(--ink-muted)]">Esta función todavía no tiene entradas a la venta.</p>
       ) : (
@@ -195,6 +210,7 @@ export default async function BuyPage({ params, searchParams }: Props) {
           items={mapItemsOf(session.venue.mapItems)}
           buyer={{ name: buyer.name, email: buyer.email, document: buyer.documentId }}
           holdCode={unlocked ? holdCode : undefined}
+          linkPromo={linkPromo}
         />
       )}
       {seated.length > 0 && !unlocked && (

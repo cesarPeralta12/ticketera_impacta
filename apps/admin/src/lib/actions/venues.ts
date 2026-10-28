@@ -67,6 +67,24 @@ const venueInfoSchema = venueSchema.extend({
   accessibility: z.string().max(500).optional(),
 });
 
+/**
+ * Borra un recinto con todo lo suyo (secciones, butacas, puertas, zonas, plano). Solo si ninguna función lo usa (ni en
+ * borrador ni cancelada): sus entradas y lecturas lo necesitan.
+ */
+export async function deleteVenueAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const venue = await ownedVenue(staff.organization.id, String(formData.get("venueId") ?? ""));
+  if (!venue) return { error: "Recinto no encontrado." };
+  const sessions = await prisma.eventSession.count({ where: { venueId: venue.id } });
+  if (sessions > 0) {
+    return { error: `Lo usa${sessions === 1 ? " 1 función" : `n ${sessions} funciones`}: cámbialas de recinto o bórralas antes de borrarlo.` };
+  }
+  await prisma.venue.delete({ where: { id: venue.id } });
+  await logAudit({ actorType: "staff", actorId: staff.id, action: "venue.delete", entity: "Venue", entityId: venue.id, data: { name: venue.name } });
+  revalidatePath("/recintos");
+  redirect("/recintos");
+}
+
 /** Datos del recinto: nombre, dirección, zona horaria y lo que el comprador necesita para llegar. */
 export async function updateVenueAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireEditor();
@@ -582,6 +600,11 @@ const zoneSchema = z.object({
   level: intField(0, 9, "El nivel"),
   capacity: intField(1, 200_000, "El aforo").optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Color inválido.").default("#2E9E6A"),
+  /** Casilla "bloquear al llenarse": con el aforo lleno, la puerta no deja entrar (sin marcar, el aforo solo informa). */
+  blockWhenFull: z
+    .literal("on")
+    .optional()
+    .transform((v) => v === "on"),
 });
 
 /** Zona de acceso del recinto (Exterior, General, VIP…): las puertas dan a una zona y cada tipo de entrada abre las suyas. */
@@ -591,6 +614,7 @@ export async function addZoneAction(_prev: FormState, formData: FormData): Promi
   if (!venue) return { error: "Recinto no encontrado." };
   const parsed = zoneSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
+  if (parsed.data.blockWhenFull && !parsed.data.capacity) return { fieldErrors: { capacity: "Para bloquear al llenarse, pon el aforo." } };
   try {
     const zone = await prisma.accessZone.create({ data: { venueId: venue.id, ...parsed.data } });
     await logAudit({ actorType: "staff", actorId: staff.id, action: "zone.create", entity: "AccessZone", entityId: zone.id });
@@ -610,6 +634,7 @@ export async function updateZoneAction(_prev: FormState, formData: FormData): Pr
   if (!zone) return { error: "Zona no encontrada." };
   const parsed = zoneSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
+  if (parsed.data.blockWhenFull && !parsed.data.capacity) return { fieldErrors: { capacity: "Para bloquear al llenarse, pon el aforo." } };
   try {
     await prisma.accessZone.update({ where: { id: zone.id }, data: { ...parsed.data, capacity: parsed.data.capacity ?? null } });
   } catch (error) {

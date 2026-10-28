@@ -5,6 +5,7 @@ import { useActionState, useEffect, useMemo, useState, useTransition, type FormE
 import { MAX_TICKETS_PER_ORDER, formatMoney, type MapItem } from "@ticketera/core";
 import { SeatPicker, type PickerSection } from "@/components/seat-picker";
 import { sellAction, type PosState } from "@/lib/actions/pos";
+import { promoterSellAction } from "@/lib/actions/promoters";
 
 export type PosGeneralType = {
   id: string;
@@ -25,21 +26,29 @@ const METHODS = [
   { value: "TARJETA", label: "Tarjeta" },
 ] as const;
 
-/** Venta en caja: entradas generales por cantidad, numeradas en el mapa, y el medio de pago. */
+/**
+ * Venta en caja: entradas generales por cantidad, numeradas en el mapa, y el medio de pago. Para un promotor
+ * (`promoter`), sin efectivo: con los datos del cliente se abre el cobro por QR y las entradas le llegan al pagar.
+ */
 export function PosForm({
   sessionId,
   general,
   seated,
   items,
+  promoter = false,
+  methods = [],
 }: {
   sessionId: string;
   general: PosGeneralType[];
   seated: PosSeatedType[];
   /** Plano del boliche (escenario, barras…) para el mapa. */
   items?: MapItem[];
+  promoter?: boolean;
+  /** Medios de cobro que la cuenta puede usar (vacío: todos). */
+  methods?: string[];
 }) {
   const router = useRouter();
-  const [state, formAction] = useActionState<PosState, FormData>(sellAction, {});
+  const [state, formAction] = useActionState<PosState, FormData>(promoter ? promoterSellAction : sellAction, {});
   const [pending, startTransition] = useTransition();
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [picked, setPicked] = useState<Record<string, string[]>>({});
@@ -97,7 +106,7 @@ export function PosForm({
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const method = METHODS.find((m) => m.value === data.get("method"))?.label ?? "";
-    if (!window.confirm(`¿Cobrado ${formatMoney(total, currency)} en ${method}? Se emiten las entradas.`)) return;
+    if (!promoter && !window.confirm(`¿Cobrado ${formatMoney(total, currency)} en ${method}? Se emiten las entradas.`)) return;
     startTransition(() => formAction(data));
   }
 
@@ -167,39 +176,63 @@ export function PosForm({
         </section>
       )}
 
-      <section className="card grid gap-4 p-5 sm:grid-cols-4">
-        <label className="label">
-          Nombre (opcional)
-          <input name="name" autoComplete="off" className="field" />
-        </label>
-        <label className="label">
-          Email (opcional)
-          <input name="email" type="email" autoComplete="off" className="field" />
-        </label>
-        <label className="label">
-          Código promocional (opcional)
-          <input name="promo" autoComplete="off" placeholder="RRPP-XXXXX" className="field font-mono uppercase" />
-        </label>
-        <label className="label">
-          Carnet de identidad (obligatorio)
-          <input name="document" required autoComplete="off" placeholder="1234567 LP" className="field" />
-        </label>
-      </section>
-
-      <fieldset className="card flex flex-wrap items-center gap-3 p-5">
-        <legend className="sr-only">Medio de pago</legend>
-        <span className="eyebrow mr-2">Cobro</span>
-        {METHODS.map((m, i) => (
-          <label
-            key={m.value}
-            className="flex cursor-pointer items-center gap-2 rounded-md border border-[var(--border)] px-4 py-2 text-sm has-[:checked]:border-[var(--accent)] has-[:checked]:bg-[var(--accent-soft)]"
-          >
-            <input type="radio" name="method" value={m.value} defaultChecked={i === 0} className="accent-[var(--accent)]" />
-            {m.label}
+      {promoter ? (
+        <section className="card grid gap-4 p-5 sm:grid-cols-2">
+          <h2 className="eyebrow sm:col-span-2">Datos del cliente</h2>
+          <label className="label">
+            Nombre
+            <input name="name" required minLength={3} autoComplete="off" className="field" />
           </label>
-        ))}
-        <span className="text-xs text-[var(--ink-dim)]">Se registra lo que declares: no se conecta con el banco.</span>
-      </fieldset>
+          <label className="label">
+            Carnet de identidad
+            <input name="document" required autoComplete="off" placeholder="1234567 LP" className="field" />
+          </label>
+          <label className="label">
+            Correo (ahí le llegan las entradas)
+            <input name="email" type="email" required autoComplete="off" className="field" />
+          </label>
+          <label className="label">
+            WhatsApp (opcional, para mandárselas)
+            <input name="phone" type="tel" inputMode="tel" autoComplete="off" placeholder="77123456" className="field" />
+          </label>
+        </section>
+      ) : (
+        <>
+          <section className="card grid gap-4 p-5 sm:grid-cols-4">
+            <label className="label">
+              Nombre (opcional)
+              <input name="name" autoComplete="off" className="field" />
+            </label>
+            <label className="label">
+              Email (opcional)
+              <input name="email" type="email" autoComplete="off" className="field" />
+            </label>
+            <label className="label">
+              Código promocional (opcional)
+              <input name="promo" autoComplete="off" placeholder="RRPP-XXXXX" className="field font-mono uppercase" />
+            </label>
+            <label className="label">
+              Carnet de identidad (obligatorio)
+              <input name="document" required autoComplete="off" placeholder="1234567 LP" className="field" />
+            </label>
+          </section>
+
+          <fieldset className="card flex flex-wrap items-center gap-3 p-5">
+            <legend className="sr-only">Medio de pago</legend>
+            <span className="eyebrow mr-2">Cobro</span>
+            {METHODS.filter((m) => methods.length === 0 || methods.includes(m.value)).map((m, i) => (
+              <label
+                key={m.value}
+                className="flex cursor-pointer items-center gap-2 rounded-md border border-[var(--border)] px-4 py-2 text-sm has-[:checked]:border-[var(--accent)] has-[:checked]:bg-[var(--accent-soft)]"
+              >
+                <input type="radio" name="method" value={m.value} defaultChecked={i === 0} className="accent-[var(--accent)]" />
+                {m.label}
+              </label>
+            ))}
+            <span className="text-xs text-[var(--ink-dim)]">Se registra lo que declares: no se conecta con el banco.</span>
+          </fieldset>
+        </>
+      )}
 
       {state.error && (
         <p role="alert" className="rounded-md bg-[var(--danger-soft)] px-4 py-3 text-sm text-[var(--danger)]">
@@ -215,7 +248,7 @@ export function PosForm({
           <p className="font-mono text-2xl">{formatMoney(total, currency)}</p>
         </div>
         <button type="submit" disabled={pending || totalTickets === 0} className="btn btn-primary px-6 py-3 text-base">
-          {pending ? "Emitiendo…" : "Cobrar y emitir"}
+          {promoter ? (pending ? "Generando el cobro…" : "Cobrar con QR") : pending ? "Emitiendo…" : "Cobrar y emitir"}
         </button>
       </div>
     </form>

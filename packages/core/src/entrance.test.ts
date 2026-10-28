@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { entranceFor, entranceLabel, entranceText, isExitScan, reentryText } from "./entrance";
+import { entranceFor, entranceLabel, entranceText, isExitScan, reentryText, zonesText } from "./entrance";
 
 const norte = { name: "Acceso norte", sectionIds: ["campo"] };
 const sur = { name: "Acceso sur", sectionIds: ["palco"] };
@@ -70,5 +70,14 @@ describe("por qué puerta entra una entrada", () => {
     expect(reentryText(undefined)).toBeNull();
     expect(reentryText(2)).toBe("Permite salir y volver a entrar (hasta 2 ingresos)");
     expect(reentryText(0)).toBe("Permite salir y volver a entrar");
+  });
+});
+
+describe("qué zonas incluye la entrada", () => {
+  it("nombra las zonas que abre, sin repetir", () => {
+    expect(zonesText([])).toBeNull();
+    expect(zonesText(["Zona VIP"])).toBe("Incluye: Zona VIP");
+    expect(zonesText(["VIP", "Ultra VIP", "VIP"])).toBe("Incluye: VIP y Ultra VIP");
+    expect(zonesText(["General", "VIP", "Ultra VIP"])).toBe("Incluye: General, VIP y Ultra VIP");
   });
 });

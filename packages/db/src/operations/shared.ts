@@ -27,7 +27,8 @@ export class DomainError extends Error {
       | "NOT_FOUND"
       | "INVALID_STATE"
       | "DUPLICATE"
-      | "EVENT_LIMIT",
+      | "EVENT_LIMIT"
+      | "NOT_ALLOWED",
     message: string,
   ) {
     super(message);

@@ -52,7 +52,8 @@ export async function GlobalDashboard({ name }: { name: string }) {
   const stats = [
     { label: "Organizadores activos", value: organizers, href: "/organizadores", tone: "blue" },
     { label: "Eventos a la venta", value: onSale, tone: "amber" },
-    { label: "Esperando aprobación", value: pending, href: "/aprobaciones", warn: pending > 0, tone: "amber" },
+    // Solo si un organizador envió un evento (los de iPass se publican directo).
+    ...(pending > 0 ? [{ label: "Esperando aprobación", value: pending, href: "/aprobaciones", warn: true, tone: "amber" }] : []),
     { label: "Ventas de hoy", value: `${salesToday} · ${formatMoney(revenueToday._sum.totalAmount ?? 0, DEFAULT_CURRENCY)}`, href: "/ordenes", tone: "magenta" },
     { label: "Entradas emitidas", value: tickets, tone: "blue" },
     { label: "Ingresos hoy en puerta", value: entriesToday, href: "/ingresos", tone: "magenta" },

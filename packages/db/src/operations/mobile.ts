@@ -315,6 +315,7 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
           timezone: true,
           accessPoints: { orderBy: { name: "asc" }, include: { sections: { select: { id: true, name: true } } } },
           sections: { select: { id: true, name: true } },
+          zones: { orderBy: { level: "asc" }, select: { id: true, name: true } },
         },
       },
     },
@@ -389,8 +390,18 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
     },
     gateId: gate?.id ?? null,
     // direction (IN, OUT, BOTH) y zoneId: para que la app sepa si la puerta es de salida y a qué zona da.
-    gates: session.venue.accessPoints.map((g) => ({ id: g.id, name: g.name, sectionIds: g.sections.map((s) => s.id), direction: g.direction, zoneId: g.zoneId })),
+    // zoneName (nuevo, se agrega sin quitar nada): el nombre de la zona a la que da, para que el portero vea "Zona VIP".
+    gates: session.venue.accessPoints.map((g) => ({
+      id: g.id,
+      name: g.name,
+      sectionIds: g.sections.map((s) => s.id),
+      direction: g.direction,
+      zoneId: g.zoneId,
+      zoneName: session.venue.zones.find((z) => z.id === g.zoneId)?.name ?? null,
+    })),
     sections: Object.fromEntries(session.venue.sections.map((s) => [s.id, s.name])),
+    // Nombre de cada zona por id (nuevo): para mostrar qué zonas abre cada entrada (zoneIds).
+    zones: Object.fromEntries(session.venue.zones.map((z) => [z.id, z.name])),
     tickets: await Promise.all(
       tickets.map(async (t) => {
         const sectionId = t.ticketType.sectionId;

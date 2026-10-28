@@ -3,21 +3,16 @@
  * contra PostgreSQL real.
  */
 import { afterAll, describe, expect, it } from "vitest";
-import { randomCode } from "@ticketera/core";
 import { prisma } from "../src/client";
 import { scanTicket } from "../src/operations/access";
 import { getZoneAvailability } from "../src/operations/orders";
 import { getEventReport } from "../src/operations/report";
 import { cancelGuestTicket, issueGuestTickets, sellAtBoxOffice } from "../src/operations/sales";
-import { buyer, createPendingOrder, createGeneralAdmissionEvent } from "./fixtures";
+import { buyer, createPendingOrder, createGeneralAdmissionEvent, platformStaff } from "./fixtures";
 
 afterAll(() => prisma.$disconnect());
 
-async function staff() {
-  return prisma.staffUser.create({
-    data: { email: `staff-${randomCode(6).toLowerCase()}@prueba.test`, name: "Staff", passwordHash: "!" },
-  });
-}
+const staff = () => platformStaff();
 
 describe("boletería e invitaciones", () => {
   it("una venta de boletería queda pagada, con entradas y canal POS", async () => {

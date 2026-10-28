@@ -21,10 +21,12 @@ import {
   sessionTimesInput,
   timeZoneLabel,
   utcToZonedInput,
+  withPhases,
+  type PhaseState,
   type SaleState,
   type ZoneShape,
 } from "@ticketera/core";
-import { getSessionAvailability, getZoneAvailability, prisma, salesCutoff } from "@ticketera/db";
+import { getSessionStock, getZoneAvailability, prisma, salesCutoff } from "@ticketera/db";
 import { AccessMethodsField } from "@/components/access-methods-field";
 import { TicketTypeForm } from "@/components/ticket-type-form";
 import { ActionForm } from "@/components/action-form";
@@ -44,6 +46,9 @@ import {
   updateQueueSettingsAction,
   updateSessionAction,
 } from "@/lib/actions/events";
+import { setPhaseStartAction } from "@/lib/actions/phases";
+import { PhasesForm } from "@/components/phases-form";
+import { SessionSellersCard } from "@/components/session-sellers-card";
 import { ProgramEditor } from "@/components/program-editor";
 import { PrintedCard } from "./printed-card";
 import { SessionTimesFields } from "@/components/session-times-fields";
@@ -56,6 +61,12 @@ const SALE_STATE: Record<SaleState, { text: string; className: string }> = {
   open: { text: "A la venta", className: "bg-[var(--success-soft)] text-[var(--success)]" },
   scheduled: { text: "Programada", className: "bg-[var(--info-soft)] text-[var(--info)]" },
   closed: { text: "Terminada", className: "bg-[var(--surface-2)] text-[var(--ink-dim)]" },
+};
+
+const PHASE_STATE: Record<PhaseState, { text: string; className: string }> = {
+  active: { text: "Se vende ahora", className: "bg-[var(--success-soft)] text-[var(--success)]" },
+  upcoming: { text: "Todavía no", className: "bg-[var(--info-soft)] text-[var(--info)]" },
+  done: { text: "Terminada", className: "bg-[var(--surface-2)] text-[var(--ink-dim)]" },
 };
 
 const TABS = [
@@ -117,8 +128,8 @@ export default async function SessionPage({ params, searchParams }: Props) {
   });
   if (!session) notFound();
 
-  const [remaining, zones, guests, issued, entered, held] = await Promise.all([
-    getSessionAvailability(session.id),
+  const [stock, zones, guests, issued, entered, held] = await Promise.all([
+    getSessionStock(session.id),
     getZoneAvailability(session.id),
     prisma.ticket.count({ where: { sessionId: session.id, order: { channel: "GUEST" }, status: { in: ["VALID", "USED"] } } }),
     prisma.ticket.count({ where: { sessionId: session.id, status: { in: ["VALID", "USED"] } } }),
@@ -143,6 +154,17 @@ export default async function SessionPage({ params, searchParams }: Props) {
   const sectionOptions = [...unpriced, ...session.venue.sections.filter((s) => pricedSections.has(s.id))];
   const tz = session.venue.timezone;
   const now = new Date();
+  const remaining = stock.remaining;
+  // Las fases ya traen su ventana ajustada: una terminada figura cerrada y una que no empezó, programada.
+  const types = withPhases(session.ticketTypes, stock, now);
+  const phased = types.filter((t) => t.phase);
+  const phaseChains = [...new Set(phased.map((t) => t.sectionId))].map((sectionId) =>
+    phased.filter((t) => t.sectionId === sectionId).toSorted((a, b) => a.phase!.position - b.phase!.position),
+  );
+  // Secciones generales donde todavía se pueden crear fases (una cadena por sección).
+  const phaseSections = session.venue.sections.filter(
+    (s) => s.seatingMode === "GENERAL_ADMISSION" && !phaseChains.some((chain) => chain[0]!.sectionId === s.id),
+  );
   const nightlife = session.event.category === "BOLICHE";
   const noun = sessionNoun(session.event.category);
   const hasConsumption = session.ticketTypes.some((t) => t.kind === "TABLE" || (t.consumptionAmount ?? 0) > 0);
@@ -252,7 +274,7 @@ export default async function SessionPage({ params, searchParams }: Props) {
               <p className="card p-5 text-sm text-[var(--ink-muted)]">Todavía no hay precios. Agrega el primero abajo: sección, nombre, precio y cupo.</p>
             ) : (
               <ul className="space-y-2.5">
-                {session.ticketTypes.map((t) => {
+                {types.map((t) => {
                   const price = currentPrice(t, now);
                   const left = remaining.get(t.id) ?? 0;
                   const percent = t.capacity > 0 ? Math.min(100, Math.round(((t.capacity - left) / t.capacity) * 100)) : 0;
@@ -264,6 +286,11 @@ export default async function SessionPage({ params, searchParams }: Props) {
                           <span className="min-w-48 flex-1">
                             <span className="flex flex-wrap items-center gap-2">
                               <span className="font-medium">{t.name}</span>
+                              {t.phase && (
+                                <span className="badge bg-[var(--accent-soft)] text-[var(--accent-hover)]">
+                                  fase {t.phase.position} de {t.phase.total}
+                                </span>
+                              )}
                               {t.presale && <span className="badge bg-[var(--warn-soft)] text-[var(--warn)]">preventa</span>}
                               {t.qrMode === "DYNAMIC" && <span className="badge bg-[var(--info-soft)] text-[var(--info)]">QR dinámico</span>}
                               {t.kind === "TABLE" && <span className="badge bg-[var(--accent-soft)] text-[var(--accent-hover)]">mesa · {t.peoplePerUnit} personas</span>}
@@ -370,6 +397,15 @@ export default async function SessionPage({ params, searchParams }: Props) {
                             </ActionForm>
                           </div>
 
+                          {/* La primera fase usa sus fechas de venta; las siguientes empiezan según «Fases de venta». */}
+                          {t.phase && t.phase.position > 1 ? (
+                            <div className="space-y-2">
+                              <p className="eyebrow">Fechas</p>
+                              <p className="text-xs text-[var(--ink-muted)]">
+                                Es la fase {t.phase.position} de {t.phase.total}: cuándo empieza se cambia en «Fases de venta», más arriba.
+                              </p>
+                            </div>
+                          ) : (
                           <div className="space-y-2">
                             <p className="eyebrow">Fechas y preventa</p>
                             <p className="text-xs text-[var(--ink-muted)]">
@@ -414,6 +450,7 @@ export default async function SessionPage({ params, searchParams }: Props) {
                               </button>
                             </ActionForm>
                           </div>
+                          )}
 
                           {t._count.orderItems === 0 && (
                             <div className="lg:col-span-3">
@@ -433,6 +470,107 @@ export default async function SessionPage({ params, searchParams }: Props) {
               </ul>
             )}
           </section>
+
+          {!guestList && (phaseChains.length > 0 || phaseSections.length > 0) && (
+            <section className="space-y-3" id="fases">
+              <h2 className="eyebrow flex items-center gap-2">
+                Fases de venta
+                <Help title="Fases de venta">
+                  Fase Hot, Fase 1, Fase 2… en una misma sección, cada una con su precio y su cupo. Se vende una sola a la vez:
+                  la siguiente empieza cuando se agota la anterior o cuando llega su fecha (lo que pase primero), y una fase
+                  que terminó no vuelve. En la web el comprador ve la fase de ahora y la lista de todas las fases.
+                </Help>
+              </h2>
+              {phaseChains.map((chain) => {
+                const active = chain.find((t) => t.phase!.state === "active");
+                const following = active && chain.find((t) => t.phase!.position === active.phase!.position + 1);
+                return (
+                  <div key={chain[0]!.id} className="card overflow-hidden">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] px-4 py-3">
+                      <span className="flex items-center gap-2 font-medium">
+                        <span className="h-3 w-3 rounded-full" style={{ background: chain[0]!.section?.color }} />
+                        {chain[0]!.section?.name ?? "Sin sección"}
+                      </span>
+                      {active && following && (
+                        <ActionForm action={setPhaseStartAction} confirm={`¿Terminar "${active.name}" y empezar a vender "${following.name}" ahora?`}>
+                          <input type="hidden" name="ticketTypeId" value={following.id} />
+                          <input type="hidden" name="now" value="1" />
+                          <button type="submit" className="btn px-3 py-1 text-xs">
+                            Pasar a «{following.name}» ahora
+                          </button>
+                        </ActionForm>
+                      )}
+                    </div>
+                    <ol className="divide-y divide-[var(--border)]">
+                      {chain.map((t) => {
+                        const phase = t.phase!;
+                        const left = remaining.get(t.id) ?? 0;
+                        const sold = Math.max(0, t.capacity - left);
+                        const state = PHASE_STATE[phase.state];
+                        return (
+                          <li key={t.id} className={`flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 text-sm ${phase.state === "done" ? "opacity-60" : ""}`}>
+                            <span
+                              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-semibold ${phase.state === "active" ? "tone-magenta tone-tile" : "bg-[var(--surface-2)] text-[var(--ink-muted)]"}`}
+                            >
+                              {phase.position}
+                            </span>
+                            <span className="min-w-40 flex-1">
+                              <span className="block font-medium">{t.name}</span>
+                              <span className="block text-xs text-[var(--ink-dim)]">
+                                {phase.position === 1
+                                  ? t.salesStartAt && t.salesStartAt > now
+                                    ? `Se vende desde ${formatDateTime(t.salesStartAt, tz)}`
+                                    : "Se vende primero"
+                                  : t.phaseStartsAt && t.phaseStartsAt <= now
+                                    ? `Empezó el ${formatDateTime(t.phaseStartsAt, tz)}`
+                                    : t.phaseStartsAt
+                                      ? `Al agotarse la anterior o el ${formatDateTime(t.phaseStartsAt, tz)}`
+                                      : "Cuando se agota la anterior"}
+                              </span>
+                            </span>
+                            <span className="font-mono font-semibold">{formatMoney(t.unitAmount, t.currency)}</span>
+                            <span className="w-28 font-mono text-xs">
+                              {sold} de {t.capacity}
+                              <span className="block text-[var(--ink-dim)]">{left === 0 ? "agotada" : `quedan ${left}`}</span>
+                            </span>
+                            <span className={`badge ${state.className}`}>{state.text}</span>
+                            {phase.position > 1 && phase.state === "upcoming" && (
+                              <ActionForm action={setPhaseStartAction} successMessage="Guardado." className="flex basis-full flex-wrap items-end gap-2 text-xs sm:pl-13">
+                                <input type="hidden" name="ticketTypeId" value={t.id} />
+                                <label className="label">
+                                  Empieza el (vacío: cuando se agote la anterior)
+                                  <input
+                                    type="datetime-local"
+                                    name="startsAt"
+                                    defaultValue={t.phaseStartsAt ? utcToZonedInput(t.phaseStartsAt, tz) : ""}
+                                    className="field text-xs"
+                                  />
+                                </label>
+                                <button type="submit" className="btn px-2.5 py-1 text-xs">
+                                  Guardar fecha
+                                </button>
+                              </ActionForm>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </div>
+                );
+              })}
+              {session.event.mode === "TICKETING" && phaseSections.length > 0 && (
+                <details className="card group">
+                  <summary className="flex cursor-pointer list-none items-center justify-between p-4 [&::-webkit-details-marker]:hidden">
+                    <span className="font-medium text-[var(--accent)]">+ Crear fases</span>
+                    <span className="text-xs text-[var(--ink-dim)] group-open:hidden">Fase Hot, Fase 1, Fase 2… una después de la otra</span>
+                  </summary>
+                  <div className="border-t border-[var(--border)] p-4">
+                    <PhasesForm sessionId={session.id} sections={phaseSections.map((s) => ({ id: s.id, name: s.name, capacity: s.capacity }))} />
+                  </div>
+                </details>
+              )}
+            </section>
+          )}
 
           {session.venue.sections.length === 0 ? (
             <p className="card p-5 text-sm">
@@ -578,6 +716,7 @@ export default async function SessionPage({ params, searchParams }: Props) {
 
       {tab === "mas" && (
         <div className="grid items-start gap-6 lg:grid-cols-2">
+          {!guestList && <SessionSellersCard session={session} organizationId={staff.organization.id} canEdit={staff.platform && !staff.readOnly} />}
           {!guestList && (
             <section className="card p-6">
               <h2 className="eyebrow mb-4 flex items-center gap-2">

@@ -55,15 +55,15 @@ export default async function EventsPage() {
             {isGlobalView(staff) ? "Eventos de iPass" : isNightlife(staff) ? "Noches" : "Eventos"}
             <Help title="Cómo se arma un evento">
               «+ Nuevo evento» abre el asistente: datos, lugar y fecha, entradas (con modelos General, VIP, Mesa, Free y
-              Preventa), revisar con la vista previa del comprador y publicar. Para un evento chico que se vende con entradas
-              impresas, «+ Evento pequeño» deja todo listo para imprimir en un paso.
+              Preventa), revisar con la vista previa del comprador y publicar. Para un evento chico, «+ Evento pequeño» es el acceso
+              rápido: una sola pantalla, y se vende en la web («Otros eventos») o con entradas impresas.
             </Help>
           </h1>
         </div>
         {!staff.readOnly && (
           <div className="flex flex-wrap justify-end gap-2">
             {!isNightlife(staff) && (
-              <Link href="/eventos/rapido" data-tour="evento-pequeno" className="btn" title="Evento chico con entradas impresas para vender en mano">
+              <Link href="/eventos/rapido" data-tour="evento-pequeno" className="btn" title="Acceso rápido para un evento chico: una sola pantalla, en la web o con entradas impresas">
                 + Evento pequeño
               </Link>
             )}

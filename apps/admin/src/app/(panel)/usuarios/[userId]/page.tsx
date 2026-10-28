@@ -7,10 +7,11 @@ import { prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { assignDoorAction, revokeDeviceAction, unassignDoorAction } from "@/lib/actions/door";
 import { revokeUserSessionsAction } from "@/lib/actions/users";
+import { SalesAccessCard } from "@/components/sales-access-card";
 import { ROLE_LABEL } from "@/lib/labels";
 import { ROLES, requireStaff } from "@/lib/session";
 
-export const metadata: Metadata = { title: "Portero" };
+export const metadata: Metadata = { title: "Cuenta" };
 
 const dayAgo = () => new Date(Date.now() - 24 * 60 * 60_000);
 /** La sesión del teléfono sigue abierta mientras su token de renovación valga (el de acceso es corto). */
@@ -153,6 +154,8 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
             </ActionForm>
           )}
         </section>
+      ) : member.role === "CASHIER" ? (
+        <SalesAccessCard userId={userId} organizationId={staff.organization.id} />
       ) : (
         <p className="card p-5 text-sm text-[var(--ink-muted)]">
           Solo las cuentas de <strong>{ROLE_LABEL.OPERATOR}</strong> usan asignaciones. Los dueños y administradores ven
