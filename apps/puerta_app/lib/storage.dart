@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 import 'dynamic_qr.dart' show keyFromBase64, keyToBase64;
+import 'bar.dart';
 import 'models.dart';
 import 'validator.dart';
 
@@ -88,7 +89,7 @@ class SessionStore {
 }
 
 /// Base local: entradas de las funciones descargadas y lecturas pendientes de subir.
-class DoorDb implements TicketLookup {
+class DoorDb implements TicketLookup, VoucherLookup {
   DoorDb._(this._db, this._key);
 
   final Database _db;
@@ -102,7 +103,7 @@ class DoorDb implements TicketLookup {
   static Future<DoorDb> open(Uint8List key) async {
     final db = await openDatabase(
       p.join(await getDatabasesPath(), 'puerta.db'),
-      version: 4,
+      version: 5,
       onUpgrade: (db, oldVersion, _) async {
         if (oldVersion < 2) await db.execute('ALTER TABLE tickets ADD COLUMN document TEXT');
         if (oldVersion < 3) {
@@ -118,6 +119,21 @@ class DoorDb implements TicketLookup {
           await db.execute('ALTER TABLE tickets ADD COLUMN zone_id TEXT');
           await db.execute('ALTER TABLE scans ADD COLUMN movement TEXT');
           await db.execute('ALTER TABLE scans ADD COLUMN zone_id TEXT');
+        }
+        if (oldVersion < 5) {
+          // Modo Barra: los QR de consumo descargados y las lecturas pendientes de subir.
+          await db.execute('''
+            CREATE TABLE vouchers (
+            session_id TEXT NOT NULL, code TEXT NOT NULL, label TEXT NOT NULL, people INTEGER NOT NULL DEFAULT 1,
+            buyer TEXT NOT NULL DEFAULT '', order_code TEXT NOT NULL DEFAULT '', amount INTEGER NOT NULL, currency TEXT NOT NULL DEFAULT 'BOB',
+            cancelled INTEGER NOT NULL DEFAULT 0, redeemed_at INTEGER, redeemed_by TEXT, note TEXT,
+            PRIMARY KEY (session_id, code)
+          )''');
+          await db.execute('''
+            CREATE TABLE voucher_reads (
+            id TEXT PRIMARY KEY, session_id TEXT NOT NULL, code TEXT NOT NULL, read_at INTEGER NOT NULL, note TEXT,
+            synced INTEGER NOT NULL DEFAULT 0, server_result TEXT
+          )''');
         }
       },
       onCreate: (db, _) async {
@@ -137,6 +153,18 @@ class DoorDb implements TicketLookup {
           )''');
         await db.execute('CREATE INDEX scans_pending ON scans (synced, scanned_at)');
         await db.execute('CREATE TABLE meta (session_id TEXT PRIMARY KEY, json TEXT NOT NULL)');
+        await db.execute('''
+          CREATE TABLE vouchers (
+            session_id TEXT NOT NULL, code TEXT NOT NULL, label TEXT NOT NULL, people INTEGER NOT NULL DEFAULT 1,
+            buyer TEXT NOT NULL DEFAULT '', order_code TEXT NOT NULL DEFAULT '', amount INTEGER NOT NULL, currency TEXT NOT NULL DEFAULT 'BOB',
+            cancelled INTEGER NOT NULL DEFAULT 0, redeemed_at INTEGER, redeemed_by TEXT, note TEXT,
+            PRIMARY KEY (session_id, code)
+          )''');
+        await db.execute('''
+          CREATE TABLE voucher_reads (
+            id TEXT PRIMARY KEY, session_id TEXT NOT NULL, code TEXT NOT NULL, read_at INTEGER NOT NULL, note TEXT,
+            synced INTEGER NOT NULL DEFAULT 0, server_result TEXT
+          )''');
       },
     );
     return DoorDb._(db, key);
@@ -419,6 +447,125 @@ class DoorDb implements TicketLookup {
     await _db.delete('tickets');
     await _db.delete('scans');
     await _db.delete('meta');
+    await _db.delete('vouchers');
+    await _db.delete('voucher_reads');
+  }
+
+  // ── Modo Barra: QR de consumo ──
+
+  static Voucher _voucherFrom(Map<String, Object?> r) => Voucher(
+        code: r['code'] as String,
+        label: r['label'] as String,
+        people: r['people'] as int? ?? 1,
+        buyer: r['buyer'] as String? ?? '',
+        orderCode: r['order_code'] as String? ?? '',
+        amount: r['amount'] as int,
+        currency: r['currency'] as String? ?? 'BOB',
+        cancelled: (r['cancelled'] as int? ?? 0) == 1,
+        redeemedAt: r['redeemed_at'] == null ? null : DateTime.fromMillisecondsSinceEpoch(r['redeemed_at'] as int),
+        redeemedBy: r['redeemed_by'] as String?,
+        note: r['note'] as String?,
+      );
+
+  @override
+  Future<Voucher?> findVoucher(String sessionId, String code) async {
+    final rows = await _db.query('vouchers', where: 'session_id = ? AND code = ?', whereArgs: [sessionId, code], limit: 1);
+    return rows.isEmpty ? null : _voucherFrom(rows.first);
+  }
+
+  /// Descarga completa de la noche: reemplaza la lista. Lo leído aquí y todavía sin subir manda sobre la descarga
+  /// (se vuelve a marcar), para que un vale ya leído en este teléfono no figure como disponible.
+  Future<void> saveVouchers(String sessionId, List<Voucher> vouchers) async {
+    await _db.transaction((txn) async {
+      await txn.delete('vouchers', where: 'session_id = ?', whereArgs: [sessionId]);
+      const chunk = 500;
+      for (var i = 0; i < vouchers.length; i += chunk) {
+        final batch = txn.batch();
+        for (final v in vouchers.skip(i).take(chunk)) {
+          batch.insert('vouchers', {
+            'session_id': sessionId,
+            'code': v.code,
+            'label': v.label,
+            'people': v.people,
+            'buyer': v.buyer,
+            'order_code': v.orderCode,
+            'amount': v.amount,
+            'currency': v.currency,
+            'cancelled': v.cancelled ? 1 : 0,
+            'redeemed_at': v.redeemedAt?.millisecondsSinceEpoch,
+            'redeemed_by': v.redeemedBy,
+            'note': v.note,
+          });
+        }
+        await batch.commit(noResult: true);
+      }
+      final pending = await txn.query('voucher_reads', where: 'session_id = ? AND synced = 0', whereArgs: [sessionId], orderBy: 'read_at ASC');
+      for (final r in pending) {
+        await txn.update(
+          'vouchers',
+          {'redeemed_at': r['read_at'], 'redeemed_by': null, 'note': r['note']},
+          where: 'session_id = ? AND code = ? AND redeemed_at IS NULL',
+          whereArgs: [sessionId, r['code']],
+        );
+      }
+    });
+  }
+
+  /// Marca el vale como leído en este teléfono y deja la lectura lista para subir.
+  Future<void> markVoucherRead({required String id, required String sessionId, required String code, required DateTime at, String? note}) async {
+    await _db.transaction((txn) async {
+      await txn.update(
+        'vouchers',
+        {'redeemed_at': at.millisecondsSinceEpoch, 'redeemed_by': null, 'note': note},
+        where: 'session_id = ? AND code = ?',
+        whereArgs: [sessionId, code],
+      );
+      await txn.insert('voucher_reads', {'id': id, 'session_id': sessionId, 'code': code, 'read_at': at.millisecondsSinceEpoch, 'note': note, 'synced': 0});
+    });
+  }
+
+  Future<List<({String id, String code, DateTime readAt, String? note})>> pendingVoucherReads(String sessionId, {int limit = 200}) async {
+    final rows = await _db.query('voucher_reads', where: 'session_id = ? AND synced = 0', whereArgs: [sessionId], orderBy: 'read_at ASC', limit: limit);
+    return [
+      for (final r in rows) (id: r['id'] as String, code: r['code'] as String, readAt: DateTime.fromMillisecondsSinceEpoch(r['read_at'] as int), note: r['note'] as String?),
+    ];
+  }
+
+  Future<int> pendingVoucherCount(String sessionId) async =>
+      Sqflite.firstIntValue(await _db.rawQuery('SELECT COUNT(*) FROM voucher_reads WHERE session_id = ? AND synced = 0', [sessionId])) ?? 0;
+
+  /// Anota lo que respondió el servidor a cada lectura subida. Si el vale ya lo había leído otro teléfono, queda con sus
+  /// datos (quién y cuándo) y la lectura se cuenta como conflicto.
+  Future<void> applyVoucherResults(String sessionId, Map<String, ({String result, Voucher? voucher})> results) async {
+    await _db.transaction((txn) async {
+      for (final entry in results.entries) {
+        await txn.update('voucher_reads', {'synced': 1, 'server_result': entry.value.result}, where: 'id = ?', whereArgs: [entry.key]);
+        final v = entry.value.voucher;
+        if (v != null) {
+          await txn.update(
+            'vouchers',
+            {'redeemed_at': v.redeemedAt?.millisecondsSinceEpoch, 'redeemed_by': v.redeemedBy, 'note': v.note, 'cancelled': v.cancelled ? 1 : 0},
+            where: 'session_id = ? AND code = ?',
+            whereArgs: [sessionId, v.code],
+          );
+        }
+      }
+    });
+  }
+
+  /// Lecturas de este teléfono que el servidor rechazó porque otro teléfono ya había leído ese vale.
+  Future<int> voucherConflictCount(String sessionId) async =>
+      Sqflite.firstIntValue(await _db.rawQuery("SELECT COUNT(*) FROM voucher_reads WHERE session_id = ? AND server_result = 'ALREADY_REDEEMED'", [sessionId])) ?? 0;
+
+  Future<({int total, int read})> voucherCounts(String sessionId) async {
+    final total = Sqflite.firstIntValue(await _db.rawQuery('SELECT COUNT(*) FROM vouchers WHERE session_id = ?', [sessionId])) ?? 0;
+    final read = Sqflite.firstIntValue(await _db.rawQuery('SELECT COUNT(*) FROM vouchers WHERE session_id = ? AND redeemed_at IS NOT NULL', [sessionId])) ?? 0;
+    return (total: total, read: read);
+  }
+
+  Future<List<Voucher>> recentVoucherReads(String sessionId, {int limit = 30}) async {
+    final rows = await _db.query('vouchers', where: 'session_id = ? AND redeemed_at IS NOT NULL', whereArgs: [sessionId], orderBy: 'redeemed_at DESC', limit: limit);
+    return [for (final r in rows) _voucherFrom(r)];
   }
 }
 

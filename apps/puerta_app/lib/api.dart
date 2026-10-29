@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'bar.dart';
 import 'models.dart';
 
 /// Error de la API con un mensaje que se puede mostrar al portero.
@@ -32,7 +33,7 @@ class ApiException implements Exception {
 }
 
 /// Versión de la app: viaja en cada petición para que el panel muestre qué versión tiene cada teléfono.
-const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.6.0');
+const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.7.0');
 
 /// Par de tokens: el de acceso es corto; el de renovación lo cambia por uno nuevo (y él mismo se renueva).
 class TokenPair {
@@ -67,6 +68,18 @@ class ServerScanResult {
   final String id;
   final String result;
   final TicketRow? ticket;
+}
+
+/// Lo que respondió el servidor a una lectura de QR de consumo.
+class BarReadResult {
+  const BarReadResult({required this.id, required this.result, this.voucher, this.reason});
+
+  final String id;
+
+  /// REDEEMED, ALREADY_REDEEMED, CANCELLED o REJECTED.
+  final String result;
+  final Voucher? voucher;
+  final String? reason;
 }
 
 /// Decodifica la lista de entradas fuera del hilo de la interfaz (pueden ser decenas de miles).
@@ -165,6 +178,35 @@ class ApiClient {
     } on ApiException {
       // Si no hay red, igual se cierra la sesión en el teléfono.
     }
+  }
+
+  /// Noches con consumo que esta cuenta puede atender en la barra.
+  Future<List<BarNight>> barNights() async {
+    final response = await _send(() => _http.get(_uri('/bar/nights'), headers: _headers));
+    final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    return [for (final n in body['nights'] as List) BarNight.fromJson(n as Map<String, dynamic>)];
+  }
+
+  /// Todos los QR de consumo de una noche (con su estado), para leerlos sin internet.
+  Future<List<Voucher>> barDownload(String sessionId) async {
+    final response = await _send(() => _http.get(_uri('/bar/nights/$sessionId'), headers: _headers), timeout: const Duration(minutes: 2));
+    final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    return [for (final v in body['vouchers'] as List) Voucher.fromJson(v as Map<String, dynamic>)];
+  }
+
+  /// Sube lecturas de QR de consumo. Cada una vuelve con su resultado (la marcó este teléfono, ya estaba leída…).
+  Future<List<BarReadResult>> postBarReads(String sessionId, List<Map<String, dynamic>> reads) async {
+    final response = await _send(() => _http.post(_uri('/bar/nights/$sessionId/reads'), headers: _headers, body: jsonEncode({'reads': reads})));
+    final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    return [
+      for (final r in body['results'] as List)
+        BarReadResult(
+          id: (r as Map<String, dynamic>)['id'] as String,
+          result: r['result'] as String,
+          voucher: r['voucher'] == null ? null : Voucher.fromJson(r['voucher'] as Map<String, dynamic>),
+          reason: r['reason'] as String?,
+        ),
+    ];
   }
 
   Future<List<Assignment>> assignments() async {

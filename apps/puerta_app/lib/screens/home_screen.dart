@@ -9,6 +9,7 @@ import '../models.dart';
 import '../ui/tokens.dart';
 import '../ui/widgets.dart';
 import 'account_sheet.dart';
+import 'bar_screen.dart';
 import 'bracelet_screen.dart';
 import 'scan_screen.dart';
 
@@ -333,6 +334,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       padding: const EdgeInsets.only(bottom: 12),
                       child: StaggerIn(index: 6 + i, child: _MethodTile(method: m, onTap: () => _openScan(a, meta, m))),
                     ),
+                ],
+                if (_s.canUseBar) ...[
+                  const SizedBox(height: 4),
+                  StaggerIn(
+                    index: 8,
+                    child: GhostButton(
+                      label: 'Barra: QR de consumo',
+                      icon: Icons.local_bar_outlined,
+                      onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => BarHomeScreen(service: _s, canGoBack: true))),
+                    ),
+                  ),
                 ],
                 if (ready && _s.canWriteBracelets) ...[
                   const SizedBox(height: 4),

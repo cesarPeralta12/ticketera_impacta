@@ -10,6 +10,7 @@ String roleLabel(String? role) => switch (role) {
       'OWNER' => 'Dueño',
       'ADMIN' => 'Administrador',
       'OPERATOR' => 'Portero',
+      'BAR' => 'Barra',
       _ => 'Cuenta',
     };
 

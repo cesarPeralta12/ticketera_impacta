@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'app_services.dart';
 import 'door_service.dart';
 import 'feedback.dart';
+import 'screens/bar_screen.dart';
 import 'screens/change_password_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
@@ -60,7 +61,10 @@ class PuertaApp extends StatelessWidget {
                 ? LoginScreen(key: const ValueKey('login'), service: service)
                 : service.mustChangePassword
                     ? ChangePasswordScreen(key: const ValueKey('password'), service: service)
-                    : HomeScreen(key: const ValueKey('home'), service: service),
+                    : service.isBarOnly
+                        // La cuenta de barra solo lee QR de consumo: no ve la puerta.
+                        ? BarHomeScreen(key: const ValueKey('bar'), service: service)
+                        : HomeScreen(key: const ValueKey('home'), service: service),
           ),
         ),
       ),

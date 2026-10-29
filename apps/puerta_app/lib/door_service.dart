@@ -8,6 +8,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 
 import 'api.dart';
+import 'bar.dart';
 import 'models.dart';
 import 'storage.dart';
 import 'presence_view.dart';
@@ -173,6 +174,101 @@ class DoorService extends ChangeNotifier {
       rethrow;
     }
   }
+
+  // ── Modo Barra (QR de consumo) ──
+
+  /// ¿Esta cuenta es solo de barra? Entra directo al modo Barra y no ve la puerta.
+  bool get isBarOnly => role == 'BAR';
+
+  /// Los administradores y la barra pueden atender la barra; un portero no.
+  bool get canUseBar => role == 'OWNER' || role == 'ADMIN' || role == 'BAR';
+
+  /// Noches con consumo que esta cuenta atiende. Sin internet, usa las últimas guardadas.
+  Future<List<BarNight>> barNights() async {
+    try {
+      final nights = await _guard((api) => api.barNights());
+      await db.putKv('bar_nights', jsonEncode([for (final n in nights) n.toJson()]));
+      return nights;
+    } on ApiException catch (e) {
+      if (!e.offline) rethrow;
+      final saved = await db.getKv('bar_nights');
+      if (saved == null) rethrow;
+      return [for (final n in jsonDecode(saved) as List) BarNight.fromJson(n as Map<String, dynamic>)];
+    }
+  }
+
+  /// Descarga los QR de consumo de la noche (reemplaza lo anterior; lo leído aquí y sin subir se conserva).
+  Future<void> barDownload(String sessionId) async {
+    final vouchers = await _guard((api) => api.barDownload(sessionId));
+    await db.saveVouchers(sessionId, vouchers);
+  }
+
+  /// Revisa una lectura SIN marcarla: de quién es, cuánto consumo tiene o por qué no vale. Si el código no está en la
+  /// lista y hay internet, primero actualiza la lista (puede ser una compra reciente).
+  Future<VoucherOutcome> barInspect(String sessionId, String raw) async {
+    var outcome = await inspectVoucher(vouchers: db, sessionId: sessionId, raw: raw);
+    if (outcome.verdict == VoucherVerdict.notFound) {
+      try {
+        if (await barSync(sessionId, refresh: true)) outcome = await inspectVoucher(vouchers: db, sessionId: sessionId, raw: raw);
+      } on ApiException {
+        // Sin internet o sesión vencida: se queda el "no existe" local.
+      }
+    }
+    return outcome;
+  }
+
+  /// El de barra confirmó: se marca como leído en este teléfono (queda para subir) y se avisa al servidor.
+  /// Devuelve el vale tal como quedó, o null si ya no se podía marcar (otro lo leyó mientras tanto).
+  Future<Voucher?> barRead(String sessionId, String raw, {String? note}) async {
+    final code = extractVoucherCode(raw);
+    if (code == null) return null;
+    final current = await db.findVoucher(sessionId, code);
+    if (current == null || current.isRead || current.cancelled) return null;
+    final at = serverNow;
+    await db.markVoucherRead(id: _scanId(), sessionId: sessionId, code: code, at: at, note: note?.trim().isEmpty ?? true ? null : note!.trim());
+    await refreshBarCounters(sessionId);
+    return db.findVoucher(sessionId, code);
+  }
+
+  int barPending = 0;
+  int barConflicts = 0;
+
+  Future<void> refreshBarCounters(String sessionId) async {
+    barPending = await db.pendingVoucherCount(sessionId);
+    barConflicts = await db.voucherConflictCount(sessionId);
+    notifyListeners();
+  }
+
+  /// Sube las lecturas pendientes (en orden) y, con `refresh`, vuelve a bajar la lista para ver lo que leyeron otros
+  /// teléfonos. Devuelve false si no se pudo llegar al servidor.
+  Future<bool> barSync(String sessionId, {bool refresh = true}) async {
+    try {
+      while (true) {
+        final batch = await db.pendingVoucherReads(sessionId);
+        if (batch.isEmpty) break;
+        final results = await _guard(
+          (api) => api.postBarReads(sessionId, [
+            for (final r in batch) {'id': r.id, 'code': r.code, 'readAt': r.readAt.toUtc().toIso8601String(), if (r.note != null) 'note': r.note},
+          ]),
+        );
+        await db.applyVoucherResults(sessionId, {for (final r in results) r.id: (result: r.result, voucher: r.voucher)});
+        if (batch.length < 200) break;
+      }
+      if (refresh) await barDownload(sessionId);
+      await refreshBarCounters(sessionId);
+      return true;
+    } on ApiException catch (e) {
+      if (e.offline) {
+        await refreshBarCounters(sessionId);
+        return false;
+      }
+      rethrow;
+    }
+  }
+
+  Future<({int total, int read})> barCounts(String sessionId) => db.voucherCounts(sessionId);
+
+  Future<List<Voucher>> barRecent(String sessionId) => db.recentVoucherReads(sessionId);
 
   /// Funciones asignadas. Sin internet, usa la última lista guardada.
   Future<void> loadAssignments() async {
