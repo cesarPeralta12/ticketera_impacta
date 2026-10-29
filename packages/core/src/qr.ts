@@ -88,6 +88,40 @@ export function extractTicketCode(raw: string): string | null {
   return isValidCode(manual) ? manual : null;
 }
 
+// ─────────────── QR de consumo (vale de un solo uso) ───────────────
+
+const VOUCHER_PREFIX = "CV1";
+
+/** Contenido del QR de consumo de una mesa o de una entrada con trago: "CV1.<código>.<firma>". */
+export async function signVoucherPayload(code: string, secret: string): Promise<string> {
+  const body = `${VOUCHER_PREFIX}.${code}`;
+  return `${body}.${toBase64Url(await hmac(secret, body))}`;
+}
+
+/** Código escrito a mano o leído de un QR de consumo, sin verificar la firma (la app de barra no tiene el secreto). */
+export function extractVoucherCode(raw: string): string | null {
+  const input = raw.trim();
+  if (input.startsWith(`${VOUCHER_PREFIX}.`)) {
+    const [, code, signature, ...rest] = input.split(".");
+    return code && signature && rest.length === 0 && isValidCode(code) ? code : null;
+  }
+  const manual = input.replace(/-/g, "").toUpperCase();
+  return isValidCode(manual) ? manual : null;
+}
+
+/** Como [extractVoucherCode] pero verificando la firma del QR (el servidor). Escrito a mano no lleva firma. */
+export async function parseVoucherPayload(raw: string, secret: string): Promise<ParsedTicketPayload> {
+  const input = raw.trim();
+  if (!input.startsWith(`${VOUCHER_PREFIX}.`)) {
+    const manual = input.replace(/-/g, "").toUpperCase();
+    return isValidCode(manual) ? { ok: true, code: manual, source: "manual" } : { ok: false, reason: "FORMAT" };
+  }
+  const [, code, signature, ...rest] = input.split(".");
+  if (rest.length > 0 || !code || !signature || !isValidCode(code)) return { ok: false, reason: "FORMAT" };
+  const expected = toBase64Url(await hmac(secret, `${VOUCHER_PREFIX}.${code}`));
+  return constantTimeEqual(signature, expected) ? { ok: true, code, source: "qr" } : { ok: false, reason: "SIGNATURE" };
+}
+
 // ─────────────── Vista previa de un evento sin publicar ───────────────
 
 /** Cuánto dura el enlace de vista previa que arma el panel. */

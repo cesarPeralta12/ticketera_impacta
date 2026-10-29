@@ -1,5 +1,5 @@
 import QRCode from "qrcode";
-import { entranceText, gateInfo, signTicketPayload, TRANSFER_OFFER_HOURS, whenWhere, zonesText, type WhenWhere } from "@ticketera/core";
+import { entranceText, formatMoney, gateInfo, signTicketPayload, signVoucherPayload, tableLabel, TRANSFER_OFFER_HOURS, whenWhere, zonesText, type WhenWhere } from "@ticketera/core";
 import {
   RESET_PASSWORD_MINUTES,
   VERIFY_EMAIL_HOURS,
@@ -87,10 +87,24 @@ export async function sendTicketsEmail(orderCode: string): Promise<boolean> {
           : null,
       })),
   );
+  // QR de consumo (boliche): uno por mesa o entrada con trago, sin repetir por persona.
+  const credits = new Map<string, NonNullable<(typeof order.tickets)[number]["credit"]> & { typeName: string }>();
+  for (const t of order.tickets) {
+    if (t.status !== "CANCELLED" && t.creditId && t.credit && t.credit.amount > 0 && !credits.has(t.creditId)) credits.set(t.creditId, { ...t.credit, typeName: t.ticketType.name });
+  }
+  const vouchers = await Promise.all(
+    [...credits.values()].map(async (c) => ({
+      code: c.code,
+      label: tableLabel(c.typeName, c.tableNumber, c.seat?.label) ?? c.typeName,
+      amount: formatMoney(c.amount, c.currency),
+      qrPng: await QRCode.toBuffer(await signVoucherPayload(c.code, secret), { type: "png", margin: 1, width: 400, errorCorrectionLevel: "M" }),
+    })),
+  );
   return sendEmailSafely(
     ticketsMessage({
       to: order.buyerEmail,
       buyerName: order.buyerName,
+      vouchers,
       eventTitle: session.event.title,
       startsAt: session.startsAt,
       timezone: session.venue.timezone,

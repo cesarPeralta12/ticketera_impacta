@@ -24,6 +24,7 @@ export const ROLE_LABEL = {
   CASHIER: "Cajero (boletería y barra)",
   CLIENT: "Cliente (solo lectura)",
   PROMOTER: "Promotor (vende con QR)",
+  BAR: "Barra (lee QR de consumo)",
 } as const;
 
 export const MODE_LABEL = { TICKETING: "Venta de entradas", GUEST_LIST: "Lista de invitados" } as const;

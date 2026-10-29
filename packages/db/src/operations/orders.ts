@@ -476,7 +476,7 @@ export async function getOrderByCode(code: string) {
         include: {
           ticketType: { include: { zones: { select: { id: true, name: true } } } },
           seat: { include: { section: true } },
-          credit: { select: { tableNumber: true, amount: true, spent: true, currency: true, seat: { select: { label: true } } } },
+          credit: { select: { code: true, redeemedAt: true, tableNumber: true, amount: true, spent: true, currency: true, seat: { select: { label: true } } } },
         },
         orderBy: { issuedAt: "asc" },
       },

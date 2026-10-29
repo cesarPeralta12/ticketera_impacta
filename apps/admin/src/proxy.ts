@@ -10,6 +10,7 @@ const RESTRICTED: Record<string, { home: string; allowed: string[] }> = {
   CASHIER: { home: "/boleteria", allowed: ["/boleteria", "/barra", "/cuenta"] },
   CLIENT: { home: "/cliente", allowed: ["/cliente", "/cuenta"] },
   PROMOTER: { home: "/promotor", allowed: ["/promotor", "/cuenta"] },
+  BAR: { home: "/barra", allowed: ["/barra", "/cuenta"] },
 };
 
 /**

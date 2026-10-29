@@ -11,12 +11,14 @@ export const ROLES = {
   users: ["OWNER", "ADMIN"],
   /** Vender en boletería. */
   pos: ["OWNER", "ADMIN", "CASHIER"],
+  /** Barra: leer los QR de consumo de las noches asignadas (además de quienes administran y los cajeros). */
+  bar: ["OWNER", "ADMIN", "CASHIER", "BAR"],
   /** Espacio temporal del cliente (eventos que IMPACTA opera para él). */
   client: ["CLIENT"],
   /** Promotor: vende con cobro por QR los eventos que tiene asignados y ve su comisión. */
   promoter: ["PROMOTER"],
   /** Cualquier cuenta del panel (cambiar su contraseña). */
-  any: ["OWNER", "ADMIN", "OPERATOR", "CASHIER", "CLIENT", "PROMOTER"],
+  any: ["OWNER", "ADMIN", "OPERATOR", "CASHIER", "CLIENT", "PROMOTER", "BAR"],
 } satisfies Record<string, StaffRole[]>;
 
 /** Pantalla de inicio de cada rol: cada uno ve solo lo que necesita para su trabajo. */
@@ -28,6 +30,7 @@ export const HOME_BY_ROLE: Record<StaffRole, string> = {
   CASHIER: "/boleteria",
   CLIENT: "/cliente",
   PROMOTER: "/promotor",
+  BAR: "/barra",
 };
 
 /** Organizador en el que está trabajando un administrador de IMPACTA ("Entrar como"). */

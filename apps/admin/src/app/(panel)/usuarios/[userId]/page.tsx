@@ -154,8 +154,8 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
             </ActionForm>
           )}
         </section>
-      ) : member.role === "CASHIER" ? (
-        <SalesAccessCard userId={userId} organizationId={staff.organization.id} />
+      ) : member.role === "CASHIER" || member.role === "BAR" ? (
+        <SalesAccessCard userId={userId} organizationId={staff.organization.id} bar={member.role === "BAR"} />
       ) : (
         <p className="card p-5 text-sm text-[var(--ink-muted)]">
           Solo las cuentas de <strong>{ROLE_LABEL.OPERATOR}</strong> usan asignaciones. Los dueños y administradores ven

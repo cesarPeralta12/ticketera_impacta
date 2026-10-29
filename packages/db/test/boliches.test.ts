@@ -3,11 +3,11 @@
  * barra, entradas gratis por horario (una por persona, vencen en puerta) y noches que se repiten.
  */
 import { afterAll, describe, expect, it } from "vitest";
-import { localWeekday, randomCode, utcToZonedInput } from "@ticketera/core";
+import { localWeekday, randomCode, signVoucherPayload, utcToZonedInput } from "@ticketera/core";
 import { prisma } from "../src/client";
 import { scanTicket } from "../src/operations/access";
 import { getDoorDownload } from "../src/operations/mobile";
-import { duplicateSession, getConsumption, redeemConsumption, repeatWeeklyNights } from "../src/operations/nightlife";
+import { duplicateSession, getVoucher, nightVouchers, redeemVoucher, repeatWeeklyNights } from "../src/operations/nightlife";
 import { createPendingOrder } from "../src/operations/orders";
 import { applyPaymentUpdate, startPayment } from "../src/operations/payments";
 import { platformStaff } from "./fixtures";
@@ -141,57 +141,93 @@ describe("mesas", () => {
   });
 });
 
-describe("consumo en barra", () => {
-  it("una entrada con trago abre su propio saldo", async () => {
+describe("consumo en barra (QR de consumo de un solo uso)", () => {
+  it("una entrada con trago abre su propio vale", async () => {
     const { session, type } = await club();
     const { tickets } = await buy(await person(), session.id, type("Entrada + trago").id, 2);
     expect(new Set(tickets.map((t) => t.creditId)).size).toBe(2);
     expect(tickets.every((t) => t.credit?.amount === 2_500 && t.credit.tableNumber === null)).toBe(true);
+    expect(new Set(tickets.map((t) => t.credit!.code)).size).toBe(2);
   });
 
-  it("descuenta con cualquier QR de la mesa y nunca deja pasarse del saldo", async () => {
+  it("se lee una sola vez: muestra el consumo, lo marca y la segunda lectura dice quién y cuándo", async () => {
     const { session, type } = await club();
     const staff = await bartender();
     const { tickets } = await buy(await person(), session.id, type("Mesa VIP").id, 1);
+    const code = tickets[0]!.credit!.code;
 
-    const first = await redeemConsumption({ raw: tickets[0]!.code, sessionId: session.id, amount: 30_000, staffId: staff.id, note: "botella" });
-    expect(first).toMatchObject({ spent: 30_000, left: 70_000 });
-    // Otro QR de la misma mesa ve el mismo saldo.
-    const seen = await getConsumption(tickets[5]!.code, session.id);
-    expect(seen.ok && seen.credit.left).toBe(70_000);
+    const seen = await getVoucher(code, session.id);
+    expect(seen).toMatchObject({ ok: true, voucher: { amount: 100_000, label: "Mesa VIP N° 1", people: 6, redeemedAt: null } });
 
-    await expect(redeemConsumption({ raw: tickets[1]!.code, sessionId: session.id, amount: 80_000, staffId: staff.id })).rejects.toMatchObject({
-      code: "INVALID_STATE",
-    });
-    await expect(redeemConsumption({ raw: tickets[1]!.code, sessionId: session.id, amount: 0, staffId: staff.id })).rejects.toMatchObject({
-      code: "INVALID_ITEMS",
-    });
-  });
-
-  it("tres cobros a la vez sobre un saldo de dos: solo pasan dos", async () => {
-    const { session, type } = await club();
-    const staff = await bartender();
-    const { tickets } = await buy(await person(), session.id, type("Mesa VIP").id, 1);
-    await redeemConsumption({ raw: tickets[0]!.code, sessionId: session.id, amount: 40_000, staffId: staff.id });
-
-    const results = await Promise.allSettled(
-      [1, 2, 3].map((i) => redeemConsumption({ raw: tickets[i]!.code, sessionId: session.id, amount: 30_000, staffId: staff.id })),
-    );
-    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(2);
+    const first = await redeemVoucher({ raw: code, sessionId: session.id, staffId: staff.id, note: "botella" });
+    expect(first).toMatchObject({ status: "REDEEMED", voucher: { amount: 100_000, redeemedBy: staff.name, note: "botella" } });
     const credit = await prisma.consumptionCredit.findUniqueOrThrow({ where: { id: tickets[0]!.creditId! } });
-    expect(credit.spent).toBe(100_000);
-    expect(await prisma.consumptionRedemption.count({ where: { creditId: credit.id } })).toBe(3);
+    expect(credit).toMatchObject({ spent: 100_000 });
+    expect(credit.redeemedAt).not.toBeNull();
+
+    // Ni con la misma ni con otra lectura se vuelve a cobrar.
+    expect(await redeemVoucher({ raw: code, sessionId: session.id, staffId: staff.id })).toMatchObject({ status: "ALREADY_REDEEMED", voucher: { redeemedBy: staff.name } });
+    expect(await prisma.consumptionRedemption.count({ where: { creditId: credit.id } })).toBe(1);
   });
 
-  it("no cobra a una entrada de otra noche ni a una sin consumo", async () => {
+  it("el QR firmado sirve; uno con la firma cambiada no", async () => {
+    const { session, type } = await club();
+    const staff = await bartender();
+    const { tickets } = await buy(await person(), session.id, type("Mesa VIP").id, 1);
+    const payload = await signVoucherPayload(tickets[0]!.credit!.code, process.env.TICKET_QR_SECRET!);
+    const forged = payload.slice(0, -1) + (payload.endsWith("A") ? "B" : "A");
+    expect(await getVoucher(forged, session.id)).toMatchObject({ ok: false, code: "NOT_FOUND" });
+    expect(await redeemVoucher({ raw: payload, sessionId: session.id, staffId: staff.id })).toMatchObject({ status: "REDEEMED" });
+  });
+
+  it("cinco lecturas a la vez del mismo vale: solo una lo marca", async () => {
+    const { session, type } = await club();
+    const staff = await bartender();
+    const { tickets } = await buy(await person(), session.id, type("Mesa VIP").id, 1);
+    const code = tickets[0]!.credit!.code;
+    const results = await Promise.all([1, 2, 3, 4, 5].map(() => redeemVoucher({ raw: code, sessionId: session.id, staffId: staff.id })));
+    expect(results.filter((r) => r.status === "REDEEMED")).toHaveLength(1);
+    expect(results.filter((r) => r.status === "ALREADY_REDEEMED")).toHaveLength(4);
+    expect(await prisma.consumptionRedemption.count({ where: { creditId: tickets[0]!.creditId! } })).toBe(1);
+  });
+
+  it("un teléfono sin conexión conserva la hora en que leyó el vale", async () => {
+    const { session, type } = await club();
+    const staff = await bartender();
+    const { tickets } = await buy(await person(), session.id, type("Mesa VIP").id, 1);
+    const readAt = new Date(Date.now() - 20 * 60_000);
+    await redeemVoucher({ raw: tickets[0]!.credit!.code, sessionId: session.id, staffId: staff.id, readAt });
+    const credit = await prisma.consumptionCredit.findUniqueOrThrow({ where: { id: tickets[0]!.creditId! } });
+    expect(Math.abs(credit.redeemedAt!.getTime() - readAt.getTime())).toBeLessThan(1000);
+    // Una hora en el futuro (reloj mal puesto) se recorta a ahora.
+    const other = await buy(await person(), session.id, type("Mesa VIP").id, 1);
+    await redeemVoucher({ raw: other.tickets[0]!.credit!.code, sessionId: session.id, staffId: staff.id, readAt: new Date(Date.now() + 3_600_000) });
+    const clamped = await prisma.consumptionCredit.findUniqueOrThrow({ where: { id: other.tickets[0]!.creditId! } });
+    expect(clamped.redeemedAt!.getTime()).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("no lee un vale de otra noche, uno sin consumo ni una compra anulada", async () => {
     const a = await club();
     const b = await club();
+    const staff = await bartender();
     const customer = await person();
     const table = await buy(customer, a.session.id, a.type("Mesa VIP").id, 1);
+    expect(await getVoucher(table.tickets[0]!.credit!.code, b.session.id)).toMatchObject({ ok: false, code: "WRONG_NIGHT" });
+    expect(await getVoucher("NOEXISTE00", a.session.id)).toMatchObject({ ok: false, code: "NOT_FOUND" });
+    // Una entrada general no emite vale.
     const general = await buy(customer, a.session.id, a.type("General").id, 1);
-    expect(await getConsumption(table.tickets[0]!.code, b.session.id)).toMatchObject({ ok: false, reason: "Esa entrada es de otra noche." });
-    expect(await getConsumption(general.tickets[0]!.code, a.session.id)).toMatchObject({ ok: false, reason: "Esa entrada no tiene consumo incluido." });
-    expect(await getConsumption("NOEXISTE00", a.session.id)).toMatchObject({ ok: false });
+    expect(general.tickets[0]!.credit).toBeNull();
+
+    await prisma.ticket.updateMany({ where: { creditId: table.tickets[0]!.creditId! }, data: { status: "CANCELLED" } });
+    expect(await redeemVoucher({ raw: table.tickets[0]!.credit!.code, sessionId: a.session.id, staffId: staff.id })).toMatchObject({ status: "CANCELLED" });
+  });
+
+  it("la lista de la noche trae todos los vales para descargarlos al teléfono", async () => {
+    const { session, type } = await club();
+    const { tickets } = await buy(await person(), session.id, type("Mesa VIP").id, 2);
+    const vouchers = await nightVouchers(session.id);
+    expect(vouchers.map((v) => v.code).sort()).toEqual([...new Set(tickets.map((t) => t.credit!.code))].sort());
+    expect(vouchers.every((v) => v.amount === 100_000 && v.redeemedAt === null)).toBe(true);
   });
 });
 
@@ -417,7 +453,7 @@ describe("mesas elegidas en el mapa", () => {
     const second = tickets.find((t) => !t.seatId && t.credit?.seat?.label === "A-3")!;
     const outcome = await scanTicket({ sessionId: session.id, raw: second.code });
     expect(outcome).toMatchObject({ result: "ACCEPTED", ticket: { seat: "VIP · A-3" } });
-    const seen = await getConsumption(second.code, session.id);
-    expect(seen.ok && seen.credit.seat?.label).toBe("A-3");
+    const seen = await getVoucher(second.credit!.code, session.id);
+    expect(seen.ok && seen.voucher.label).toContain("A-3");
   });
 });

@@ -18,6 +18,7 @@ export * from "./operations/payments";
 export * from "./operations/presence";
 export * from "./operations/promos";
 export * from "./operations/promo-assets";
+export * from "./operations/bar";
 export * from "./operations/promoters";
 export * from "./operations/qr-mode";
 export * from "./operations/queue";
