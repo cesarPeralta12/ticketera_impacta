@@ -6,6 +6,7 @@ import { eventLimitMessage, getEventQuota } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { createSmallEventAction } from "@/lib/actions/printed";
 import { ROLES, allowedCategories, isNightlife, requireStaff } from "@/lib/session";
+import { ImageUrlField } from "../image-url-field";
 
 export const metadata: Metadata = { title: "Evento pequeño" };
 
@@ -112,10 +113,9 @@ export default async function SmallEventPage() {
               <span className="text-[var(--ink-muted)]">Para vender en mano: quedan numeradas y listas para imprimir (en borrador).</span>
             </span>
           </label>
-          <label className="label sm:col-span-2">
-            Foto (opcional, para la web)
-            <input name="imageUrl" inputMode="url" placeholder="https://… (pega el enlace de la imagen)" className="field" />
-          </label>
+          <div className="sm:col-span-2">
+            <ImageUrlField label="Foto (opcional, para la web)" placeholder="https://… (pega el enlace de la imagen)" />
+          </div>
           <label className="label sm:col-span-2">
             Descripción (opcional)
             <textarea name="description" rows={2} maxLength={2000} placeholder="Qué es, quién toca, qué incluye la entrada…" className="field" />

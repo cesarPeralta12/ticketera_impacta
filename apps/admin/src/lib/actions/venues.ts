@@ -14,6 +14,7 @@ import {
   parseTables,
   parseZoneLayout,
   safeMapUrl,
+  seatShapeProblem,
   tableName,
   type PlacedTable,
   type SectionShape,
@@ -250,6 +251,8 @@ export async function addSeatSectionAction(_prev: FormState, formData: FormData)
   if (!/^#[0-9a-fA-F]{6}$/.test(color)) return { error: "Color inválido." };
   const shape = parseShape(String(formData.get("shape") ?? ""));
   if (!shape) return { error: "La forma de la sección no es válida." };
+  const problem = seatShapeProblem(shape);
+  if (problem) return { error: problem };
 
   const positions = computeSeatPositions(shape);
   try {
@@ -446,25 +449,34 @@ export async function moveSeatedTablesAction(_prev: FormState, formData: FormDat
   if (byNumber.size !== current.tables.length || current.tables.some((t) => !byNumber.has(t.number))) {
     return { error: "Las mesas cambiaron: recarga la página." };
   }
-  const parsed = parseSeatedTablesLayout({ ...current, tables: current.tables.map((t) => ({ number: t.number, ...byNumber.get(t.number)! })) });
+  // Nombre y tamaño solo cambian cómo se ve (las sillas siguen siendo las mismas butacas): se puede aunque haya ventas.
+  const name = formData.has("name") ? String(formData.get("name")).trim() : null;
+  if (name !== null && name.length < 2) return { error: "Ponle un nombre a la sección." };
+  const size = formData.get("size") ? Number(formData.get("size")) : current.size;
+  const parsed = parseSeatedTablesLayout({ ...current, size, tables: current.tables.map((t) => ({ number: t.number, ...byNumber.get(t.number)! })) });
   if (!parsed.ok) return { error: parsed.error };
   const seats = seatedTableSeats(parsed.layout);
-  await prisma.$transaction(async (tx) => {
-    await tx.section.update({ where: { id: section.id }, data: { layout: parsed.layout } });
-    for (const seat of seats) {
-      await tx.seat.updateMany({ where: { sectionId: section.id, row: seat.row, number: seat.number }, data: { x: seat.x, y: seat.y } });
-    }
-  });
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.section.update({ where: { id: section.id }, data: { layout: parsed.layout, ...(name ? { name } : {}) } });
+      for (const seat of seats) {
+        await tx.seat.updateMany({ where: { sectionId: section.id, row: seat.row, number: seat.number }, data: { x: seat.x, y: seat.y } });
+      }
+    });
+  } catch (error) {
+    if (isUnique(error)) return { error: "Ya existe una sección con ese nombre." };
+    throw error;
+  }
   await logAudit({
     actorType: "staff",
     actorId: staff.id,
     action: "section.seated_tables_moved",
     entity: "Section",
     entityId: section.id,
-    data: { tables: parsed.layout.tables.length },
+    data: { tables: parsed.layout.tables.length, size: parsed.layout.size },
   });
   revalidatePath(`/recintos/${section.venueId}`);
-  return { ok: true, message: "Posiciones guardadas." };
+  return { ok: true, message: "Cambios guardados." };
 }
 
 /** Entradas vendidas o reservadas (en cualquier estado) de una sección. */
@@ -514,6 +526,9 @@ export async function updateSeatSectionAction(_prev: FormState, formData: FormDa
   if (!shape) return { error: "La forma de la sección no es válida." };
 
   const shapeChanged = JSON.stringify(shape) !== JSON.stringify(section.layout);
+  // Solo si cambia la forma: una sección vieja que no cumple igual puede cambiar de nombre o color.
+  const problem = shapeChanged ? seatShapeProblem(shape) : null;
+  if (problem) return { error: problem };
   if (shapeChanged && (await sectionSales(section.id)) > 0) {
     return {
       error: `"${section.name}" ya tiene entradas vendidas o reservadas: solo puedes cambiar su nombre y color.`,

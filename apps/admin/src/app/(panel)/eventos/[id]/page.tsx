@@ -33,6 +33,7 @@ import { eventChecks } from "@/lib/event-checklist";
 import { EVENT_STATUS, MODE_LABEL } from "@/lib/labels";
 import { buyerPreviewUrl } from "@/lib/preview";
 import { ROLES, allowedCategories, requireStaff } from "@/lib/session";
+import { venueChoices } from "@/lib/venue-choices";
 import { EventFields } from "../event-fields";
 
 export const metadata: Metadata = { title: "Evento" };
@@ -70,11 +71,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
   if (!event) notFound();
 
   const [venues, clients, suggestedUntil] = await Promise.all([
-    prisma.venue.findMany({
-      where: { organizationId: staff.organization.id },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, city: true, timezone: true },
-    }),
+    venueChoices(staff.organization.id),
     prisma.client.findMany({
       where: { organizationId: staff.organization.id },
       orderBy: { name: "asc" },

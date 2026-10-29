@@ -188,7 +188,7 @@ export default async function VenuePage({ params, searchParams }: Props) {
                 <span className="h-3 w-3 rounded-full" style={{ background: s.color }} />
                 <span className="flex-1 font-medium">{s.name}</span>
                 <span className="text-[var(--ink-muted)]">
-                  {seatingLabel(s)} · {s.seatingMode === "RESERVED" ? `${s.seats.length} ${isTablesLayout(s.layout) ? "lounges" : "butacas"}` : `aforo ${s.capacity}`}
+                  {seatingLabel(s)} · {s.seatingMode === "RESERVED" ? `${s.seats.length} ${isTablesLayout(s.layout) ? "lounges" : isSeatedTablesLayout(s.layout) ? "sillas" : "butacas"}` : `aforo ${s.capacity}`}
                 </span>
                 {!s.sold ? (
                   <ActionForm
@@ -359,7 +359,9 @@ export default async function VenuePage({ params, searchParams }: Props) {
               background={backgroundSeats}
               plan={plan}
               items={mapItems}
-              existing={sections.flatMap((s) => (isSeatedTablesLayout(s.layout) ? [{ id: s.id, name: s.name, color: s.color, layout: s.layout }] : []))}
+              existing={sections.flatMap((s) =>
+                isSeatedTablesLayout(s.layout) ? [{ id: s.id, name: s.name, color: s.color, layout: s.layout, sold: s.sold, priced: s.priced }] : [],
+              )}
             />
           </section>
         )}

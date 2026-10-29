@@ -212,6 +212,9 @@ async function copySession(tx: Tx, template: Template, startsAt: Date) {
       consumptionAmount: t.consumptionAmount,
       entryUntil: shift(t.entryUntil),
       maxEntries: t.maxEntries,
+      // Fases de venta: la copia sigue siendo una cadena de fases (si no, todas se venderían a la vez).
+      phaseOrder: t.phaseOrder,
+      phaseStartsAt: shift(t.phaseStartsAt),
     },
     zones: t.zones,
   }));

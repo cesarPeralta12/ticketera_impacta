@@ -48,6 +48,7 @@ model Organization {
   promoCodes PromoCode[]
   payouts    CommissionPayout[]
   ticketArts TicketArt[]
+  eventImages EventImage[]
   venues     Venue[]
   events     Event[]
   clients    Client[]
@@ -1234,6 +1235,21 @@ model PrintSettlement {
   staff StaffUser  @relation(fields: [staffId], references: [id])
 
   @@index([batchId])
+}
+
+/// Foto de un evento subida desde el panel (en vez de pegar un enlace). El sitio la sirve en /imagenes/<id> y el evento
+/// guarda esa dirección en `imageUrl`: todo lo que ya muestra la portada sigue igual. Nunca se modifica (cada subida es
+/// una foto nueva), así se puede guardar en caché para siempre.
+model EventImage {
+  id             String   @id @default(cuid())
+  organizationId String
+  mimeType       String
+  data           Bytes
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
 }
 
 /// Arte propio de la entrada impresa (PNG o JPG): se dibuja de fondo y encima van el QR, la serie y los datos.

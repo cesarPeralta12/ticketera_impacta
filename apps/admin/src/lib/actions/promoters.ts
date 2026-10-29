@@ -106,7 +106,6 @@ export async function createPromoterAction(_prev: FormState, formData: FormData)
       email,
       phone: phone || null,
       password,
-      code: String(formData.get("code") ?? "").trim() || null,
       assignment: read.value,
     });
     userId = created.user.id;

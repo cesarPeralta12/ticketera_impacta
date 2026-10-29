@@ -4,8 +4,9 @@
  */
 import { afterAll, describe, expect, it } from "vitest";
 import { prisma } from "../src/client";
+import { duplicateSession } from "../src/operations/nightlife";
 import { getSessionStock, withSessionPhases } from "../src/operations/orders";
-import { buyer, createGeneralAdmissionEvent, createPendingOrder } from "./fixtures";
+import { buyer, createGeneralAdmissionEvent, createPendingOrder, platformStaff } from "./fixtures";
 
 afterAll(() => prisma.$disconnect());
 
@@ -79,6 +80,19 @@ describe("fases de venta", () => {
     expect((await getSessionStock(session.id)).remaining.get(hot.id)).toBe(5);
     expect(await states(session.id)).toEqual({ "Fase Hot": "done", "Fase 1": "active", "Fase 2": "upcoming" });
     await expect(buy(session.id, hot.id, 1)).rejects.toThrow(/ya terminó/);
+  });
+
+  it("al duplicar la función, la copia sigue con sus fases (no se venden todas a la vez)", async () => {
+    const { session, hot } = await carnaval();
+    const staff = await platformStaff();
+    const date = new Date(session.startsAt.getTime() + 2 * 86_400_000).toISOString().slice(0, 10);
+    const copy = await duplicateSession({ templateSessionId: session.id, date, staffId: staff.id });
+    expect(await states(copy.id)).toEqual({ "Fase Hot": "active", "Fase 1": "upcoming", "Fase 2": "upcoming" });
+    const copied = await prisma.ticketType.findFirstOrThrow({ where: { sessionId: copy.id, name: "Fase 2" } });
+    const original = await prisma.ticketType.findFirstOrThrow({ where: { sessionId: session.id, name: "Fase 2" } });
+    // La fecha de la fase se corre igual que la función.
+    expect(copied.phaseStartsAt!.getTime() - original.phaseStartsAt!.getTime()).toBe(copy.startsAt.getTime() - session.startsAt.getTime());
+    expect((await prisma.ticketType.findFirstOrThrow({ where: { sessionId: copy.id, name: "Fase Hot" } })).phaseOrder).toBe(hot.phaseOrder ?? 1);
   });
 
   it("los precios comunes de otras secciones no cambian", async () => {

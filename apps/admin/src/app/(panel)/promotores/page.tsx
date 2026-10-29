@@ -121,8 +121,8 @@ export default async function PromotersPage() {
         <section id="nuevo" className="card scroll-mt-6 p-6">
           <h2 className="eyebrow mb-1">Nuevo promotor</h2>
           <p className="mb-4 text-sm text-[var(--ink-muted)]">
-            En un solo paso: su cuenta (con una contraseña temporal que cambia al entrar), su código para la web y el evento que va a vender con su comisión.
-            Después puedes sumarle más eventos en su ficha.
+            En un solo paso: su cuenta (con una contraseña temporal que cambia al entrar) y el evento que va a vender con su comisión. Su enlace para la
+            web se arma solo con su nombre. Después puedes sumarle más eventos en su ficha.
           </p>
           {events.length === 0 ? (
             <p className="text-sm text-[var(--ink-muted)]">Primero crea un evento con venta y funciones por delante.</p>
@@ -144,10 +144,6 @@ export default async function PromotersPage() {
                 <label className="label">
                   Contraseña temporal
                   <input name="password" type="text" required minLength={MIN_PASSWORD_LENGTH} autoComplete="off" className="field" />
-                </label>
-                <label className="label">
-                  Código (opcional)
-                  <input name="code" placeholder="se arma con su nombre" className="field w-44 font-mono uppercase" />
                 </label>
               </div>
               <PromoterAssignmentFields events={events} />

@@ -6,7 +6,7 @@
  *  - RANGE: de N a M sillas de una misma mesa por compra.
  * Puro (sin DOM): lo usan el editor del panel, los mapas y la validación de la compra.
  */
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "./seat-geometry";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, seatDotRadius } from "./seat-geometry";
 
 export const TABLE_SALE_MODES = ["WHOLE", "SEAT", "RANGE"] as const;
 export type TableSaleMode = (typeof TABLE_SALE_MODES)[number];
@@ -41,7 +41,27 @@ export const MIN_CHAIRS = 2;
 /** Una compra lleva hasta 10 entradas: una mesa completa no puede tener más sillas. */
 export const MAX_CHAIRS = 10;
 export const MAX_SEATED_TABLES = 120;
+/** Tamaño de la mesa (radio de la redonda o medio ancho de la rectangular) que se puede elegir en el editor. */
+export const MIN_TABLE_SIZE = 8;
+export const MAX_TABLE_SIZE = 60;
+/** Tamaño con el que arranca el editor (el que tenían siempre las mesas). */
+export const DEFAULT_TABLE_SIZE: Record<TableShape, number> = { round: 22, rect: 30 };
 const CHAIR_GAP = 13;
+
+/** Del borde de la mesa a sus sillas: lo de siempre, y menos en una mesa chica para que las sillas no queden sueltas. */
+export function chairGap(size: number) {
+  return size >= 14 ? CHAIR_GAP : Math.max(7, size - 1);
+}
+
+/** Radio con que se dibuja cada silla: 6, o menos si las sillas de la mesa quedan muy juntas (mesa chica). */
+export function chairRadius(shape: TableShape, chairs: number, size: number) {
+  return seatDotRadius(chairPositions(shape, chairs, { x: 0, y: 0 }, size), 6);
+}
+
+/** Tamaño de letra del número de la mesa (más chico en mesas chicas, para que entre). */
+export function tableNumberFontSize(size: number) {
+  return Math.min(11, Math.max(7, size * 0.75));
+}
 
 export function isSeatedTablesLayout(layout: unknown): layout is SeatedTablesLayout {
   return typeof layout === "object" && layout !== null && (layout as { type?: unknown }).type === "seated";
@@ -51,8 +71,9 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /** Dónde va cada silla alrededor de su mesa (en orden: la silla 1 arriba y después en el sentido del reloj). */
 export function chairPositions(shape: TableShape, chairs: number, center: { x: number; y: number }, size: number): { x: number; y: number }[] {
+  const gap = chairGap(size);
   if (shape === "round") {
-    const distance = size + CHAIR_GAP;
+    const distance = size + gap;
     return Array.from({ length: chairs }, (_, i) => {
       const angle = -Math.PI / 2 + (i * 2 * Math.PI) / chairs;
       return { x: round1(center.x + distance * Math.cos(angle)), y: round1(center.y + distance * Math.sin(angle)) };
@@ -68,7 +89,7 @@ export function chairPositions(shape: TableShape, chairs: number, center: { x: n
       const x = center.x - size + 2 * size * (reverse ? 1 - t : t);
       return { x: round1(x), y: round1(y) };
     });
-  return [...row(top, center.y - height / 2 - CHAIR_GAP, false), ...row(bottom, center.y + height / 2 + CHAIR_GAP, true)];
+  return [...row(top, center.y - height / 2 - gap, false), ...row(bottom, center.y + height / 2 + gap, true)];
 }
 
 /** Alto de una mesa rectangular (su ancho es 2 × size). */
@@ -110,7 +131,9 @@ export function parseSeatedTablesLayout(input: unknown): { ok: true; layout: Sea
   if (!shape) return { ok: false, error: "Elige la forma de las mesas." };
   if (!mode) return { ok: false, error: "Elige cómo se venden las mesas." };
   if (!Number.isInteger(chairs) || chairs < MIN_CHAIRS || chairs > MAX_CHAIRS) return { ok: false, error: `Cada mesa lleva de ${MIN_CHAIRS} a ${MAX_CHAIRS} sillas.` };
-  if (!Number.isFinite(size) || size < 14 || size > 60) return { ok: false, error: "Tamaño de mesa inválido." };
+  if (!Number.isFinite(size) || size < MIN_TABLE_SIZE || size > MAX_TABLE_SIZE) {
+    return { ok: false, error: `El tamaño de la mesa va de ${MIN_TABLE_SIZE} a ${MAX_TABLE_SIZE}.` };
+  }
   if (prefix.length < 1) return { ok: false, error: "Ponle un nombre a las mesas (ej. Mesa)." };
   let min = Number(r.min ?? 1);
   let max = Number(r.max ?? chairs);
@@ -134,7 +157,7 @@ export function parseSeatedTablesLayout(input: unknown): { ok: true; layout: Sea
   const layout: SeatedTablesLayout = { type: "seated", prefix, shape, chairs, mode, min, max, size: round1(size), tables };
   const outside = seatedTableSeats(layout).some((s) => s.x < 4 || s.y < 4 || s.x > CANVAS_WIDTH - 4 || s.y > CANVAS_HEIGHT - 4);
   if (outside) return { ok: false, error: "Algunas mesas quedan fuera del mapa: corre el inicio o achica la separación." };
-  const reach = shape === "round" ? 2 * (size + CHAIR_GAP + 6) : 0;
+  const reach = shape === "round" ? 2 * (size + chairGap(size) + 6) : 0;
   for (let i = 0; i < tables.length; i++) {
     for (let j = i + 1; j < tables.length; j++) {
       const a = tables[i]!;
@@ -142,7 +165,7 @@ export function parseSeatedTablesLayout(input: unknown): { ok: true; layout: Sea
       const overlap =
         shape === "round"
           ? Math.hypot(a.x - b.x, a.y - b.y) < reach
-          : Math.abs(a.x - b.x) < 2 * size + 8 && Math.abs(a.y - b.y) < tableHeight(size) + 2 * CHAIR_GAP + 14;
+          : Math.abs(a.x - b.x) < 2 * size + 8 && Math.abs(a.y - b.y) < tableHeight(size) + 2 * chairGap(size) + 14;
       if (overlap) return { ok: false, error: `Las mesas ${a.number} y ${b.number} quedan encimadas: sepáralas más.` };
     }
   }

@@ -1,4 +1,4 @@
-import { CANVAS_HEIGHT, CANVAS_WIDTH, reservadoSize, zoneLabelPoint, zonePath, type MapItem, type ZoneShape } from "@ticketera/core";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, reservadoSize, seatDotRadius, zoneLabelPoint, zonePath, type MapItem, type ZoneShape } from "@ticketera/core";
 import { MapDecor } from "./map-decor";
 
 export type PreviewSection = {
@@ -73,7 +73,7 @@ export function SeatMapPreview({ sections, items }: { sections: PreviewSection[]
                   )}
                 </g>
               ))
-            : s.seats.map((seat, i) => <circle key={i} cx={seat.x} cy={seat.y} r={6} fill={s.color} />)}
+            : ((r) => s.seats.map((seat, i) => <circle key={i} cx={seat.x} cy={seat.y} r={r} fill={s.color} />))(seatDotRadius(s.seats, 6))}
         </g>
       ))}
     </svg>

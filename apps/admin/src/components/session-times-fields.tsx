@@ -13,9 +13,10 @@ import {
   type SalesInput,
   type SessionTimesInput,
 } from "@ticketera/core";
+import type { VenueChoice } from "@/lib/venue-choices";
+import { VenuePicker } from "./venue-picker";
 
 export type SessionFormDefaults = SessionTimesInput & SalesInput;
-type Venue = { id: string; name: string; city: string | null; timezone: string };
 type Values = SessionFormDefaults & { venueId?: string };
 
 const FIELDS = ["venueId", "date", "start", "doors", "arrival", "end", "lastEntry", "open", "openAt", "close", "closeHours", "closeAt"] as const;
@@ -47,7 +48,7 @@ export function SessionTimesFields({
 }: {
   category: string;
   /** Al crear: el recinto se elige aquí (y con él la zona horaria). */
-  venues?: Venue[];
+  venues?: VenueChoice[];
   /** Asistente: la lista empieza con "un lugar nuevo" (sus datos van en otros campos del formulario). */
   newVenueOption?: boolean;
   /** Al editar: la zona horaria del recinto de la función. */
@@ -98,18 +99,12 @@ export function SessionTimesFields({
         </legend>
         <div className="flex flex-wrap items-start gap-3">
           {venues && (
-            <label className="label">
-              Recinto
-              <select name="venueId" required={!newVenueOption} defaultValue={values.venueId} className="field">
-                {newVenueOption && <option value="">Un lugar nuevo (lo escribo abajo)</option>}
-                {venues.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
-                    {v.city ? ` (${v.city})` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <VenuePicker
+              venues={venues}
+              value={values.venueId ?? ""}
+              newVenueOption={newVenueOption}
+              onChange={(venueId) => setValues((v) => ({ ...v, venueId }))}
+            />
           )}
           <label className="label">
             Día

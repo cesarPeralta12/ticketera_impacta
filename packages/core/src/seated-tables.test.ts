@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chairPositions, checkTableSelection, parseSeatedTablesLayout, seatedTableSeats, seatedTablesGrid, type SeatedTablesLayout } from "./seated-tables";
+import { chairPositions, chairRadius, checkTableSelection, parseSeatedTablesLayout, seatedTableSeats, seatedTablesGrid, type SeatedTablesLayout } from "./seated-tables";
 
 const base = { type: "seated", prefix: "Mesa", shape: "round", chairs: 6, mode: "WHOLE", size: 22 } as const;
 
@@ -38,5 +38,19 @@ describe("mesas con sillas", () => {
     expect(checkTableSelection(layout("SEAT"), ["1"])).toBeNull();
     expect(checkTableSelection(layout("RANGE", 2, 4), ["1", "1", "2", "2", "2"])).toBeNull();
     expect(checkTableSelection(layout("RANGE", 2, 4), ["1"])).toContain("de 2 a 4");
+  });
+
+  it("una mesa chica lleva las sillas más cerca y más chicas, y entra donde la grande no", () => {
+    // Las de siempre (tamaño 14 o más) no cambian: las sillas a 13 del borde.
+    expect(chairPositions("round", 4, { x: 100, y: 100 }, 22)[0]).toEqual({ x: 100, y: 65 });
+    expect(chairRadius("round", 6, 22)).toBe(6);
+    const small = chairPositions("round", 8, { x: 100, y: 100 }, 8);
+    expect(small[0]).toEqual({ x: 100, y: 85 }); // 8 de mesa + 7 hasta la silla
+    expect(chairRadius("round", 8, 8)).toBeLessThan(6);
+    // Dos lounges del plano a 68 de distancia: con la mesa de siempre se encima, con una más chica entra.
+    const pair = [{ number: 1, x: 70, y: 122 }, { number: 2, x: 70, y: 190 }];
+    expect(parseSeatedTablesLayout({ ...base, chairs: 8, tables: pair }).ok).toBe(false);
+    expect(parseSeatedTablesLayout({ ...base, chairs: 8, size: 14, tables: pair }).ok).toBe(true);
+    expect(parseSeatedTablesLayout({ ...base, size: 5, tables: pair })).toMatchObject({ ok: false, error: expect.stringContaining("de 8 a 60") });
   });
 });

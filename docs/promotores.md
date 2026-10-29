@@ -7,7 +7,7 @@ efectivo: el cliente paga desde la app de su banco y, apenas se aprueba el pago,
 
 1. **Alta en un solo paso**: Panel → *Promotores* → «+ Nuevo promotor» (también desde *Promociones*). Se cargan:
    - nombre, correo, teléfono y contraseña temporal;
-   - su código (o se arma uno con su nombre, ej. `RP-JUAN-K7Q3M`), sin descuento;
+   - su código, que se arma solo con su nombre (ej. `RP-JUAN-K7Q3M`), sin descuento;
    - el evento con sus funciones (todas o algunas), la comisión, el cupo y la vigencia.
 
    Para un organizador, entrar primero en él (Organizadores → Entrar). También se puede crear la cuenta en *Usuarios*

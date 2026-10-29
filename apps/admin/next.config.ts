@@ -20,7 +20,8 @@ const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https:",
+  // Más el sitio (fotos de eventos subidas, que sirve la web): en desarrollo es http://localhost, no https.
+  `img-src 'self' data: blob: https:${webOrigin?.startsWith("http:") ? ` ${webOrigin}` : ""}`,
   "font-src 'self' data:",
   `connect-src 'self'${isProd ? "" : " ws: wss:"}`,
   ...(webOrigin ? [`frame-src ${webOrigin}`] : []),

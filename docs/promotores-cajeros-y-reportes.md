@@ -7,7 +7,7 @@ punto, cómo se usa en el panel y qué queda pendiente. Lo del promotor en detal
 
 - **Rol propio "Promotor"**: solo ve «Vender y mi comisión». No entra a barra, arqueo ni otros reportes.
 - **Alta en un solo paso**: Panel → *Promotores* → «+ Nuevo promotor» (también desde *Promociones*). Se cargan su
-  nombre, correo, teléfono, contraseña temporal, código (o se arma uno con su nombre), y el evento con sus funciones,
+  nombre, correo, teléfono, contraseña temporal (el código se arma solo con su nombre), y el evento con sus funciones,
   comisión, cupo y vigencia. Todo se valida antes: si algo está mal, no queda una cuenta a medias.
 - **Atribución automática**: cada venta guarda quién la vendió y con qué código. También cuentan las ventas web hechas
   con su enlace o código.
