@@ -93,6 +93,8 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
       items: [
         ...operate,
         ...(can(staff, ROLES.client) ? [{ href: "/cliente", label: "Mis eventos", icon: "calendar" as const }] : []),
+        // Barra: solo lee los QR de consumo de sus noches.
+        ...(staff.role === "BAR" ? [{ href: "/barra", label: "Barra (QR de consumo)", icon: "glass" as const }] : []),
         // Promotor: vende con cobro por QR sus eventos y ve su comisión, nada más.
         ...(can(staff, ROLES.promoter) ? [{ href: "/promotor", label: "Vender y mi comisión", icon: "ticket" as const }] : []),
       ],
@@ -361,7 +363,7 @@ function tourSteps(staff: Staff): TourStep[] {
 }
 
 export default async function PanelLayout({ children }: { children: ReactNode }) {
-  const staff = await requireStaff([...ROLES.manage, ...ROLES.pos, ...ROLES.client, ...ROLES.promoter]);
+  const staff = await requireStaff([...ROLES.manage, ...ROLES.pos, ...ROLES.client, ...ROLES.promoter, ...ROLES.bar]);
   if (staff.mustChangePassword) redirect("/cuenta/contrasena");
   const groups = await navigation(staff);
   // Debajo del logo: de quién es el panel (en la plataforma no hace falta, el menú ya dice "Plataforma").

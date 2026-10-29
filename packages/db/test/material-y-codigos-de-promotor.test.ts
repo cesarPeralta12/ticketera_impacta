@@ -14,9 +14,9 @@ import {
   promoAssetsForPromoter,
   purgeExpiredPromoAssets,
 } from "../src/operations/promo-assets";
-import { assignPromoter } from "../src/operations/promoters";
+import { SIMULATED_PROVIDER, assignPromoter, sellAsPromoter } from "../src/operations/promoters";
 import { createPromoCode, listPromoCodes, listPromoterAccounts, summarizeByPromoter, updatePromoCode } from "../src/operations/promos";
-import { createGeneralAdmissionEvent } from "./fixtures";
+import { buyer, createGeneralAdmissionEvent } from "./fixtures";
 
 afterAll(() => prisma.$disconnect());
 
@@ -161,5 +161,23 @@ describe("códigos ligados a una cuenta de promotor", () => {
     // Quitar el promotor de un código ligado lo deja sin promotor.
     const cleared = await updatePromoCode(orgId, legacy.id, { promoterId: null }, admin.id);
     expect(cleared).toMatchObject({ promoterId: null, promoterName: null });
+  });
+});
+
+describe("oferta del promotor en su venta", () => {
+  it("vende con su propia oferta (descuento) y no puede usar el código de otro promotor", async () => {
+    const { session, orgId, admin, assigned, other } = await setup();
+    const type = await prisma.ticketType.findFirstOrThrow({ where: { sessionId: session.id } });
+    const mine = await createPromoCode(orgId, { code: `MIO-${unique()}`, discountType: "PERCENT", discountValue: 10, promoterId: assigned.id }, admin.id);
+    const theirs = await createPromoCode(orgId, { code: `AJENO-${unique()}`, discountType: "PERCENT", discountValue: 50, promoterId: other.id }, admin.id);
+    const input = (n: number) => ({ sessionId: session.id, items: [{ ticketTypeId: type.id, quantity: 2 }], buyer: buyer(n) });
+
+    const { order } = await sellAsPromoter(input(1), { promoterId: assigned.id, provider: SIMULATED_PROVIDER, promoCode: mine.code });
+    expect(order).toMatchObject({ channel: "PROMOTER", promoterId: assigned.id, discountAmount: 2_000, totalAmount: 18_000 });
+
+    await expect(sellAsPromoter(input(2), { promoterId: assigned.id, provider: SIMULATED_PROVIDER, promoCode: theirs.code })).rejects.toThrow(/no es tuyo/);
+    // Sin código sigue vendiendo al precio normal.
+    const plain = await sellAsPromoter(input(3), { promoterId: assigned.id, provider: SIMULATED_PROVIDER });
+    expect(plain.order).toMatchObject({ discountAmount: 0, totalAmount: 20_000 });
   });
 });

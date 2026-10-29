@@ -49,7 +49,7 @@ const eventInclude = {
   ticketType: { select: { name: true, accessMethods: true, qrMode: true, sectionId: true, kind: true, entryUntil: true, maxEntries: true, zones: { select: { id: true, name: true } } } },
   seat: { include: { section: { select: { name: true } } } },
   // Boliche: la mesa de la entrada y su saldo de consumo.
-  credit: { select: { tableNumber: true, amount: true, spent: true, currency: true, seat: { select: { label: true } } } },
+  credit: { select: { code: true, redeemedAt: true, tableNumber: true, amount: true, spent: true, currency: true, seat: { select: { label: true } } } },
 } as const;
 
 /** Datos del evento y de la entrada que se muestran en las pantallas y correos de una transferencia. */

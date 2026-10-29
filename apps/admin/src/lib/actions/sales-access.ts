@@ -16,6 +16,11 @@ async function cashier(organizationId: string, userId: string) {
   return prisma.membership.findFirst({ where: { organizationId, userId, role: "CASHIER" } });
 }
 
+/** Un cajero o una cuenta de barra: a las dos se les asignan noches/funciones. */
+async function assignable(organizationId: string, userId: string) {
+  return prisma.membership.findFirst({ where: { organizationId, userId, role: { in: ["CASHIER", "BAR"] } } });
+}
+
 /** Qué vende un cajero (todo, o solo lo asignado) y con qué medios puede cobrar. */
 export async function updateSalesSettingsAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireEditor(ROLES.users);
@@ -34,7 +39,7 @@ export async function updateSalesSettingsAction(_prev: FormState, formData: Form
 export async function assignCashierAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireEditor(ROLES.users);
   const userId = String(formData.get("userId") ?? "");
-  if (!(await cashier(staff.organization.id, userId))) return { error: "Cajero no encontrado." };
+  if (!(await assignable(staff.organization.id, userId))) return { error: "Cuenta no encontrada." };
   const pick = readSessionPick(formData);
   if (!pick.ok) return { fieldErrors: { [pick.field]: "message" in pick && pick.message ? pick.message : "Fecha inválida." } };
   try {

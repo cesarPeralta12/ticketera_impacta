@@ -1,7 +1,7 @@
 /**
  * Qué puede vender cada cuenta de venta. Un cajero vende todo lo de su organización (como siempre) o, si está en
  * "solo lo asignado", únicamente los eventos y funciones que tiene asignados (con vigencia opcional). Un promotor
- * siempre vende solo lo asignado. Lo controla el servidor: la boletería, la venta del promotor y la barra lo
+ * y la barra siempre trabajan solo con lo asignado. Lo controla el servidor: la boletería, la venta del promotor y la barra lo
  * verifican, no solo la pantalla.
  */
 import { prisma } from "../client";
@@ -36,7 +36,7 @@ export async function salesAccess(db: Db, userId: string, organizationId: string
   const membership = memberships.find((m) => m.organizationId === organizationId);
   if (!membership) return NONE;
   if (membership.role === "OWNER" || membership.role === "ADMIN") return { all: true, posMethods: [] };
-  const restricted = membership.role === "PROMOTER" || (membership.role === "CASHIER" && membership.salesScope === "ASSIGNED");
+  const restricted = membership.role === "PROMOTER" || membership.role === "BAR" || (membership.role === "CASHIER" && membership.salesScope === "ASSIGNED");
   if (!restricted) return { all: true, posMethods: membership.posMethods };
   const assignments = await db.salesAssignment.findMany({
     where: { userId, event: { organizationId }, ...assignmentLive(now) },
@@ -119,7 +119,7 @@ export async function setSalesAssignment(
  */
 export async function addSessionSeller(input: { organizationId: string; userId: string; sessionId: string }) {
   const session = await prisma.eventSession.findFirst({ where: { id: input.sessionId, event: { organizationId: input.organizationId } }, select: { id: true, eventId: true } });
-  const membership = await prisma.membership.findFirst({ where: { userId: input.userId, organizationId: input.organizationId, role: { in: ["CASHIER", "PROMOTER"] } } });
+  const membership = await prisma.membership.findFirst({ where: { userId: input.userId, organizationId: input.organizationId, role: { in: ["CASHIER", "PROMOTER", "BAR"] } } });
   if (!session || !membership) throw new DomainError("NOT_FOUND", "Función o cuenta no encontrada.");
   const existing = await prisma.salesAssignment.findFirst({
     where: { userId: input.userId, eventId: session.eventId, OR: [{ sessionId: null }, { sessionId: session.id }] },
@@ -142,7 +142,7 @@ export async function toggleSalesAssignment(organizationId: string, assignmentId
 /** Cambia el alcance de un cajero (todo o solo lo asignado) y los métodos de cobro que puede usar. */
 export async function updateSalesSettings(input: { organizationId: string; userId: string; salesScope?: SalesScope; posMethods?: string[] }) {
   const membership = await prisma.membership.findFirst({ where: { userId: input.userId, organizationId: input.organizationId } });
-  if (!membership || (membership.role !== "CASHIER" && membership.role !== "PROMOTER")) throw new DomainError("NOT_FOUND", "Cuenta de venta no encontrada.");
+  if (!membership || (membership.role !== "CASHIER" && membership.role !== "PROMOTER" && membership.role !== "BAR")) throw new DomainError("NOT_FOUND", "Cuenta de venta no encontrada.");
   const methods = input.posMethods?.filter((m) => (POS_METHODS as readonly string[]).includes(m));
   return prisma.membership.update({
     where: { id: membership.id },

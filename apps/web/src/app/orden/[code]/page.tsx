@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import QRCode from "qrcode";
-import { code128Svg, consumptionLeft, entranceText, formatCode, formatDateTime, formatMoney, formatClock, gateInfo, reentryText, signTicketPayload, tableLabel, whenWhere, zonesText, type GateInfo } from "@ticketera/core";
+import { code128Svg, entranceText, formatCode, formatDateTime, formatMoney, formatClock, gateInfo, reentryText, signTicketPayload, signVoucherPayload, tableLabel, whenWhere, zonesText, type GateInfo } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, expireStaleOrders, getOrderByCode, requireEnv } from "@ticketera/db";
 import { payOrderAction } from "./actions";
 import { auth } from "@/lib/auth";
@@ -195,7 +195,7 @@ type TicketForList = {
   seat: { label: string; section: { name: string } } | null;
   /** Boliche: mesa y saldo de consumo. */
   creditId: string | null;
-  credit: { tableNumber: number | null; amount: number; spent: number; currency: string; seat: { label: string } | null } | null;
+  credit: { code: string; tableNumber: number | null; amount: number; currency: string; redeemedAt: Date | null; seat: { label: string } | null } | null;
   expiredAt: Date | null;
 };
 
@@ -241,7 +241,21 @@ async function TicketList({
     })),
   );
 
+  // QR de consumo (uno por mesa o entrada con trago): se muestra en la barra, se lee una sola vez.
+  const vouchers = await Promise.all(
+    [...new Map(rendered.filter((t) => t.credit && t.credit.amount > 0 && !t.transferred).map((t) => [t.creditId, t])).values()].map(async (t) => ({
+      id: t.creditId!,
+      code: t.credit!.code,
+      amount: t.credit!.amount,
+      currency: t.credit!.currency,
+      redeemedAt: t.credit!.redeemedAt,
+      label: tableLabel(t.ticketType.name, t.credit!.tableNumber, t.credit!.seat?.label) ?? t.ticketType.name,
+      qr: await QRCode.toString(await signVoucherPayload(t.credit!.code, secret), { type: "svg", margin: 1, errorCorrectionLevel: "M" }),
+    })),
+  );
+
   return (
+    <>
     <ul className="grid gap-4 sm:grid-cols-2">
       {rendered.map((ticket, i) => (
         // Boleto claro: el QR se lee mejor con fondo blanco, también en pantallas con poco brillo.
@@ -267,8 +281,7 @@ async function TicketList({
           )}
           {ticket.credit && ticket.credit.amount > 0 && (!ticket.person || ticket.person === 1) && (
             <p className="mx-auto mt-2 w-fit rounded-full bg-[#192438] px-3 py-1 text-xs font-semibold text-[#F5B700]">
-              Consumo {ticket.ticketType.kind === "TABLE" ? "de la mesa" : "incluido"}: {formatMoney(consumptionLeft(ticket.credit), ticket.credit.currency)} de{" "}
-              {formatMoney(ticket.credit.amount, ticket.credit.currency)}
+              Consumo {ticket.ticketType.kind === "TABLE" ? "de la mesa" : "incluido"}: {formatMoney(ticket.credit.amount, ticket.credit.currency)} · tu QR de consumo está abajo
             </p>
           )}
           {!ticket.transferred && entranceText(gates, ticket.ticketType.sectionId, ticket.ticketType.zones.map((z) => z.id)) && (
@@ -322,5 +335,28 @@ async function TicketList({
         </li>
       ))}
     </ul>
+    {vouchers.length > 0 && (
+      <section className="mt-6 space-y-3">
+        <h2 className="font-display text-xl">QR de consumo</h2>
+        <p className="text-sm text-[var(--ink-muted)]">
+          Preséntalo en la barra: te dicen cuánto consumo tienes. Se lee <strong>una sola vez</strong>, así que no lo compartas ni lo captures.
+        </p>
+        <ul className="grid gap-4 sm:grid-cols-2">
+          {vouchers.map((v) => (
+            <li key={v.id} className="rounded-2xl bg-[#F5F6F8] p-5 text-center text-[#192438]">
+              <p className="text-xs uppercase tracking-wide text-[#60718B]">QR de consumo</p>
+              <p className="font-display text-xl">{v.label}</p>
+              <p className="mt-1 text-lg font-bold text-[#16846C]">{formatMoney(v.amount, v.currency)}</p>
+              <div className={`mx-auto my-3 w-48 ${v.redeemedAt ? "opacity-30" : ""}`} dangerouslySetInnerHTML={{ __html: v.qr }} />
+              <p className="font-mono text-sm tracking-wider">{formatCode(v.code)}</p>
+              <p className={`mt-1 text-xs font-semibold ${v.redeemedAt ? "text-[#C62842]" : "text-[#60718B]"}`}>
+                {v.redeemedAt ? `Ya fue leído a las ${formatClock(v.redeemedAt, timeZone)}` : "Sin usar"}
+              </p>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )}
+    </>
   );
 }

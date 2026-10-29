@@ -1,9 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { MAX_REPEAT_WEEKS, peopleIn, tableLabel } from "@ticketera/core";
-import { DomainError, getConsumption, prisma, redeemConsumption, repeatWeeklyNights } from "@ticketera/db";
-import { intField, moneyField, type FormState } from "@/lib/forms";
+import { MAX_REPEAT_WEEKS } from "@ticketera/core";
+import { DomainError, getVoucher, prisma, redeemVoucher, repeatWeeklyNights, type Voucher } from "@ticketera/db";
+import { intField, type FormState } from "@/lib/forms";
 import { staffCanSell } from "@/lib/sales-access";
 import { READ_ONLY_MESSAGE, ROLES, requireEditor, requireStaff, type Staff } from "@/lib/session";
 
@@ -21,67 +21,58 @@ export type ConsumptionView = {
   buyer: string;
   orderCode: string;
   amount: number;
-  spent: number;
-  left: number;
   currency: string;
-  tickets: { code: string; status: string; holderName: string | null }[];
-  redemptions: { id: string; amount: number; at: string; staff: string; note: string | null }[];
+  /** La compra se anuló: el vale no vale. */
+  cancelled: boolean;
+  /** Ya se leyó: cuándo (ISO), quién y la nota. */
+  redeemedAt: string | null;
+  redeemedBy: string | null;
+  note: string | null;
 };
 
-export type ConsumptionResult = { ok: true; view: ConsumptionView; charged?: number } | { ok: false; error: string };
+export type ConsumptionResult =
+  | { ok: true; view: ConsumptionView; /** Se acaba de marcar como leído con esta lectura. */ justRead: boolean }
+  | { ok: false; error: string };
 
-async function view(sessionId: string, raw: string): Promise<ConsumptionResult> {
-  const found = await getConsumption(raw, sessionId);
-  if (!found.ok) return { ok: false, error: found.reason };
-  const { credit } = found;
+function toView(v: Voucher): ConsumptionView {
   return {
-    ok: true,
-    view: {
-      label: tableLabel(credit.ticketType.name, credit.tableNumber, credit.seat?.label) ?? credit.ticketType.name,
-      kind: credit.ticketType.kind,
-      people: peopleIn(credit.ticketType),
-      buyer: credit.order.buyerName,
-      orderCode: credit.order.code,
-      amount: credit.amount,
-      spent: credit.spent,
-      left: credit.left,
-      currency: credit.currency,
-      tickets: credit.tickets,
-      redemptions: credit.redemptions.map((r) => ({
-        id: r.id,
-        amount: r.amount,
-        at: r.createdAt.toISOString(),
-        staff: r.staff.name,
-        note: r.note,
-      })),
-    },
+    label: v.label,
+    kind: v.kind === "TABLE" ? "TABLE" : "ENTRY",
+    people: v.people,
+    buyer: v.buyer,
+    orderCode: v.orderCode,
+    amount: v.amount,
+    currency: v.currency,
+    cancelled: v.cancelled,
+    redeemedAt: v.redeemedAt?.toISOString() ?? null,
+    redeemedBy: v.redeemedBy,
+    note: v.note,
   };
 }
 
-/** Barra: el saldo de la mesa o entrada del QR leído (o del código escrito). */
+/** Barra: mira el QR de consumo leído (o el código escrito) SIN marcarlo: muestra mesa, a nombre de quién y el monto. */
 export async function lookupConsumptionAction(sessionId: string, raw: string): Promise<ConsumptionResult> {
-  const staff = await requireStaff(ROLES.pos);
+  const staff = await requireStaff(ROLES.bar);
   if (!(await ownNight(staff, sessionId))) return { ok: false, error: "Noche no encontrada." };
-  return view(sessionId, raw);
+  const found = await getVoucher(raw, sessionId);
+  return found.ok ? { ok: true, view: toView(found.voucher), justRead: false } : { ok: false, error: found.reason };
 }
 
-/** Barra: cobra un consumo contra el saldo y devuelve el saldo nuevo. */
-export async function redeemConsumptionAction(sessionId: string, raw: string, amountText: string, note: string): Promise<ConsumptionResult> {
-  const staff = await requireStaff(ROLES.pos);
+/** Barra: marca el QR de consumo como leído (un solo uso). Si ya estaba leído, no cambia nada y lo dice. */
+export async function readVoucherAction(sessionId: string, raw: string, note: string): Promise<ConsumptionResult> {
+  const staff = await requireStaff(ROLES.bar);
   if (staff.readOnly) return { ok: false, error: READ_ONLY_MESSAGE };
-  const night = await ownNight(staff, sessionId);
-  if (!night) return { ok: false, error: "Noche no encontrada." };
-  const amount = moneyField.safeParse(amountText.trim());
-  if (!amount.success || amount.data <= 0) return { ok: false, error: "Escribe el monto a cobrar (ej. 120 o 120,50)." };
+  if (!(await ownNight(staff, sessionId))) return { ok: false, error: "Noche no encontrada." };
   try {
-    await redeemConsumption({ raw, sessionId, amount: amount.data, staffId: staff.id, note });
+    const out = await redeemVoucher({ raw, sessionId, staffId: staff.id, note });
+    if (out.status === "REJECTED") return { ok: false, error: out.reason };
+    if (out.status === "CANCELLED") return { ok: false, error: "Esa compra está anulada: su consumo no se puede usar." };
+    revalidatePath(`/barra/${sessionId}`);
+    return { ok: true, view: toView(out.voucher), justRead: out.status === "REDEEMED" };
   } catch (error) {
     if (error instanceof DomainError) return { ok: false, error: error.message };
     throw error;
   }
-  revalidatePath(`/barra/${sessionId}`);
-  const result = await view(sessionId, raw);
-  return result.ok ? { ...result, charged: amount.data } : result;
 }
 
 /** "Repetir noches": copia esta noche a los días elegidos de las próximas semanas. */

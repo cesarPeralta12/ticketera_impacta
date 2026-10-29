@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractTicketCode, parseTicketPayload, signPreviewToken, signTicketPayload, verifyPreviewToken } from "./qr";
+import { extractTicketCode, extractVoucherCode, parseTicketPayload, parseVoucherPayload, signPreviewToken, signTicketPayload, signVoucherPayload, verifyPreviewToken } from "./qr";
 
 const SECRET = "secreto-de-prueba";
 
@@ -64,5 +64,30 @@ describe("enlace de vista previa", () => {
     expect(await verifyPreviewToken(token, "otro-secreto")).toBeNull();
     // La firma de un QR no sirve como vista previa.
     expect(await verifyPreviewToken("TK1.ABCD.xyz", secret)).toBeNull();
+  });
+});
+
+describe("QR de consumo", () => {
+  it("firma y valida el vale, y no se confunde con una entrada", async () => {
+    const payload = await signVoucherPayload("K7Q3MXPA2B", SECRET);
+    expect(payload).toMatch(/^CV1\.K7Q3MXPA2B\.[A-Za-z0-9_-]{22}$/);
+    expect(await parseVoucherPayload(payload, SECRET)).toEqual({ ok: true, code: "K7Q3MXPA2B", source: "qr" });
+    // El QR de una entrada no vale como vale de consumo, ni al revés.
+    expect(await parseVoucherPayload(await signTicketPayload("K7Q3MXPA2B", SECRET), SECRET)).toMatchObject({ ok: false });
+    expect(await parseTicketPayload(payload, SECRET)).toMatchObject({ ok: false });
+  });
+
+  it("rechaza una firma alterada o de otro secreto; acepta el código escrito", async () => {
+    const payload = await signVoucherPayload("K7Q3MXPA2B", SECRET);
+    expect(await parseVoucherPayload(payload.slice(0, -1) + (payload.endsWith("A") ? "B" : "A"), SECRET)).toEqual({ ok: false, reason: "SIGNATURE" });
+    expect(await parseVoucherPayload(payload, "otro")).toEqual({ ok: false, reason: "SIGNATURE" });
+    expect(await parseVoucherPayload("k7q3m-xpa2b", SECRET)).toEqual({ ok: true, code: "K7Q3MXPA2B", source: "manual" });
+  });
+
+  it("la app de barra saca el código sin verificar la firma", async () => {
+    expect(extractVoucherCode(await signVoucherPayload("K7Q3MXPA2B", SECRET))).toBe("K7Q3MXPA2B");
+    expect(extractVoucherCode("K7Q3M-XPA2B")).toBe("K7Q3MXPA2B");
+    expect(extractVoucherCode("TK1.K7Q3MXPA2B.firma")).toBeNull();
+    expect(extractVoucherCode("hola")).toBeNull();
   });
 });

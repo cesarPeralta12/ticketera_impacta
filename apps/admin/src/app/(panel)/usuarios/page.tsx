@@ -85,6 +85,11 @@ export default async function UsersPage() {
                       Qué puede vender
                     </Link>
                   )}
+                  {m.role === "BAR" && (
+                    <Link href={`/usuarios/${m.userId}`} className="btn text-xs">
+                      Noches que atiende
+                    </Link>
+                  )}
                   {m.role === "PROMOTER" && (
                     <Link href={`/promotores/${m.userId}`} className="btn text-xs">
                       Eventos y comisión
@@ -122,6 +127,7 @@ export default async function UsersPage() {
               <option value="OPERATOR">{ROLE_LABEL.OPERATOR}</option>
               <option value="CASHIER">{organizer ? "Cajero (boletería y barra)" : ROLE_LABEL.CASHIER}</option>
               <option value="PROMOTER">{ROLE_LABEL.PROMOTER}</option>
+              <option value="BAR">{ROLE_LABEL.BAR}</option>
               {!organizer && <option value="CLIENT">{ROLE_LABEL.CLIENT}</option>}
               <option value="ADMIN">{organizer ? "Organizador (solo lectura)" : ROLE_LABEL.ADMIN}</option>
               {!organizer && staff.role === "OWNER" && <option value="OWNER">{ROLE_LABEL.OWNER}</option>}

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { DEFAULT_TIMEZONE, commissionLabel, formatCode, formatDateTime, formatMoney } from "@ticketera/core";
-import { findPromoter, listPromoCodes, prisma, promoterEvents, promoterSales, requireEnv } from "@ticketera/db";
+import { findPromoter, listPromoCodes, prisma, promoterEvents, promoterSales } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { CopyButton } from "@/components/copy-button";
 import { PromoterAssignmentFields } from "@/components/promoter-assignment-fields";
@@ -37,7 +37,6 @@ export default async function PromoterPage({ params }: { params: Promise<{ userI
   const money = (c: number) => formatMoney(c, staff.organization.currency);
   const assigned = new Set(assignments.map((a) => a.eventId));
   const available = events.filter((e) => !assigned.has(e.id));
-  const web = requireEnv("WEB_URL").replace(/\/$/, "");
   const editable = !staff.readOnly;
 
   return (
@@ -86,7 +85,6 @@ export default async function PromoterPage({ params }: { params: Promise<{ userI
           <ul className="mb-5 divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
             {assignments.map(({ event, scope, ...rule }) => {
               const sold = sales.byEvent.find((e) => e.eventId === event.id);
-              const link = code ? `${web}/eventos/${event.slug}?promo=${code.code}` : null;
               const functions = scope.whole ? "todas las funciones" : `${scope.sessionIds.length} función(es)`;
               const window = [scope.startsAt && `desde ${formatDateTime(scope.startsAt, DEFAULT_TIMEZONE)}`, scope.endsAt && `hasta ${formatDateTime(scope.endsAt, DEFAULT_TIMEZONE)}`]
                 .filter(Boolean)
@@ -107,7 +105,7 @@ export default async function PromoterPage({ params }: { params: Promise<{ userI
                       </span>
                     </span>
                     <span className="flex items-center gap-3">
-                      {link && <CopyButton text={link} label="Copiar su enlace" />}
+                      {code && <CopyButton text={code.code} label="Copiar su código" />}
                       {editable && (
                         <ActionForm action={unassignPromoterAction} confirm={`¿Quitar "${event.title}" a ${promoter.name}? Lo que ya vendió sigue sumando.`}>
                           <input type="hidden" name="userId" value={promoter.id} />

@@ -44,6 +44,26 @@ describe("correo", () => {
     expect(saved).not.toContain("cid:qr-1");
   });
 
+  it("una mesa lleva su QR de consumo: imagen aparte, monto y aviso de un solo uso", () => {
+    const email = ticketsMessage({
+      to: "ana@prueba.test",
+      buyerName: "Ana Rojas",
+      eventTitle: "Noche VIP",
+      startsAt: new Date("2026-11-12T20:00:00Z"),
+      timezone: "America/La_Paz",
+      venueName: "Club 26",
+      orderUrl: "http://localhost:3000/orden/ABC123",
+      tickets: [{ code: "K7Q3MXPA2B", typeName: "Mesa VIP", seat: null, qrPng: Buffer.from("png") }],
+      vouchers: [{ code: "M4P9RXHB3C", label: "Mesa VIP N° 4", amount: "Bs 1.000,00", qrPng: Buffer.from("png") }],
+    });
+    expect(email.html).toContain("cid:consumo-1");
+    expect(email.html).toContain("Mesa VIP N° 4");
+    expect(email.html).toContain("Bs 1.000,00 de consumo");
+    expect(email.html).toContain("una sola vez");
+    expect(email.images?.map((i) => i.cid)).toEqual(["consumo-1", "qr-1"]);
+    expect(email.text).toContain("QR de consumo: Mesa VIP N° 4");
+  });
+
   it("una entrada de QR dinámico no lleva imagen: lleva un botón para abrirla y la advertencia de abrirla con internet", () => {
     const email = ticketsMessage({
       to: "ana@prueba.test",

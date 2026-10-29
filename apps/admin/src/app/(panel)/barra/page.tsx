@@ -12,7 +12,7 @@ const NIGHT_HOURS = 12;
 
 export default async function BarPage() {
   await connection();
-  const staff = await requireStaff(ROLES.pos);
+  const staff = await requireStaff(ROLES.bar);
   const now = new Date();
   const access = await salesAccess(prisma, staff.id, staff.organization.id, now);
   const nights = await prisma.eventSession.findMany({

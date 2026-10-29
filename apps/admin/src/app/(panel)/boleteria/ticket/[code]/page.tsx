@@ -5,7 +5,7 @@ import { connection } from "next/server";
 import { code128Svg, entranceText, formatCode, formatClock, formatDateTime, formatMoney, gateInfo, reentryText, tableLabel, whenWhere, zonesText } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, getOrderByCode, prisma } from "@ticketera/db";
 import { PrintButton } from "@/components/print-button";
-import { ticketQrSvg } from "@/lib/qr";
+import { ticketQrSvg, voucherQrSvg } from "@/lib/qr";
 import { ROLES, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Ticket" };
@@ -47,6 +47,17 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
   const payment = order.payments.find((p) => p.status === "APPROVED");
   const tz = session.venue.timezone;
   const ww = whenWhere({ session, venue: session.venue, event: session.event });
+  // QR de consumo: uno por mesa o entrada con trago (no uno por persona), en su propio ticket.
+  const vouchers = await Promise.all(
+    [...new Map(order.tickets.filter((t) => t.creditId && t.credit && t.credit.amount > 0).map((t) => [t.creditId, t])).values()].map(async (t) => ({
+      id: t.creditId!,
+      code: t.credit!.code,
+      amount: t.credit!.amount,
+      currency: t.credit!.currency,
+      label: tableLabel(t.ticketType.name, t.credit!.tableNumber, t.credit!.seat?.label) ?? t.ticketType.name,
+      qr: await voucherQrSvg(t.credit!.code),
+    })),
+  );
   const tickets = await Promise.all(
     order.tickets.map(async (t) => ({
       ...t,
@@ -128,7 +139,7 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
             )}
             {t.credit && t.credit.amount > 0 && (
               <p className="text-xs font-semibold">
-                Consumo incluido{t.ticketType.kind === "TABLE" ? " de la mesa" : ""}: {formatMoney(t.credit.amount, t.credit.currency)}
+                Consumo incluido{t.ticketType.kind === "TABLE" ? " de la mesa" : ""}: {formatMoney(t.credit.amount, t.credit.currency)} · ver su QR de consumo
               </p>
             )}
             {t.ticketType.entryUntil && <p className="text-xs font-semibold">Válida para entrar hasta las {formatClock(t.ticketType.entryUntil, tz)}</p>}
@@ -156,6 +167,27 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
                 ? `${reentryText(t.ticketType.maxEntries)}: al salir y al volver, haz leer tu QR en la puerta. No la compartas.`
                 : "Válida para un ingreso. No la compartas: el QR se anula al entrar."}
             </p>
+          </li>
+        ))}
+        {vouchers.map((v) => (
+          <li
+            key={`consumo-${v.id}`}
+            className={`bg-white text-center text-[#14181b] ${
+              sheet
+                ? "break-inside-avoid rounded-lg border border-dashed border-[#9a9c92] p-5"
+                : "w-[74mm] rounded-md border border-[var(--border)] p-3 shadow-sm print:break-after-page print:rounded-none print:border-0 print:p-0 print:shadow-none"
+            }`}
+          >
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em]">{staff.organization.name}</p>
+            <p className="mt-1 text-base font-bold leading-tight">QR DE CONSUMO</p>
+            <p className="text-xs">{session.event.title}</p>
+            <p className="text-xs">{formatDateTime(session.startsAt, tz)}</p>
+            <div className="my-2 border-t border-dashed border-[#14181b]" />
+            <p className="text-sm font-bold">{v.label}</p>
+            <p className="text-lg font-bold">{formatMoney(v.amount, v.currency)}</p>
+            <div className="mx-auto my-2 w-[46mm]" dangerouslySetInnerHTML={{ __html: v.qr }} />
+            <p className="font-mono text-sm tracking-wider">{formatCode(v.code)}</p>
+            <p className="text-[10px] leading-snug">Entrégalo en la barra. Se lee una sola vez: no lo compartas ni lo fotografíes.</p>
           </li>
         ))}
       </ul>

@@ -703,8 +703,9 @@ async function seedNightlife(db: Db, orgId: string) {
       }
     }
     if (firstTable) {
-      await db.redeemConsumption({ raw: firstTable, sessionId: night.id, amount: 25_000, staffId: cashier.id, note: "1 botella de ron + mezcladores" });
-      log.push(`${c.venue.name}: mesa vendida con Bs 250 ya consumidos en barra`);
+      const credit = await prisma.ticket.findUnique({ where: { code: firstTable }, select: { credit: { select: { code: true } } } });
+      if (credit?.credit) await db.redeemVoucher({ raw: credit.credit.code, sessionId: night.id, staffId: cashier.id, note: "1 botella de ron + mezcladores" });
+      log.push(`${c.venue.name}: mesa vendida con su QR de consumo ya leído en barra`);
     }
   }
   return log;

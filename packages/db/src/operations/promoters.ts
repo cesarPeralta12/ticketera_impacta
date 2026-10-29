@@ -405,9 +405,16 @@ export async function settlePromoterCommission(input: { organizationId: string; 
  * Venta de un promotor: reserva las entradas a nombre del cliente y abre el cobro por QR. Las entradas se emiten
  * recién cuando el pago queda aprobado (el promotor nunca recibe efectivo).
  */
-export async function sellAsPromoter(input: CheckoutInput, options: { promoterId: string; buyerPhone?: string; provider: string; now?: Date }) {
+export async function sellAsPromoter(input: CheckoutInput, options: { promoterId: string; buyerPhone?: string; provider: string; promoCode?: string; now?: Date }) {
+  // Solo puede aplicar un código suyo (el que le dio iPass a él): no el de otro promotor ni uno cualquiera.
+  if (options.promoCode?.trim()) {
+    const normalized = normalizePromoCode(options.promoCode);
+    const mine = await prisma.promoCode.findFirst({ where: { code: normalized, promoterId: options.promoterId, active: true }, select: { id: true } });
+    if (!mine) throw new DomainError("PROMO_INVALID", "Ese código no es tuyo: usa solo tu código u oferta.");
+  }
   const order = await createPendingOrder(input, {
     channel: "PROMOTER",
+    promoCode: options.promoCode,
     issuedById: options.promoterId,
     promoterId: options.promoterId,
     buyerPhone: options.buyerPhone,

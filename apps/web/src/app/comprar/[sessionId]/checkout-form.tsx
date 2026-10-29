@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useMemo, useRef, useState, useTransition, type FormEvent } from "react";
+import { useActionState, useEffect, useMemo, useState, useTransition, type FormEvent } from "react";
 import { MAX_TICKETS_PER_ORDER, RESERVATION_MINUTES, bestAvailableSeats, formatMoney, orphanSeats, type MapItem, type PickSeat } from "@ticketera/core";
 import { createOrderAction, previewPromoAction, type CheckoutState, type PromoPreview } from "./actions";
 import { SeatPicker, type PickerSection, type PickerZone } from "./seat-picker";
@@ -58,7 +58,6 @@ export function CheckoutForm({
   items = [],
   buyer,
   holdCode,
-  linkPromo,
 }: {
   sessionId: string;
   general: GeneralType[];
@@ -70,8 +69,6 @@ export function CheckoutForm({
   buyer: { name: string; email: string; document: string };
   /** Código de una retención (del enlace): habilita sus butacas apartadas. */
   holdCode?: string;
-  /** Código del enlace de un promotor: se aplica solo al elegir las entradas (si no aplica aquí, no se muestra nada). */
-  linkPromo?: string;
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState<CheckoutState, FormData>(createOrderAction, {});
@@ -79,7 +76,7 @@ export function CheckoutForm({
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   const [notice, setNotice] = useState<string | null>(null);
-  const [promoInput, setPromoInput] = useState(linkPromo ?? "");
+  const [promoInput, setPromoInput] = useState("");
   const [promo, setPromo] = useState<Extract<PromoPreview, { ok: true }> | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [promoBusy, setPromoBusy] = useState(false);
@@ -148,21 +145,6 @@ export function CheckoutForm({
       setPromoError(result.error);
     }
   }
-
-  // Enlace de un promotor: al elegir la primera entrada se aplica su código (una vez; si no aplica, se borra sin aviso).
-  const pendingLinkPromo = useRef(linkPromo);
-  useEffect(() => {
-    const code = pendingLinkPromo.current;
-    if (!code || promo || chosen.length === 0) return;
-    pendingLinkPromo.current = undefined;
-    void previewPromoAction(sessionId, chosen, code).then((result) => {
-      if (result.ok) {
-        setPromo(result);
-        setPromoInput(result.code);
-      } else setPromoInput("");
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo cuando cambia lo elegido
-  }, [chosenKey]);
 
   // Si cambia lo elegido, el descuento se vuelve a calcular con el mismo código.
   useEffect(() => {

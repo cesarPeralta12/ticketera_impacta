@@ -14,7 +14,7 @@ type Props = { params: Promise<{ sessionId: string }> };
 
 export default async function BarNightPage({ params }: Props) {
   await connection();
-  const staff = await requireStaff(ROLES.pos);
+  const staff = await requireStaff(ROLES.bar);
   const { sessionId } = await params;
   const night = await prisma.eventSession.findFirst({
     where: { id: sessionId, event: { organizationId: staff.organization.id } },
@@ -50,18 +50,18 @@ export default async function BarNightPage({ params }: Props) {
       <BarTerminal sessionId={night.id} timeZone={tz} readOnly={staff.readOnly} />
 
       <section className="card p-6">
-        <h2 className="eyebrow mb-3">Consumo de la noche</h2>
+        <h2 className="eyebrow mb-3">QR de consumo de la noche</h2>
         <div className="grid gap-3 sm:grid-cols-3">
           <div>
-            <p className="text-sm text-[var(--ink-muted)]">Incluido en mesas y entradas</p>
+            <p className="text-sm text-[var(--ink-muted)]">Consumo vendido (mesas y entradas con trago)</p>
             <p className="font-mono text-xl">{formatMoney(summary.amount, currency)}</p>
           </div>
           <div>
-            <p className="text-sm text-[var(--ink-muted)]">Consumido</p>
+            <p className="text-sm text-[var(--ink-muted)]">Ya leído en barra</p>
             <p className="font-mono text-xl text-[var(--accent)]">{formatMoney(summary.spent, currency)}</p>
           </div>
           <div>
-            <p className="text-sm text-[var(--ink-muted)]">Saldo sin usar</p>
+            <p className="text-sm text-[var(--ink-muted)]">Todavía sin leer</p>
             <p className="font-mono text-xl">{formatMoney(summary.amount - summary.spent, currency)}</p>
           </div>
         </div>
@@ -72,7 +72,7 @@ export default async function BarNightPage({ params }: Props) {
                 <th className="py-2 pr-4 font-normal">Tipo</th>
                 <th className="py-2 pr-4 text-right font-normal">Vendidas</th>
                 <th className="py-2 pr-4 text-right font-normal">Incluido</th>
-                <th className="py-2 text-right font-normal">Consumido</th>
+                <th className="py-2 text-right font-normal">Leído</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border)]">
@@ -92,9 +92,9 @@ export default async function BarNightPage({ params }: Props) {
       </section>
 
       <section className="card p-6">
-        <h2 className="eyebrow mb-3">Últimos consumos</h2>
+        <h2 className="eyebrow mb-3">Últimos QR leídos</h2>
         {summary.recent.length === 0 ? (
-          <p className="text-sm text-[var(--ink-muted)]">Todavía no se cobró nada esta noche.</p>
+          <p className="text-sm text-[var(--ink-muted)]">Todavía no se leyó ningún QR de consumo esta noche.</p>
         ) : (
           <ul className="divide-y divide-[var(--border)] text-sm">
             {summary.recent.map((r) => (
@@ -104,7 +104,7 @@ export default async function BarNightPage({ params }: Props) {
                   {tableLabel(r.credit.ticketType.name, r.credit.tableNumber, r.credit.seat?.label) ?? r.credit.ticketType.name} · {r.staff.name}
                   {r.note && <span className="text-[var(--ink-dim)]"> · {r.note}</span>}
                 </span>
-                <span className="font-mono">−{formatMoney(r.amount, currency)}</span>
+                <span className="font-mono">{formatMoney(r.amount, currency)}</span>
               </li>
             ))}
           </ul>

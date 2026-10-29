@@ -6,8 +6,10 @@ import { verifyStaffCredentials } from "./accounts";
 import { expireTimedTickets } from "./nightlife";
 import { requireEnv } from "./shared";
 
-/** Roles que pueden usar la app de puerta. */
-export const DOOR_APP_ROLES: StaffRole[] = ["OWNER", "ADMIN", "OPERATOR"];
+/** Roles que pueden entrar a la app: puerta (portero) y barra. */
+export const DOOR_APP_ROLES: StaffRole[] = ["OWNER", "ADMIN", "OPERATOR", "BAR"];
+/** Roles que usan el modo Barra de la app (QR de consumo). El rol Barra solo ve esto; los demás ven también la puerta. */
+export const BAR_APP_ROLES: StaffRole[] = ["OWNER", "ADMIN", "BAR"];
 
 /** El token de acceso es corto; la app lo renueva con su token de renovación (que rota en cada uso). */
 export const ACCESS_TOKEN_MINUTES = 60;
@@ -227,6 +229,8 @@ async function sessionMethods(sessionId: string, gateSectionIds?: string[]): Pro
  * - Dueño/administrador: todas las próximas de la organización (para pruebas y supervisión).
  */
 export async function getDoorAssignments(staff: DoorStaff) {
+  // La cuenta de barra no controla puertas: no recibe ninguna función (ni datos de entradas).
+  if (staff.role === "BAR") return [];
   const where = {
     cancelledAt: null,
     startsAt: { gte: new Date(Date.now() - 24 * 60 * 60_000) },
@@ -276,6 +280,7 @@ export async function getDoorAssignments(staff: DoorStaff) {
 
 /** ¿Puede este usuario controlar esta función con la app? */
 export async function canControlSession(staff: DoorStaff, sessionId: string) {
+  if (staff.role === "BAR") return null;
   const session = await prisma.eventSession.findFirst({
     where: { id: sessionId, cancelledAt: null, event: { organizationId: staff.organizationId, status: { not: "CANCELLED" } } },
     select: { id: true, venueId: true },

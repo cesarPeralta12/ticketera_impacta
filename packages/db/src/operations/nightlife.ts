@@ -2,101 +2,147 @@
  * Boliches: consumo en barra (el saldo de una mesa o de una entrada con trago), entradas que solo valen
  * hasta una hora y noches que se repiten cada semana.
  */
-import { consumptionLeft, formatMoney, parseDynamicPayload, parseTicketPayload, utcToZonedInput, weeklyNights, zonedDateTimeToUtc } from "@ticketera/core";
+import { parseVoucherPayload, peopleIn, tableLabel, utcToZonedInput, weeklyNights, zonedDateTimeToUtc } from "@ticketera/core";
 import { prisma } from "../client";
 import { assertCanSell } from "./sales-scope";
 import { DomainError, TX_OPTIONS, audit, requireEnv } from "./shared";
 
-/** Lo más que se cobra de una vez en barra (Bs 100.000), para frenar un error de tipeo. */
-export const MAX_REDEMPTION = 10_000_000;
-
-/** Código de entrada a partir de lo que llega a la barra: el QR leído (fijo o dinámico) o el código escrito. */
-async function ticketCodeFrom(raw: string): Promise<string | null> {
+/** Código del vale a partir de lo que llega a la barra: el QR de consumo (con su firma) o el código escrito. */
+async function voucherCodeFrom(raw: string): Promise<string | null> {
   const value = raw.trim();
   if (!value) return null;
-  if (value.startsWith("TK2.")) return parseDynamicPayload(value)?.code ?? null;
-  const parsed = await parseTicketPayload(value, requireEnv("TICKET_QR_SECRET"));
+  const parsed = await parseVoucherPayload(value, requireEnv("TICKET_QR_SECRET"));
   return parsed.ok ? parsed.code : null;
 }
 
-const creditInclude = {
+const voucherInclude = {
   ticketType: { select: { name: true, kind: true, peoplePerUnit: true } },
   seat: { select: { label: true } },
   order: { select: { code: true, buyerName: true } },
-  tickets: { select: { code: true, status: true, holderName: true }, orderBy: { issuedAt: "asc" } },
-  redemptions: { orderBy: { createdAt: "desc" }, take: 20, include: { staff: { select: { name: true } } } },
+  tickets: { select: { status: true } },
+  redemptions: { orderBy: { createdAt: "desc" }, take: 1, include: { staff: { select: { name: true } } } },
 } as const;
 
-/**
- * El saldo de consumo de una entrada (el de su mesa o el propio) para mostrarlo en la Barra. Solo de la
- * noche elegida: una entrada de otra noche o sin consumo incluido devuelve el motivo.
- */
-export async function getConsumption(raw: string, sessionId: string) {
-  const code = await ticketCodeFrom(raw);
-  const ticket = code
-    ? await prisma.ticket.findUnique({
-        where: { code },
-        select: { code: true, status: true, sessionId: true, holderName: true, credit: { include: creditInclude } },
-      })
-    : null;
-  if (!ticket) return { ok: false as const, reason: "No encontramos esa entrada. Revisa el código." };
-  if (ticket.sessionId !== sessionId) return { ok: false as const, reason: "Esa entrada es de otra noche." };
-  if (!ticket.credit) return { ok: false as const, reason: "Esa entrada no tiene consumo incluido." };
-  const credit = ticket.credit;
+type VoucherRow = NonNullable<Awaited<ReturnType<typeof findVoucher>>>;
+
+function findVoucher(code: string) {
+  return prisma.consumptionCredit.findUnique({ where: { code }, include: voucherInclude });
+}
+
+/** Un vale de consumo para mostrarlo en la barra (panel y app). */
+export type Voucher = {
+  code: string;
+  label: string;
+  kind: string;
+  people: number;
+  buyer: string;
+  orderCode: string;
+  amount: number;
+  currency: string;
+  /** La compra se anuló: el vale no vale. */
+  cancelled: boolean;
+  redeemedAt: Date | null;
+  redeemedBy: string | null;
+  note: string | null;
+};
+
+function toVoucher(row: VoucherRow): Voucher {
+  const last = row.redemptions[0];
   return {
-    ok: true as const,
-    ticket: { code: ticket.code, status: ticket.status, holderName: ticket.holderName },
-    credit: { ...credit, left: consumptionLeft(credit) },
+    code: row.code,
+    label: tableLabel(row.ticketType.name, row.tableNumber, row.seat?.label) ?? row.ticketType.name,
+    kind: row.ticketType.kind,
+    people: peopleIn(row.ticketType),
+    buyer: row.order.buyerName,
+    orderCode: row.order.code,
+    amount: row.amount,
+    currency: row.currency,
+    cancelled: row.tickets.length > 0 && row.tickets.every((t) => t.status === "CANCELLED"),
+    redeemedAt: row.redeemedAt,
+    redeemedBy: last?.staff.name ?? null,
+    note: last?.note ?? null,
   };
 }
 
+export type VoucherLookup = { ok: true; voucher: Voucher } | { ok: false; reason: string; code: "NOT_FOUND" | "WRONG_NIGHT" | "NO_CONSUMPTION" };
+
 /**
- * Cobra un consumo contra el saldo. El descuento es un único UPDATE condicional (spent + monto ≤ amount):
- * dos barras cobrando a la misma mesa a la vez no pueden pasarse del saldo.
+ * Datos del vale de consumo de una noche. Un vale ya leído sí se devuelve (con quién y cuándo): la barra muestra
+ * "ya fue leído". Solo de la noche elegida; una compra sin consumo incluido devuelve el motivo.
  */
-export async function redeemConsumption(input: { raw: string; sessionId: string; amount: number; staffId: string; note?: string }) {
-  if (!Number.isInteger(input.amount) || input.amount <= 0 || input.amount > MAX_REDEMPTION) {
-    throw new DomainError("INVALID_ITEMS", "Escribe un monto válido.");
-  }
-  // Un cajero con funciones asignadas solo cobra en la barra de esas noches.
+export async function getVoucher(raw: string, sessionId: string): Promise<VoucherLookup> {
+  const code = await voucherCodeFrom(raw);
+  const row = code ? await findVoucher(code) : null;
+  if (!row) return { ok: false, code: "NOT_FOUND", reason: "No encontramos ese QR de consumo. Revisa el código." };
+  if (row.sessionId !== sessionId) return { ok: false, code: "WRONG_NIGHT", reason: "Ese QR de consumo es de otra noche." };
+  if (row.amount <= 0) return { ok: false, code: "NO_CONSUMPTION", reason: "Esa mesa no tiene consumo incluido." };
+  return { ok: true, voucher: toVoucher(row) };
+}
+
+export type VoucherRedeem =
+  | { status: "REDEEMED"; voucher: Voucher }
+  /** Ya se había leído: no se marca de nuevo. */
+  | { status: "ALREADY_REDEEMED"; voucher: Voucher }
+  | { status: "CANCELLED"; voucher: Voucher }
+  | { status: "REJECTED"; code: "NOT_FOUND" | "WRONG_NIGHT" | "NO_CONSUMPTION"; reason: string };
+
+/** La hora de lectura del teléfono no puede estar en el futuro ni más de 3 días atrás (reloj mal puesto). */
+function clampReadAt(readAt: Date | undefined, now: Date) {
+  if (!readAt || Number.isNaN(readAt.getTime())) return now;
+  return new Date(Math.min(Math.max(readAt.getTime(), now.getTime() - 3 * 86_400_000), now.getTime()));
+}
+
+/**
+ * Marca el vale como leído (un solo uso). Es un único UPDATE condicional (`redeemedAt IS NULL`): dos barras que lo
+ * leen a la vez, o un teléfono sin conexión que sincroniza después, no pueden usarlo dos veces; gana la primera
+ * escritura y la otra recibe ALREADY_REDEEMED con quién y cuándo. El consumo completo del vale queda como gastado.
+ */
+export async function redeemVoucher(input: { raw: string; sessionId: string; staffId: string; note?: string; readAt?: Date; now?: Date }): Promise<VoucherRedeem> {
+  const now = input.now ?? new Date();
+  // Una cuenta con funciones asignadas solo cobra en la barra de esas noches.
   const session = await prisma.eventSession.findUnique({ where: { id: input.sessionId }, select: { id: true, eventId: true, event: { select: { organizationId: true } } } });
   if (!session) throw new DomainError("NOT_FOUND", "Noche no encontrada.");
-  await assertCanSell(prisma, { userId: input.staffId, organizationId: session.event.organizationId, session });
-  const found = await getConsumption(input.raw, input.sessionId);
-  if (!found.ok) throw new DomainError("NOT_FOUND", found.reason);
-  if (found.credit.tickets.every((t) => t.status === "CANCELLED")) {
-    throw new DomainError("INVALID_STATE", "Esa entrada está anulada: su consumo no se puede usar.");
-  }
-  const creditId = found.credit.id;
+  await assertCanSell(prisma, { userId: input.staffId, organizationId: session.event.organizationId, session, now });
 
-  return prisma.$transaction(async (tx) => {
-    const rows = await tx.$queryRaw<{ amount: number; spent: number; currency: string }[]>`
-      UPDATE "ConsumptionCredit" SET "spent" = "spent" + ${input.amount}
-      WHERE "id" = ${creditId} AND "spent" + ${input.amount} <= "amount"
-      RETURNING "amount", "spent", "currency"`;
+  const found = await getVoucher(input.raw, input.sessionId);
+  if (!found.ok) return { status: "REJECTED", code: found.code, reason: found.reason };
+  if (found.voucher.cancelled) return { status: "CANCELLED", voucher: found.voucher };
+  if (found.voucher.redeemedAt) return { status: "ALREADY_REDEEMED", voucher: found.voucher };
+
+  const readAt = clampReadAt(input.readAt, now);
+  const note = input.note?.trim().slice(0, 120) || null;
+  const code = found.voucher.code;
+  const won = await prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<{ id: string; amount: number }[]>`
+      UPDATE "ConsumptionCredit" SET "spent" = "amount", "redeemedAt" = ${readAt}
+      WHERE "code" = ${code} AND "redeemedAt" IS NULL AND "amount" > 0
+      RETURNING "id", "amount"`;
     const row = rows[0];
-    if (!row) {
-      const current = await tx.consumptionCredit.findUniqueOrThrow({ where: { id: creditId } });
-      throw new DomainError(
-        "INVALID_STATE",
-        current.amount === 0
-          ? "Esta mesa no tiene consumo incluido."
-          : `No alcanza el saldo: quedan ${formatMoney(consumptionLeft(current), current.currency)}.`,
-      );
-    }
-    const redemption = await tx.consumptionRedemption.create({
-      data: { creditId, amount: input.amount, staffId: input.staffId, note: input.note?.trim().slice(0, 120) || null },
-    });
+    if (!row) return false;
+    const redemption = await tx.consumptionRedemption.create({ data: { creditId: row.id, amount: row.amount, staffId: input.staffId, note } });
     await audit(tx, {
       actorType: "staff",
       actorId: input.staffId,
-      action: "consumption.redeem",
+      action: "consumption.voucher_read",
       entity: "ConsumptionCredit",
-      entityId: creditId,
-      data: { amount: input.amount, redemptionId: redemption.id },
+      entityId: row.id,
+      data: { amount: row.amount, redemptionId: redemption.id, readAt: readAt.toISOString() },
     });
-    return { amount: row.amount, spent: row.spent, left: consumptionLeft(row), currency: row.currency };
+    return true;
   });
+  const row = await findVoucher(code);
+  const voucher = toVoucher(row!);
+  return won ? { status: "REDEEMED", voucher } : { status: "ALREADY_REDEEMED", voucher };
+}
+
+/** Los vales de una noche para descargarlos al teléfono de la barra (solo mesas y entradas con consumo incluido). */
+export async function nightVouchers(sessionId: string): Promise<Voucher[]> {
+  const rows = await prisma.consumptionCredit.findMany({
+    where: { sessionId, amount: { gt: 0 } },
+    orderBy: [{ ticketType: { name: "asc" } }, { tableNumber: "asc" }, { createdAt: "asc" }],
+    include: voucherInclude,
+  });
+  return rows.map(toVoucher);
 }
 
 /** Totales de consumo de una noche para la Barra: incluido, consumido y lo último cobrado. */

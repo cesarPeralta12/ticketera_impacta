@@ -9,26 +9,30 @@ import { pickerEvents } from "@/lib/picker-events";
  * "Qué puede vender" un cajero: todo lo de la organización o solo lo asignado (eventos completos o funciones sueltas,
  * con vigencia), y con qué medios cobra. Lo controla el servidor en la boletería y en la barra.
  */
-export async function SalesAccessCard({ userId, organizationId }: { userId: string; organizationId: string }) {
+export async function SalesAccessCard({ userId, organizationId, bar = false }: { userId: string; organizationId: string; bar?: boolean }) {
   const now = new Date();
   const [membership, assignments, events] = await Promise.all([
     prisma.membership.findFirstOrThrow({ where: { userId, organizationId }, select: { salesScope: true, posMethods: true } }),
     listSalesAssignments(userId, organizationId),
     pickerEvents(organizationId, now),
   ]);
-  const assigned = membership.salesScope === "ASSIGNED";
+  // La barra siempre trabaja solo con las noches asignadas.
+  const assigned = bar || membership.salesScope === "ASSIGNED";
   const methods = membership.posMethods.length === 0 ? [...POS_METHODS] : membership.posMethods;
   const live = (a: (typeof assignments)[number]) => a.active && (!a.startsAt || a.startsAt <= now) && (!a.endsAt || a.endsAt > now);
 
   return (
     <section className="card space-y-5 p-6">
       <div>
-        <h2 className="eyebrow mb-1">Qué puede vender</h2>
+        <h2 className="eyebrow mb-1">{bar ? "Noches que atiende" : "Qué puede vender"}</h2>
         <p className="text-sm text-[var(--ink-muted)]">
-          En la boletería y en la barra solo le aparecen (y solo puede cobrar) las funciones permitidas. Si intenta otra, el sistema la rechaza.
+          {bar
+            ? "En el panel y en la app solo le aparecen (y solo puede leer QR de consumo) las noches asignadas. Si intenta otra, el sistema la rechaza."
+            : "En la boletería y en la barra solo le aparecen (y solo puede cobrar) las funciones permitidas. Si intenta otra, el sistema la rechaza."}
         </p>
       </div>
 
+      {!bar && (
       <ActionForm action={updateSalesSettingsAction} className="flex flex-wrap items-end gap-6">
         <input type="hidden" name="userId" value={userId} />
         <fieldset className="label">
@@ -56,6 +60,7 @@ export async function SalesAccessCard({ userId, organizationId }: { userId: stri
           Guardar
         </button>
       </ActionForm>
+      )}
 
       <div className={assigned ? "" : "opacity-60"}>
         <h3 className="mb-2 text-sm font-semibold">

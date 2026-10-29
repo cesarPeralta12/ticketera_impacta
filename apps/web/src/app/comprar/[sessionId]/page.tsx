@@ -27,7 +27,6 @@ import { findHoldByCode, getHeldSeatIds, getQueueStatus, getSessionStock, getTak
 import { PhaseList } from "@/components/phase-list";
 import { WhenWhereBlock } from "@/components/when-where";
 import { requireBuyer } from "@/lib/customer";
-import { PROMO_COOKIE } from "@/lib/promo-cookie";
 import { queueCookieName } from "@/lib/queue-cookie";
 import { CheckoutForm, type GeneralType, type SeatedType } from "./checkout-form";
 import type { PickerZone } from "./seat-picker";
@@ -35,7 +34,7 @@ import { TurnCountdown } from "./turn-countdown";
 
 export const metadata: Metadata = { title: "Comprar entradas" };
 
-type Props = { params: Promise<{ sessionId: string }>; searchParams: Promise<{ codigo?: string | string[]; promo?: string | string[] }> };
+type Props = { params: Promise<{ sessionId: string }>; searchParams: Promise<{ codigo?: string | string[] }> };
 
 export default async function BuyPage({ params, searchParams }: Props) {
   const query = await searchParams;
@@ -79,8 +78,6 @@ export default async function BuyPage({ params, searchParams }: Props) {
 
   // Retenciones: lo apartado se ve ocupado, salvo las butacas de la retención cuyo código trae el enlace.
   const holdCode = typeof query.codigo === "string" ? query.codigo : undefined;
-  // Enlace de un promotor: su código se aplica solo al elegir las entradas.
-  const linkPromo = (typeof query.promo === "string" ? query.promo : undefined) ?? (await cookies()).get(PROMO_COOKIE)?.value;
   const [stock, sold, zoneAvailability, unlocked, held] = await Promise.all([
     getSessionStock(session.id),
     getTakenSeatIds(session.id),
@@ -210,7 +207,6 @@ export default async function BuyPage({ params, searchParams }: Props) {
           items={mapItemsOf(session.venue.mapItems)}
           buyer={{ name: buyer.name, email: buyer.email, document: buyer.documentId }}
           holdCode={unlocked ? holdCode : undefined}
-          linkPromo={linkPromo}
         />
       )}
       {seated.length > 0 && !unlocked && (

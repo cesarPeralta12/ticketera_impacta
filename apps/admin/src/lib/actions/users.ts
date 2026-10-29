@@ -18,7 +18,7 @@ const staffSchema = z.object({
 });
 
 /** Roles que se pueden dar en la cuenta de un organizador: ahí no hay dueños ni clientes. */
-const ORGANIZER_ROLES: StaffRole[] = ["ADMIN", "OPERATOR", "CASHIER", "PROMOTER"];
+const ORGANIZER_ROLES: StaffRole[] = ["ADMIN", "OPERATOR", "CASHIER", "PROMOTER", "BAR"];
 
 /**
  * Solo IMPACTA crea cuentas: las suyas, o las de un organizador cuando entró en él. La
@@ -47,7 +47,7 @@ export async function createStaffAction(_prev: FormState, formData: FormData): P
   }
 
   // Los cajeros nuevos y los promotores venden solo lo que se les asigne; los cajeros que ya existían siguen con todo.
-  const assignedOnly = parsed.data.role === "CASHIER" || parsed.data.role === "PROMOTER";
+  const assignedOnly = parsed.data.role === "CASHIER" || parsed.data.role === "PROMOTER" || parsed.data.role === "BAR";
   const created = await createStaffUser({
     organizationId: organization.id,
     ...parsed.data,
@@ -66,6 +66,7 @@ export async function createStaffAction(_prev: FormState, formData: FormData): P
     });
   revalidatePath("/usuarios");
   if (parsed.data.role === "CASHIER") return { ok: true, message: "Cuenta creada. Ahora toca «Qué puede vender» en su fila para asignarle eventos y funciones." };
+  if (parsed.data.role === "BAR") return { ok: true, message: "Cuenta creada. Ahora toca «Noches que atiende» en su fila para asignarle las noches." };
   if (parsed.data.role === "PROMOTER") return { ok: true, message: "Cuenta creada. Asígnale eventos y comisión en Promotores." };
   return { ok: true };
 }

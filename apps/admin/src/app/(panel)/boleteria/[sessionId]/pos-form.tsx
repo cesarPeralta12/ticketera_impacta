@@ -36,6 +36,7 @@ export function PosForm({
   seated,
   items,
   promoter = false,
+  promoOffers = [],
   methods = [],
 }: {
   sessionId: string;
@@ -44,6 +45,8 @@ export function PosForm({
   /** Plano del boliche (escenario, barras…) para el mapa. */
   items?: MapItem[];
   promoter?: boolean;
+  /** Promotor: sus ofertas (códigos con descuento) para esta función; la primera viene elegida. */
+  promoOffers?: { code: string; label: string }[];
   /** Medios de cobro que la cuenta puede usar (vacío: todos). */
   methods?: string[];
 }) {
@@ -195,6 +198,29 @@ export function PosForm({
             WhatsApp (opcional, para mandárselas)
             <input name="phone" type="tel" inputMode="tel" autoComplete="off" placeholder="77123456" className="field" />
           </label>
+          {promoOffers.length > 0 && (
+            <fieldset className="sm:col-span-2">
+              <legend className="label mb-1.5">Tu oferta</legend>
+              <div className="flex flex-wrap gap-2">
+                {promoOffers.map((o, i) => (
+                  <label
+                    key={o.code}
+                    className="flex cursor-pointer items-center gap-2 rounded-md border border-[var(--border)] px-4 py-2 text-sm has-[:checked]:border-[var(--accent)] has-[:checked]:bg-[var(--accent-soft)]"
+                  >
+                    <input type="radio" name="promo" value={o.code} defaultChecked={i === 0} className="accent-[var(--accent)]" />
+                    <span>
+                      <span className="font-mono font-semibold">{o.code}</span> · {o.label}
+                    </span>
+                  </label>
+                ))}
+                <label className="flex cursor-pointer items-center gap-2 rounded-md border border-[var(--border)] px-4 py-2 text-sm has-[:checked]:border-[var(--accent)] has-[:checked]:bg-[var(--accent-soft)]">
+                  <input type="radio" name="promo" value="" className="accent-[var(--accent)]" />
+                  Sin descuento
+                </label>
+              </div>
+              <p className="mt-1.5 text-xs text-[var(--ink-dim)]">El descuento se aplica al generar el cobro: el total final lo ves en el QR.</p>
+            </fieldset>
+          )}
         </section>
       ) : (
         <>

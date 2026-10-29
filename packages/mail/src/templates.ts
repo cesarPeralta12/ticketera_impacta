@@ -90,6 +90,16 @@ export type TicketMail = {
   maxEntries?: number;
 };
 
+/** QR de consumo de una mesa o entrada con trago: se muestra en la barra y se lee una sola vez. */
+export type VoucherMail = {
+  code: string;
+  /** "Mesa VIP N° 4", o el tipo de entrada. */
+  label: string;
+  /** Consumo ya formateado ("Bs 1.000,00"). */
+  amount: string;
+  qrPng: Buffer;
+};
+
 /** "Cuándo y dónde" de la función en el correo: horarios, lugar y cómo llegar, condiciones, programa y consultas. */
 function whenWhereHtml(ww: WhenWhere): string {
   const row = (title: string, lines: string[]) =>
@@ -159,10 +169,26 @@ export function ticketsMessage(input: {
   tickets: TicketMail[];
   /** Horarios, lugar, condiciones, programa y contacto de la función. */
   whenWhere?: WhenWhere;
+  /** Boliche: QR de consumo de cada mesa o entrada con trago. */
+  vouchers?: VoucherMail[];
 }): Email {
   const when = formatDateTime(input.startsAt, input.timezone);
   const subject = `Tus entradas para ${input.eventTitle}`;
   const images: InlineImage[] = [];
+  const vouchers = (input.vouchers ?? [])
+    .map((v, i) => {
+      const cid = `consumo-${i + 1}`;
+      images.push({ cid, filename: `consumo-${v.code}.png`, content: v.qrPng, contentType: "image/png" });
+      return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E6EAF0;border-radius:12px;margin:14px 0"><tr><td align="center" style="padding:16px">
+        <div style="font-size:12px;color:${MUTED};text-transform:uppercase;letter-spacing:1px">QR de consumo</div>
+        <div style="font-size:18px;font-weight:700;margin-top:4px">${esc(v.label)}</div>
+        <div style="font-size:18px;font-weight:700;margin-top:2px;color:${LINK}">${esc(v.amount)} de consumo</div>
+        <img src="cid:${cid}" width="200" height="200" alt="QR de consumo ${esc(formatCode(v.code))}" style="display:block;margin:12px auto;border:0">
+        <div style="font-family:Consolas,monospace;font-size:16px;letter-spacing:2px">${esc(formatCode(v.code))}</div>
+        <div style="font-size:12px;color:${MUTED};margin-top:6px;line-height:1.5;max-width:340px">Preséntalo en la barra. Se lee <strong>una sola vez</strong>: no lo compartas.</div>
+      </td></tr></table>`;
+    })
+    .join("");
   const cards = input.tickets
     .map((t, i) => {
       let qr = "";
@@ -197,7 +223,7 @@ export function ticketsMessage(input: {
      <p style="margin:0 0 4px;font-size:18px;font-weight:700">${esc(input.eventTitle)}</p>
      <p style="margin:0;color:${MUTED}">${esc(when)} · ${esc(input.venueName)}</p>
      ${input.whenWhere ? whenWhereHtml(input.whenWhere) : ""}
-     ${cards}
+     ${cards}${vouchers}
      <p style="margin:22px 0;text-align:center">${button(input.orderUrl, "Ver mis entradas")}</p>
      <p style="color:${MUTED};font-size:13px;line-height:1.55">${singleEntry ? "Cada entrada vale para <strong>un solo ingreso</strong> y está a tu nombre" : "Cada entrada está a tu nombre"}: lleva tu <strong>carnet de identidad</strong>, que se puede pedir en la puerta. No compartas el QR por redes: quien llegue primero con él entra. El botón de arriba abre siempre la versión actualizada.${input.orderCode ? ` Compra ${esc(input.orderCode)}.` : ""}</p>`,
   );
@@ -212,6 +238,9 @@ export function ticketsMessage(input: {
           (t.dynamicUrl ? `\n  QR dinámico (cambia cada 30 s): ábrela con internet antes de salir: ${t.dynamicUrl}` : ""),
       )
       .join("\n") +
+    ((input.vouchers ?? []).length > 0
+      ? `\n\n` + (input.vouchers ?? []).map((v) => `QR de consumo: ${v.label} · ${v.amount} · ${formatCode(v.code)} (se lee una sola vez en la barra)`).join("\n")
+      : "") +
     `\n\nVer mis entradas: ${input.orderUrl}\n\nLleva tu carnet de identidad.${singleEntry ? " Cada entrada vale para un solo ingreso." : ""}`;
   return { to: input.to, subject, html, text, images };
 }
