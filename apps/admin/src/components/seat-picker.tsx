@@ -1,7 +1,7 @@
 "use client";
 
-import type { KeyboardEvent, SVGProps } from "react";
-import { CANVAS_HEIGHT, CANVAS_WIDTH, formatMoney, reservadoSize, type MapItem } from "@ticketera/core";
+import { useMemo, type KeyboardEvent, type SVGProps } from "react";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, formatMoney, reservadoSize, seatDotRadius, type MapItem } from "@ticketera/core";
 import { MapDecor } from "./map-decor";
 
 /** `short`: el número que va dentro de un lounge en círculo. */
@@ -64,6 +64,9 @@ export function SeatPicker({
     return { name: s.name, color: s.color, x: midX, y: y - 36, detail };
   });
 
+  // Butacas muy juntas: el punto se achica para que no se pisen (igual que en la web).
+  const dots = useMemo(() => sections.map((s) => seatDotRadius(s.seats)), [sections]);
+
   function onKey(event: KeyboardEvent, ticketTypeId: string, seatId: string) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -90,10 +93,10 @@ export function SeatPicker({
             </text>
           </g>
         ))}
-        {sections.map((section) =>
+        {sections.map((section, sectionIndex) =>
           section.seats.map((seat) => {
             const isSelected = selected.has(seat.id);
-            const r = section.table ? section.table.radius : 7;
+            const r = section.table ? section.table.radius : dots[sectionIndex]!;
             const rect = section.table?.shape === "rect";
             const number = section.table && seat.short ? (
               <text x={seat.x} y={seat.y + 5} textAnchor="middle" fontSize="13" fontWeight="800" fill={isSelected ? "#ffffff" : "#14181b"} pointerEvents="none">

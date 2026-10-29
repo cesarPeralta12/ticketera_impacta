@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { DEFAULT_TIMEZONE, formatDateTime, formatMoney, promoLabel, utcToZonedInput } from "@ticketera/core";
-import { getPromoDetail } from "@ticketera/db";
+import { getPromoDetail, listPromoterAccounts } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { togglePromoAction, updatePromoAction } from "@/lib/actions/promos";
 import { ROLES, requireStaff } from "@/lib/session";
@@ -27,7 +27,7 @@ export default async function PromoDetailPage({ params }: Props) {
   const staff = await requireStaff(ROLES.manage);
   const { id } = await params;
   const now = new Date();
-  const detail = await getPromoDetail(staff.organization.id, id, now);
+  const [detail, promoterAccounts] = await Promise.all([getPromoDetail(staff.organization.id, id, now), listPromoterAccounts(staff.organization.id)]);
   if (!detail) notFound();
   const { promo, stats, redemptions } = detail;
   const money = (c: number) => formatMoney(c, staff.organization.currency);
@@ -102,11 +102,19 @@ export default async function PromoDetailPage({ params }: Props) {
           <span />
           <label className="label">
             Promotor / RRPP
-            <input name="promoterName" maxLength={80} defaultValue={promo.promoterName ?? ""} className="field" />
-          </label>
-          <label className="label">
-            Comisión del promotor (%)
-            <input name="commissionPercent" type="number" min={0} max={100} defaultValue={promo.commissionPercent ?? ""} className="field" />
+            <select name="promoterId" defaultValue={promo.promoterId ?? ""} className="field">
+              <option value="">{promo.promoterName && !promo.promoterId ? `Sin cuenta (queda «${promo.promoterName}»)` : "Sin promotor"}</option>
+              {promoterAccounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} · {a.email}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs text-[var(--ink-dim)]">
+              {promo.promoterName && !promo.promoterId
+                ? "Este código es antiguo: tiene un nombre pero no una cuenta, así que no le suma comisión a nadie. Elige su cuenta para ligarlo."
+                : "La comisión sale de la regla de su evento (Promotores)."}
+            </span>
           </label>
           <label className="flex items-center gap-2 self-end pb-2 text-sm">
             <input type="checkbox" name="combinableWithPresale" defaultChecked={promo.combinableWithPresale} className="h-4 w-4 accent-[var(--accent)]" />

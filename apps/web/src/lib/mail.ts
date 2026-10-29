@@ -1,5 +1,5 @@
 import QRCode from "qrcode";
-import { entranceText, gateInfo, signTicketPayload, TRANSFER_OFFER_HOURS, whenWhere, type WhenWhere } from "@ticketera/core";
+import { entranceText, gateInfo, signTicketPayload, TRANSFER_OFFER_HOURS, whenWhere, zonesText, type WhenWhere } from "@ticketera/core";
 import {
   RESET_PASSWORD_MINUTES,
   VERIFY_EMAIL_HOURS,
@@ -76,6 +76,7 @@ export async function sendTicketsEmail(orderCode: string): Promise<boolean> {
         code: t.code,
         typeName: t.ticketType.name,
         entrance: entranceText(gates, t.ticketType.sectionId, t.ticketType.zones.map((z) => z.id)),
+        includes: zonesText(t.ticketType.zones.map((z) => z.name)),
         seat: t.seat ? `${t.seat.section.name} · ${t.seat.label}` : null,
         // Solo si el tipo de entrada se lee por QR fijo: una entrada solo NFC o solo código de barras no lleva QR,
         // y una de QR dinámico se abre en el sitio (una imagen en el correo sería una foto fija).

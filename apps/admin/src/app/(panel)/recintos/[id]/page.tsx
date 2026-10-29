@@ -9,6 +9,7 @@ import {
   addAccessPointAction,
   addZoneAction,
   deleteAccessPointAction,
+  deleteVenueAction,
   deleteZoneAction,
   updatePlanImageAction,
   updateZoneAction,
@@ -52,6 +53,7 @@ export default async function VenuePage({ params, searchParams }: Props) {
     },
   });
   if (!venue) notFound();
+  const usedBy = await prisma.eventSession.count({ where: { venueId: venue.id } });
 
   // Con ventas (cualquier orden, incluso vencida) la sección no se puede borrar ni rehacer.
   const sections = venue.sections.map((s) => ({
@@ -186,7 +188,7 @@ export default async function VenuePage({ params, searchParams }: Props) {
                 <span className="h-3 w-3 rounded-full" style={{ background: s.color }} />
                 <span className="flex-1 font-medium">{s.name}</span>
                 <span className="text-[var(--ink-muted)]">
-                  {seatingLabel(s)} · {s.seatingMode === "RESERVED" ? `${s.seats.length} ${isTablesLayout(s.layout) ? "lounges" : "butacas"}` : `aforo ${s.capacity}`}
+                  {seatingLabel(s)} · {s.seatingMode === "RESERVED" ? `${s.seats.length} ${isTablesLayout(s.layout) ? "lounges" : isSeatedTablesLayout(s.layout) ? "sillas" : "butacas"}` : `aforo ${s.capacity}`}
                 </span>
                 {!s.sold ? (
                   <ActionForm
@@ -357,7 +359,9 @@ export default async function VenuePage({ params, searchParams }: Props) {
               background={backgroundSeats}
               plan={plan}
               items={mapItems}
-              existing={sections.flatMap((s) => (isSeatedTablesLayout(s.layout) ? [{ id: s.id, name: s.name, color: s.color, layout: s.layout }] : []))}
+              existing={sections.flatMap((s) =>
+                isSeatedTablesLayout(s.layout) ? [{ id: s.id, name: s.name, color: s.color, layout: s.layout, sold: s.sold, priced: s.priced }] : [],
+              )}
             />
           </section>
         )}
@@ -402,6 +406,9 @@ export default async function VenuePage({ params, searchParams }: Props) {
                     Aforo
                     <input name="capacity" type="number" min={1} defaultValue={zone.capacity ?? ""} placeholder="sin tope" className="field w-28" />
                   </label>
+                  <label className="flex items-center gap-1.5 self-center text-xs" title="Con el aforo lleno, la puerta no deja entrar a la zona hasta que salga alguien. Sin marcar, el aforo solo informa.">
+                    <input type="checkbox" name="blockWhenFull" defaultChecked={zone.blockWhenFull} className="accent-[var(--accent)]" /> Bloquear al llenarse
+                  </label>
                   <label className="label">
                     Color
                     <input name="color" type="color" defaultValue={zone.color} className="h-[38px] w-14 cursor-pointer rounded border border-[var(--border)]" />
@@ -438,6 +445,9 @@ export default async function VenuePage({ params, searchParams }: Props) {
           <label className="label">
             Aforo (opcional)
             <input name="capacity" type="number" min={1} placeholder="ej. 80" className="field w-28" />
+          </label>
+          <label className="flex items-center gap-1.5 self-center text-xs" title="Con el aforo lleno, la puerta no deja entrar a la zona hasta que salga alguien.">
+            <input type="checkbox" name="blockWhenFull" className="accent-[var(--accent)]" /> Bloquear al llenarse
           </label>
           <label className="label">
             Color
@@ -527,6 +537,26 @@ export default async function VenuePage({ params, searchParams }: Props) {
           </button>
         </ActionForm>
       </section>
+
+      {!staff.readOnly && (
+        <section className="card p-6" style={{ borderColor: "color-mix(in srgb, var(--danger) 30%, var(--border))" }}>
+          <h2 className="eyebrow mb-1">Borrar el recinto</h2>
+          {usedBy > 0 ? (
+            <p className="text-sm text-[var(--ink-muted)]">
+              No se puede borrar: lo usa{usedBy === 1 ? " 1 función" : `n ${usedBy} funciones`}. Cámbialas de recinto o bórralas
+              primero (las entradas vendidas y las lecturas de puerta lo necesitan).
+            </p>
+          ) : (
+            <ActionForm action={deleteVenueAction} confirm={`¿Borrar el recinto "${venue.name}" con sus secciones, puertas y plano? No se puede deshacer.`} className="space-y-2">
+              <input type="hidden" name="venueId" value={venue.id} />
+              <p className="text-sm text-[var(--ink-muted)]">Ninguna función lo usa: se borra con sus secciones, butacas, puertas, zonas y plano.</p>
+              <button type="submit" className="btn border-[var(--danger)] text-[var(--danger)]">
+                Borrar recinto
+              </button>
+            </ActionForm>
+          )}
+        </section>
+      )}
     </div>
   );
 }

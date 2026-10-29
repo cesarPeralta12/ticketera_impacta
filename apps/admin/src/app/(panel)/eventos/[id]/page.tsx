@@ -15,10 +15,11 @@ import {
   suggestedTimes,
   utcToZonedInput,
 } from "@ticketera/core";
-import { clientAccessOpen, defaultClientAccessUntil, getEventReport, prisma } from "@ticketera/db";
+import { clientAccessOpen, defaultClientAccessUntil, getEventReport, listPromoAssets, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { EventChecklist } from "@/components/event-checklist";
 import { EventReport } from "@/components/event-report";
+import { PromoAssetsManager } from "@/components/promo-assets-manager";
 import { updateClientAccessAction } from "@/lib/actions/clients";
 import { repeatNightsAction } from "@/lib/actions/nightlife";
 import {
@@ -33,6 +34,7 @@ import { eventChecks } from "@/lib/event-checklist";
 import { EVENT_STATUS, MODE_LABEL } from "@/lib/labels";
 import { buyerPreviewUrl } from "@/lib/preview";
 import { ROLES, allowedCategories, requireStaff } from "@/lib/session";
+import { venueChoices } from "@/lib/venue-choices";
 import { EventFields } from "../event-fields";
 
 export const metadata: Metadata = { title: "Evento" };
@@ -70,11 +72,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
   if (!event) notFound();
 
   const [venues, clients, suggestedUntil] = await Promise.all([
-    prisma.venue.findMany({
-      where: { organizationId: staff.organization.id },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, city: true, timezone: true },
-    }),
+    venueChoices(staff.organization.id),
     prisma.client.findMany({
       where: { organizationId: staff.organization.id },
       orderBy: { name: "asc" },
@@ -437,6 +435,11 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
               )}
             </section>
           )}
+
+          <section id="material" className="card scroll-mt-6 p-6">
+            <h2 className="eyebrow mb-4">Material para promotores</h2>
+            <PromoAssetsManager eventId={event.id} assets={await listPromoAssets(staff.organization.id, event.id)} />
+          </section>
 
           <section id="datos" className="card scroll-mt-6 p-6">
             <h2 className="eyebrow mb-4">Datos del evento</h2>

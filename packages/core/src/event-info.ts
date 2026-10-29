@@ -43,12 +43,15 @@ export function parseProgram(value: unknown): ProgramItem[] {
 
 // ── Contacto y mapa ──
 
-/** Enlace de WhatsApp para un número boliviano (8 dígitos) o con código de país. Null si no parece un número. */
-export function whatsappLink(phone: string | null | undefined): string | null {
+/**
+ * Enlace de WhatsApp para un número boliviano (8 dígitos) o con código de país, con un mensaje listo para enviar si
+ * se pasa `text`. Null si no parece un número.
+ */
+export function whatsappLink(phone: string | null | undefined, text?: string): string | null {
   const digits = (phone ?? "").replace(/\D/g, "");
   if (digits.length < 7) return null;
   const full = digits.length === 8 ? `591${digits}` : digits;
-  return `https://wa.me/${full}`;
+  return text ? `https://wa.me/${full}?text=${encodeURIComponent(text)}` : `https://wa.me/${full}`;
 }
 
 /** Solo enlaces https (Google Maps, OpenStreetMap…): nada de javascript: ni http sin cifrar. */

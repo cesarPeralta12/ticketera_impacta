@@ -8,8 +8,8 @@ export async function Nav() {
   // Las secciones del sitio. En el celular van en una segunda fila (con la cuenta no entran en una sola).
   const sections = (
     <>
-      <Link href="/festivales" className="font-semibold text-[var(--highlight)] transition-colors hover:text-[var(--ink)]">
-        Festivales
+      <Link href="/otros-eventos" className="font-semibold text-[var(--highlight)] transition-colors hover:text-[var(--ink)]">
+        Otros eventos
       </Link>
       <Link href="/" className="text-[var(--ink-muted)] transition-colors hover:text-[var(--ink)]">
         Eventos

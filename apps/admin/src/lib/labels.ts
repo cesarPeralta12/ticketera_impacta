@@ -1,4 +1,4 @@
-import { isTablesLayout } from "@ticketera/core";
+import { isSeatedTablesLayout, isTablesLayout } from "@ticketera/core";
 
 /** Etiquetas de estado del panel. */
 export const EVENT_STATUS = {
@@ -10,9 +10,11 @@ export const EVENT_STATUS = {
 
 export const SEATING_LABEL = { GENERAL_ADMISSION: "Entrada general", RESERVED: "Butacas numeradas" } as const;
 
-/** Tipo de sección para mostrar: los lounges puestos en el plano del boliche son numerados pero no son butacas. */
+/** Tipo de sección para mostrar: los lounges del boliche y las mesas con sillas son numerados pero no son butacas. */
 export function seatingLabel(section: { seatingMode: keyof typeof SEATING_LABEL; layout: unknown }): string {
-  return isTablesLayout(section.layout) ? "Lounges en el plano" : SEATING_LABEL[section.seatingMode];
+  if (isTablesLayout(section.layout)) return "Lounges en el plano";
+  if (isSeatedTablesLayout(section.layout)) return `Mesas con sillas · ${section.layout.tables.length} mesas`;
+  return SEATING_LABEL[section.seatingMode];
 }
 
 export const ROLE_LABEL = {
@@ -21,11 +23,12 @@ export const ROLE_LABEL = {
   OPERATOR: "Operador de puerta",
   CASHIER: "Cajero (boletería y barra)",
   CLIENT: "Cliente (solo lectura)",
+  PROMOTER: "Promotor (vende con QR)",
 } as const;
 
 export const MODE_LABEL = { TICKETING: "Venta de entradas", GUEST_LIST: "Lista de invitados" } as const;
 
-export const CHANNEL_LABEL = { ONLINE: "Online", POS: "Boletería", GUEST: "Invitaciones", PRINTED: "Impresas", IMPORT: "Importadas" } as const;
+export const CHANNEL_LABEL = { ONLINE: "Online", POS: "Boletería", GUEST: "Invitaciones", PRINTED: "Impresas", IMPORT: "Importadas", PROMOTER: "Promotores" } as const;
 
 export const SCAN_LABEL = {
   ACCEPTED: "Aceptada",
@@ -41,6 +44,7 @@ export const SCAN_LABEL = {
   OUT_OF_HOURS: "Fuera de horario",
   NOT_ACTIVATED: "Impresa sin vender (no activada)",
   NOT_INSIDE: "Salida sin haber entrado",
+  ZONE_FULL: "Zona llena",
 } as const;
 
 /** Qué hizo una lectura aceptada (ver PresenceMovement). Vacío en las lecturas de antes de las zonas: ingreso. */

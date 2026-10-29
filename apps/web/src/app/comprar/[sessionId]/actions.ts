@@ -105,7 +105,9 @@ export async function previewPromoAction(
   }
   try {
     const preview = await previewPromo({ sessionId, items, code, customerId: session.user.id });
-    const label = preview.discountType === "PERCENT" ? `${preview.discountValue}% menos` : "descuento por entrada";
+    // El código de un promotor puede no tener descuento: solo hace que la compra sume a su comisión.
+    const label =
+      preview.discountAmount === 0 ? "código de tu promotor" : preview.discountType === "PERCENT" ? `${preview.discountValue}% menos` : "descuento por entrada";
     return { ok: true, code: preview.code, label, discountAmount: preview.discountAmount, totalAmount: preview.totalAmount };
   } catch (error) {
     if (error instanceof DomainError) return { ok: false, error: error.message };

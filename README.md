@@ -53,6 +53,7 @@ datos nuevos (cliente, cajero, puertas por sección, evento con invitados) **sin
 | Panel :3001 | `admin@impacta.test` | `Impacta2026!` | Dueño de Impacta: crea y edita todo (también dentro de cada organizador) |
 | App móvil | `puerta@impacta.test` | `Puerta2026!` | Portero: solo la app móvil (no entra al panel) |
 | Panel :3001 | `caja@impacta.test` | `Caja2026!` | Cajero: solo boletería |
+| Panel :3001 | `promotor@impacta.test` | `Promotor2026!` | Promotor: vende Loko Fest con cobro QR (simulado) y ve su comisión (10%) |
 | Panel :3001 | `cliente@impacta.test` | `Cliente2026!` | Cliente (Producciones Andinas): sus eventos, solo lectura |
 | Panel :3001 | `organizador@andeslive.test` | `Organizador2026!` | Organizador de eventos "Andes Live": su panel, solo lectura |
 | Panel :3001 | `organizador@cumbre.test` | `Organizador2026!` | Organizador de eventos "Cumbre Eventos": su panel, solo lectura |

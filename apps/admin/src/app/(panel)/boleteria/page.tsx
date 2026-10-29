@@ -10,18 +10,19 @@ import {
   utcToZonedInput,
   zonedDateTimeToUtc,
 } from "@ticketera/core";
-import { BOX_OFFICE_HOURS_AFTER_START, prisma, salesCutoff } from "@ticketera/db";
+import { BOX_OFFICE_HOURS_AFTER_START, prisma, salesAccess, salesCutoff, sellableSessionsWhere, type SalesAccess } from "@ticketera/db";
 import { ROLES, isNightlife, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Boletería" };
 
 const METHOD_LABEL: Record<string, string> = { pos_efectivo: "Efectivo", pos_qr: "QR", pos_tarjeta: "Tarjeta" };
 
-/** Funciones que la boletería puede vender ahora (también durante el evento). */
-async function sessionsOnSale(organizationId: string) {
+/** Funciones que la boletería puede vender ahora (también durante el evento): de ellas, las que la cuenta tiene permitidas. */
+async function sessionsOnSale(organizationId: string, access: SalesAccess) {
   const now = new Date();
   const sessions = await prisma.eventSession.findMany({
     where: {
+      ...sellableSessionsWhere(access),
       cancelledAt: null,
       startsAt: { gt: new Date(now.getTime() - 48 * 60 * 60_000) },
       event: { organizationId, status: "PUBLISHED", mode: "TICKETING" },
@@ -62,7 +63,8 @@ async function myDay(staffId: string) {
 export default async function BoxOfficePage() {
   await connection();
   const staff = await requireStaff(ROLES.pos);
-  const [sessions, day] = await Promise.all([sessionsOnSale(staff.organization.id), myDay(staff.id)]);
+  const access = await salesAccess(prisma, staff.id, staff.organization.id);
+  const [sessions, day] = await Promise.all([sessionsOnSale(staff.organization.id, access), myDay(staff.id)]);
   const currency = staff.organization.currency;
 
   return (
@@ -78,7 +80,11 @@ export default async function BoxOfficePage() {
       <section data-tour="funciones-venta" className="space-y-2">
         <h2 className="eyebrow">{isNightlife(staff) ? "Noches a la venta" : "Funciones a la venta"}</h2>
         {sessions.length === 0 ? (
-          <p className="card p-5 text-sm text-[var(--ink-muted)]">No hay funciones publicadas a la venta.</p>
+          <p className="card p-5 text-sm text-[var(--ink-muted)]">
+            {access.all
+              ? "No hay funciones publicadas a la venta."
+              : "No tienes funciones asignadas para vender ahora. Pídele a iPass que te asigne los eventos o funciones que vas a vender."}
+          </p>
         ) : (
           <ul className="grid gap-3 md:grid-cols-2">
             {sessions.map((s) => (

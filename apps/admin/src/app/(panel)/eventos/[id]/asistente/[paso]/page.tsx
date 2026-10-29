@@ -15,6 +15,7 @@ import { eventChecks } from "@/lib/event-checklist";
 import { EVENT_STATUS } from "@/lib/labels";
 import { buyerPreviewUrl } from "@/lib/preview";
 import { ROLES, requireStaff } from "@/lib/session";
+import { venueChoices } from "@/lib/venue-choices";
 
 export const metadata: Metadata = { title: "Armar el evento" };
 
@@ -48,11 +49,7 @@ export default async function WizardPage({ params }: Props) {
     },
   });
   if (!event) notFound();
-  const venues = await prisma.venue.findMany({
-    where: { organizationId: staff.organization.id },
-    orderBy: { name: "asc" },
-    select: { id: true, name: true, city: true, timezone: true },
-  });
+  const venues = await venueChoices(staff.organization.id);
   const noun = sessionNoun(event.category);
   const guestList = event.mode === "GUEST_LIST";
   const nightlife = event.category === "BOLICHE";

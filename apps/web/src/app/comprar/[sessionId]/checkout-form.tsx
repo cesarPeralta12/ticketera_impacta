@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useMemo, useState, useTransition, type FormEvent } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState, useTransition, type FormEvent } from "react";
 import { MAX_TICKETS_PER_ORDER, RESERVATION_MINUTES, bestAvailableSeats, formatMoney, orphanSeats, type MapItem, type PickSeat } from "@ticketera/core";
 import { createOrderAction, previewPromoAction, type CheckoutState, type PromoPreview } from "./actions";
 import { SeatPicker, type PickerSection, type PickerZone } from "./seat-picker";
@@ -26,6 +26,10 @@ export type GeneralType = {
   max: number;
   /** Preventa: hasta cuándo se vende (texto ya formateado). */
   presaleUntil: string | null;
+  /** "Fase 2 de 4" si es una fase de venta (la que se vende ahora). */
+  phase: string | null;
+  /** "Incluye: Zona VIP" si la entrada abre zonas propias. */
+  includes: string | null;
   /** Todavía no empieza: desde cuándo se vende (texto ya formateado). */
   opensAt: string | null;
   /** Boliche: mesa o lounge (el cupo y la cantidad son mesas; cada persona recibe su QR). */
@@ -42,6 +46,8 @@ export type SeatedType = PickerSection & {
   table?: { people: number } | null;
   /** Consumo incluido por mesa (texto ya formateado). */
   consumption?: string | null;
+  /** "Incluye: Zona VIP" si abre zonas propias. */
+  includes?: string | null;
 };
 
 export function CheckoutForm({
@@ -52,6 +58,7 @@ export function CheckoutForm({
   items = [],
   buyer,
   holdCode,
+  linkPromo,
 }: {
   sessionId: string;
   general: GeneralType[];
@@ -63,6 +70,8 @@ export function CheckoutForm({
   buyer: { name: string; email: string; document: string };
   /** Código de una retención (del enlace): habilita sus butacas apartadas. */
   holdCode?: string;
+  /** Código del enlace de un promotor: se aplica solo al elegir las entradas (si no aplica aquí, no se muestra nada). */
+  linkPromo?: string;
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState<CheckoutState, FormData>(createOrderAction, {});
@@ -70,7 +79,7 @@ export function CheckoutForm({
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   const [notice, setNotice] = useState<string | null>(null);
-  const [promoInput, setPromoInput] = useState("");
+  const [promoInput, setPromoInput] = useState(linkPromo ?? "");
   const [promo, setPromo] = useState<Extract<PromoPreview, { ok: true }> | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [promoBusy, setPromoBusy] = useState(false);
@@ -139,6 +148,21 @@ export function CheckoutForm({
       setPromoError(result.error);
     }
   }
+
+  // Enlace de un promotor: al elegir la primera entrada se aplica su código (una vez; si no aplica, se borra sin aviso).
+  const pendingLinkPromo = useRef(linkPromo);
+  useEffect(() => {
+    const code = pendingLinkPromo.current;
+    if (!code || promo || chosen.length === 0) return;
+    pendingLinkPromo.current = undefined;
+    void previewPromoAction(sessionId, chosen, code).then((result) => {
+      if (result.ok) {
+        setPromo(result);
+        setPromoInput(result.code);
+      } else setPromoInput("");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo cuando cambia lo elegido
+  }, [chosenKey]);
 
   // Si cambia lo elegido, el descuento se vuelve a calcular con el mismo código.
   useEffect(() => {
@@ -266,6 +290,7 @@ export function CheckoutForm({
                     {t.consumption ? `, incluye ${t.consumption} de consumo` : ""}
                   </span>
                 )}
+                {t.includes && <span className="font-semibold text-[var(--accent-text)]"> · {t.includes.toLowerCase()}</span>}
                 :{" "}
                 <span className="text-[var(--ink)]">{formatMoney(t.unitAmount, t.currency)}</span>
                 {(seats[t.ticketTypeId]?.length ?? 0) > 0 && (
@@ -306,6 +331,11 @@ export function CheckoutForm({
                 <div>
                   <p className="font-semibold">
                     {type.name}
+                    {type.phase && (
+                      <span className="ml-2 rounded-full bg-[var(--highlight)]/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--accent-text)]">
+                        {type.phase}
+                      </span>
+                    )}
                     {type.presaleUntil && (
                       <span className="ml-2 rounded-full bg-[var(--accent-2)]/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--accent-2)]">
                         Preventa
@@ -323,6 +353,7 @@ export function CheckoutForm({
                     )}
                   </p>
                   {type.detail && <p className="text-xs text-[var(--ink-dim)]">{type.detail}</p>}
+                  {type.includes && <p className="text-xs font-semibold text-[var(--accent-text)]">{type.includes}</p>}
                   {type.table && (
                     <p className="text-xs text-[var(--ink-muted)]">Cada persona de la mesa recibe su QR para entrar (puedes pasárselo desde Mis entradas).</p>
                   )}
@@ -409,8 +440,12 @@ export function CheckoutForm({
         {promo ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[var(--green)]/10 px-4 py-3 text-sm">
             <p>
-              <strong className="font-mono">{promo.code}</strong> aplicado ({promo.label}):{" "}
-              <strong>−{formatMoney(promo.discountAmount, currency)}</strong>
+              <strong className="font-mono">{promo.code}</strong> aplicado ({promo.label})
+              {promo.discountAmount > 0 && (
+                <>
+                  : <strong>−{formatMoney(promo.discountAmount, currency)}</strong>
+                </>
+              )}
             </p>
             <button
               type="button"
@@ -464,7 +499,7 @@ export function CheckoutForm({
             {totalTickets} {totalTickets === 1 ? "entrada" : "entradas"} · máximo {MAX_TICKETS_PER_ORDER}
             {tableQrs > 0 && ` · las mesas traen ${tableQrs} QR`}
           </p>
-          {promo && (
+          {promo && promo.discountAmount > 0 && (
             <p className="text-xs text-[var(--green)]">
               Descuento {promo.code}: −{formatMoney(promo.discountAmount, currency)}
             </p>

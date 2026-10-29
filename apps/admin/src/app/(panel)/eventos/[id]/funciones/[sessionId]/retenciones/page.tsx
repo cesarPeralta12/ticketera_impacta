@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { TABLE_RADIUS, formatDateTime, isSeatedTablesLayout, isTablesLayout, mapItemsOf } from "@ticketera/core";
+import { TABLE_RADIUS, formatDateTime, isSeatedTablesLayout, isTablesLayout, mapItemsOf, seatDotRadius } from "@ticketera/core";
 import { getTakenSeatIds, listSeatHolds, prisma, requireEnv } from "@ticketera/db";
 import { ROLES, requireStaff } from "@/lib/session";
 import { HoldsEditor, type HoldInfo, type HoldSeat } from "./holds-editor";
@@ -37,24 +37,21 @@ export default async function HoldsPage({ params }: Props) {
   if (!session) notFound();
   const [taken, holds] = await Promise.all([getTakenSeatIds(session.id), listSeatHolds(session.id)]);
   const holdOf = new Map(holds.flatMap((h) => h.seats.map((s) => [s.seatId, h.id] as const)));
-  const seats: HoldSeat[] = session.venue.sections.flatMap((section) =>
-    section.seats.flatMap((seat) =>
-      seat.x !== null && seat.y !== null
-        ? [
-            {
-              id: seat.id,
-              label: `${section.name} · ${seat.label}`,
-              x: seat.x,
-              y: seat.y,
-              sectionColor: section.color,
-              r: isTablesLayout(section.layout) ? TABLE_RADIUS : isSeatedTablesLayout(section.layout) ? 6 : 7,
-              sold: taken.has(seat.id),
-              holdId: holdOf.get(seat.id) ?? null,
-            },
-          ]
-        : [],
-    ),
-  );
+  const seats: HoldSeat[] = session.venue.sections.flatMap((section) => {
+    const placed = section.seats.flatMap((seat) => (seat.x !== null && seat.y !== null ? [{ ...seat, x: seat.x, y: seat.y }] : []));
+    // Butacas muy juntas: el punto se achica para que no se pisen (igual que en la web).
+    const r = isTablesLayout(section.layout) ? TABLE_RADIUS : seatDotRadius(placed, isSeatedTablesLayout(section.layout) ? 6 : undefined);
+    return placed.map((seat) => ({
+      id: seat.id,
+      label: `${section.name} · ${seat.label}`,
+      x: seat.x,
+      y: seat.y,
+      sectionColor: section.color,
+      r,
+      sold: taken.has(seat.id),
+      holdId: holdOf.get(seat.id) ?? null,
+    }));
+  });
   const web = requireEnv("WEB_URL").replace(/\/$/, "");
   const info: HoldInfo[] = holds.map((h) => ({
     id: h.id,

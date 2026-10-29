@@ -20,7 +20,8 @@ const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https:",
+  // Más el sitio (fotos de eventos subidas, que sirve la web): en desarrollo es http://localhost, no https.
+  `img-src 'self' data: blob: https:${webOrigin?.startsWith("http:") ? ` ${webOrigin}` : ""}`,
   "font-src 'self' data:",
   `connect-src 'self'${isProd ? "" : " ws: wss:"}`,
   ...(webOrigin ? [`frame-src ${webOrigin}`] : []),
@@ -45,7 +46,9 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   transpilePackages: ["@ticketera/core", "@ticketera/db", "@ticketera/mail"],
   poweredByHeader: false,
-  experimental: { serverActions: { bodySizeLimit: "1mb" } },
+  // El proxy guarda en memoria el cuerpo de cada petición hasta este tope (por defecto 10 MB; lo demás se corta):
+  // el material promocional pesa hasta 25 MB, así que se sube el tope para que no llegue incompleto.
+  experimental: { serverActions: { bodySizeLimit: "1mb" }, proxyClientMaxBodySize: "30mb" },
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },

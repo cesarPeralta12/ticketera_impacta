@@ -8,14 +8,19 @@ import { PlanBackground, type PlanBackgroundInfo } from "@/components/plan-backg
  * sección se define por función), y permite editar y borrar secciones existentes y avisa
  * cuando una sección se superpone con otra.
  */
-import { useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import {
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
   MAX_ROWS,
   MAX_SEATS_PER_ROW,
+  MIN_SEAT_GAP,
   SECTION_COLORS,
   computeSeatPositions,
+  dotRadius,
+  seatDotRadius,
+  seatShapeProblem,
+  shapeSeatSpacing,
   zoneLabelPoint,
   zonePath,
   type MapItem,
@@ -60,6 +65,72 @@ const DEFAULTS = {
 function overlapsAny(seats: { x: number; y: number }[], sections: DesignerSection[]) {
   return sections.find((section) =>
     section.seats.some((seat) => seats.some((p) => Math.hypot(p.x - seat.x, p.y - seat.y) < OVERLAP_DISTANCE)),
+  );
+}
+
+/** Espacio al arrastrar un borde: de a medio punto y nunca menos que el mínimo. */
+const spacingStep = (v: number) => Math.max(MIN_SEAT_GAP, Math.round(v * 2) / 2);
+
+/** Cuadradito para tirar del borde de la sección (achicarla o agrandarla). */
+const HANDLE = 12;
+
+/**
+ * Campo de número que se puede borrar y volver a escribir: el mapa toma el valor recién cuando es
+ * válido; si no, avisa qué falta, y al salir del campo vuelve al último valor bueno.
+ */
+function NumberField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  integer = false,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  min?: number;
+  max?: number;
+  integer?: boolean;
+}) {
+  const [text, setText] = useState(String(value));
+  const [shown, setShown] = useState(value);
+  if (value !== shown) {
+    // Cambió desde afuera (al arrastrar un borde o al elegir otra sección).
+    setShown(value);
+    setText(String(value));
+  }
+  const problemFor = (t: string) => {
+    const n = Number(t);
+    if (t.trim() === "" || !Number.isFinite(n)) return "Escribe un número.";
+    if (integer && !Number.isInteger(n)) return "Sin decimales.";
+    if (min !== undefined && n < min) return `Mínimo ${min}.`;
+    if (max !== undefined && n > max) return `Máximo ${max}.`;
+    return null;
+  };
+  const problem = problemFor(text);
+  return (
+    <label className="flex flex-col gap-1 text-xs text-[var(--ink-muted)]">
+      {label}
+      <input
+        type="number"
+        inputMode={integer ? "numeric" : "decimal"}
+        min={min}
+        max={max}
+        step={integer ? 1 : "any"}
+        value={text}
+        aria-invalid={Boolean(problem)}
+        onChange={(e) => {
+          setText(e.target.value);
+          if (problemFor(e.target.value)) return;
+          setShown(Number(e.target.value));
+          onChange(Number(e.target.value));
+        }}
+        onBlur={() => setText(String(value))}
+        className={`${fieldClass} ${problem ? "!border-[var(--danger)]" : ""}`}
+      />
+      {problem && <span className="text-[var(--danger)]">{problem}</span>}
+    </label>
   );
 }
 
@@ -116,6 +187,7 @@ export function SeatDesigner({
 
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<{ startPx: number; startPy: number; startX: number; startY: number } | null>(null);
+  const resizeRef = useRef<{ edge: "x" | "y" | "xy"; startPx: number; startPy: number; seatGap: number; rowGap: number } | null>(null);
 
   const editing = existingSections.find((s) => s.id === editingId) ?? null;
   // Con ventas, cambiar la forma recrearía butacas ya vendidas: solo nombre y color.
@@ -136,6 +208,11 @@ export function SeatDesigner({
   const maxY = Math.max(...ys) + 18;
 
   const overlapping = overlapsAny(previewSeats, others);
+  const shapeProblem = shapeLocked ? null : seatShapeProblem(shape);
+  // Butacas más juntas que lo normal: el punto se achica para que no se pisen (igual en el mapa del comprador).
+  const previewRadius = dotRadius(shapeSeatSpacing(shape), 6);
+  const radiusById = useMemo(() => new Map(existingSections.map((s) => [s.id, seatDotRadius(s.seats, 5)])), [existingSections]);
+  const resizable = shapeType === "grid" && !shapeLocked;
 
   function loadShape(s: SectionShape) {
     setShapeType(s.type);
@@ -248,6 +325,27 @@ export function SeatDesigner({
     dragRef.current = null;
   }
 
+  /** Tirar del borde derecho cambia el espacio entre butacas; del borde de abajo, el espacio entre filas. */
+  function handleResizeStart(e: React.PointerEvent<SVGRectElement>) {
+    const edge = e.currentTarget.dataset.edge as "x" | "y" | "xy";
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const p = toSvgPoint(e.clientX, e.clientY);
+    resizeRef.current = { edge, startPx: p.x, startPy: p.y, seatGap, rowGap };
+  }
+
+  function handleResizeMove(e: React.PointerEvent<SVGRectElement>) {
+    const start = resizeRef.current;
+    if (!start) return;
+    const p = toSvgPoint(e.clientX, e.clientY);
+    if (start.edge !== "y" && seatsPerRow > 1) setSeatGap(spacingStep(start.seatGap + (p.x - start.startPx) / (seatsPerRow - 1)));
+    if (start.edge !== "x" && rows > 1) setRowGap(spacingStep(start.rowGap + (p.y - start.startPy) / (rows - 1)));
+  }
+
+  function handleResizeEnd() {
+    resizeRef.current = null;
+  }
+
   function handleSubmit() {
     setError(null);
     setNotice(null);
@@ -324,7 +422,7 @@ export function SeatDesigner({
                   key={i}
                   cx={seat.x}
                   cy={seat.y}
-                  r={5}
+                  r={radiusById.get(s.id) ?? 5}
                   fill={s.color}
                   stroke={overlapping?.id === s.id ? "#b91c1c" : "none"}
                   strokeWidth={1.5}
@@ -338,18 +436,48 @@ export function SeatDesigner({
               key={i}
               cx={s.x}
               cy={s.y}
-              r={6}
+              r={previewRadius}
               fill={color}
               stroke="#1a1a18"
               strokeWidth={0.5}
               style={{ pointerEvents: "none" }}
             />
           ))}
+
+          {resizable &&
+            (
+              [
+                { edge: "x", x: maxX, y: (minY + maxY) / 2, cursor: "ew-resize", show: seatsPerRow > 1, title: "Tira para cambiar el espacio entre butacas" },
+                { edge: "y", x: (minX + maxX) / 2, y: maxY, cursor: "ns-resize", show: rows > 1, title: "Tira para cambiar el espacio entre filas" },
+                { edge: "xy", x: maxX, y: maxY, cursor: "nwse-resize", show: seatsPerRow > 1 && rows > 1, title: "Tira para achicar o agrandar la sección" },
+              ] as const
+            )
+              .filter((h) => h.show)
+              .map((h) => (
+                <rect
+                  key={h.edge}
+                  x={h.x - HANDLE / 2}
+                  y={h.y - HANDLE / 2}
+                  width={HANDLE}
+                  height={HANDLE}
+                  rx={2}
+                  fill="#ffffff"
+                  stroke={overlapping || shapeProblem ? "#b91c1c" : "#1a1a18"}
+                  strokeWidth={1.5}
+                  style={{ cursor: h.cursor, touchAction: "none" }}
+                  data-edge={h.edge}
+                  onPointerDown={handleResizeStart}
+                  onPointerMove={handleResizeMove}
+                  onPointerUp={handleResizeEnd}
+                >
+                  <title>{h.title}</title>
+                </rect>
+              ))}
         </svg>
         <p className="border-t border-[var(--border)] px-4 py-2 text-xs text-[var(--ink-dim)]">
           {editing
-            ? `Editando "${editing.name}": arrástrala para moverla. ${previewSeats.length} butacas.`
-            : `Arrastra el área punteada para ubicar la sección nueva. ${previewSeats.length} butacas. Haz clic en una sección existente para editarla.`}
+            ? `Editando "${editing.name}": arrástrala para moverla${resizable ? " y tira de los cuadraditos del borde para achicarla" : ""}. ${previewSeats.length} butacas.`
+            : `Arrastra el área punteada para ubicar la sección nueva${resizable ? " y tira de los cuadraditos del borde para achicarla o agrandarla" : ""}. ${previewSeats.length} butacas. Haz clic en una sección existente para editarla.`}
         </p>
       </div>
 
@@ -449,95 +577,21 @@ export function SeatDesigner({
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <label className="flex flex-col gap-1 text-xs text-[var(--ink-muted)]">
-                Filas
-                <input
-                  type="number"
-                  min={1}
-                  max={MAX_ROWS}
-                  value={rows}
-                  onChange={(e) => setRows(Number(e.target.value))}
-                  className={fieldClass}
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-xs text-[var(--ink-muted)]">
-                Butacas/fila
-                <input
-                  type="number"
-                  min={1}
-                  max={MAX_SEATS_PER_ROW}
-                  value={seatsPerRow}
-                  onChange={(e) => setSeatsPerRow(Number(e.target.value))}
-                  className={fieldClass}
-                />
-              </label>
+              <NumberField label="Filas" value={rows} onChange={setRows} min={1} max={MAX_ROWS} integer />
+              <NumberField label="Butacas/fila" value={seatsPerRow} onChange={setSeatsPerRow} min={1} max={MAX_SEATS_PER_ROW} integer />
             </div>
 
             {shapeType === "grid" ? (
               <div className="grid grid-cols-2 gap-3">
-                <label className="flex flex-col gap-1 text-xs text-[var(--ink-muted)]">
-                  Espacio entre butacas
-                  <input
-                    type="number"
-                    min={12}
-                    value={seatGap}
-                    onChange={(e) => setSeatGap(Number(e.target.value))}
-                    className={fieldClass}
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-[var(--ink-muted)]">
-                  Espacio entre filas
-                  <input
-                    type="number"
-                    min={12}
-                    value={rowGap}
-                    onChange={(e) => setRowGap(Number(e.target.value))}
-                    className={fieldClass}
-                  />
-                </label>
+                <NumberField label="Espacio entre butacas" value={seatGap} onChange={setSeatGap} min={MIN_SEAT_GAP} />
+                <NumberField label="Espacio entre filas" value={rowGap} onChange={setRowGap} min={MIN_SEAT_GAP} />
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3">
-                <label className="flex flex-col gap-1 text-xs text-[var(--ink-muted)]">
-                  Radio inicial
-                  <input
-                    type="number"
-                    min={20}
-                    value={startRadius}
-                    onChange={(e) => setStartRadius(Number(e.target.value))}
-                    className={fieldClass}
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-[var(--ink-muted)]">
-                  Espacio entre filas
-                  <input
-                    type="number"
-                    min={12}
-                    value={arcRowGap}
-                    onChange={(e) => setArcRowGap(Number(e.target.value))}
-                    className={fieldClass}
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-[var(--ink-muted)]">
-                  Ángulo inicial
-                  <input
-                    type="number"
-                    value={startAngleDeg}
-                    onChange={(e) => setStartAngleDeg(Number(e.target.value))}
-                    className={fieldClass}
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-[var(--ink-muted)]">
-                  Apertura (°)
-                  <input
-                    type="number"
-                    min={10}
-                    max={360}
-                    value={spanDeg}
-                    onChange={(e) => setSpanDeg(Number(e.target.value))}
-                    className={fieldClass}
-                  />
-                </label>
+                <NumberField label="Radio inicial" value={startRadius} onChange={setStartRadius} min={20} />
+                <NumberField label="Espacio entre filas" value={arcRowGap} onChange={setArcRowGap} min={MIN_SEAT_GAP} />
+                <NumberField label="Ángulo inicial" value={startAngleDeg} onChange={setStartAngleDeg} />
+                <NumberField label="Apertura (°)" value={spanDeg} onChange={setSpanDeg} min={10} max={360} />
               </div>
             )}
           </fieldset>
@@ -547,13 +601,14 @@ export function SeatDesigner({
               Se superpone con &quot;{overlapping.name}&quot;. Muévela o cambia su tamaño.
             </p>
           )}
+          {shapeProblem && <p className="text-xs text-[var(--danger)]">{shapeProblem}</p>}
           {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
           {notice && <p className="text-sm text-[var(--accent)]">{notice}</p>}
 
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={pending || (Boolean(overlapping) && !shapeLocked)}
+            disabled={pending || (Boolean(overlapping) && !shapeLocked) || Boolean(shapeProblem)}
             className="rounded-md bg-[var(--ink)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {pending ? "Guardando…" : editing ? "Guardar cambios" : "+ Agregar sección al mapa"}

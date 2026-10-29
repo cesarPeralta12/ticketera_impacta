@@ -4,13 +4,18 @@ import { useMemo, useRef, useState, type PointerEvent } from "react";
 import {
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
+  DEFAULT_TABLE_SIZE,
   MAX_CHAIRS,
+  MAX_TABLE_SIZE,
   MIN_CHAIRS,
+  MIN_TABLE_SIZE,
   TABLE_SALE_MODE_LABEL,
+  chairRadius,
   parseSeatedTablesLayout,
   seatedTableSeats,
   seatedTablesGrid,
   tableHeight,
+  tableNumberFontSize,
   type MapItem,
   type SeatedTable,
   type SeatedTablesLayout,
@@ -20,14 +25,45 @@ import {
 import { ActionForm } from "@/components/action-form";
 import { MapDecor } from "@/components/map-decor";
 import { PlanBackground, type PlanBackgroundInfo } from "@/components/plan-background";
-import { addSeatedTablesSectionAction, moveSeatedTablesAction } from "@/lib/actions/venues";
+import { addSeatedTablesSectionAction, deleteSectionAction, moveSeatedTablesAction } from "@/lib/actions/venues";
 
 type Background = { x: number; y: number; color: string; sectionId?: string };
-/** Una sección de mesas ya creada: se pueden recolocar sus mesas (no cambiar cuántas ni sus sillas). */
-export type ExistingTablesSection = { id: string; name: string; color: string; layout: SeatedTablesLayout };
+/** Una sección de mesas ya creada: se renombra, se recolocan o achican sus mesas (no cuántas ni sus sillas) o se borra. */
+export type ExistingTablesSection = {
+  id: string;
+  name: string;
+  color: string;
+  layout: SeatedTablesLayout;
+  /** Tiene entradas vendidas o reservadas: no se puede borrar. */
+  sold: boolean;
+  /** En cuántas funciones tiene precio (se quita al borrarla). */
+  priced: number;
+};
 type Point = { x: number; y: number };
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+
+/** Tamaño de la mesa: se arrastra la barra (o se escribe) y se ve en vivo en el mapa; las sillas la siguen. */
+function TableSizeField({ value, onChange }: { value: number; onChange: (size: number) => void }) {
+  return (
+    <label className="label">
+      Tamaño de la mesa
+      <span className="flex items-center gap-2">
+        <input
+          type="range"
+          min={MIN_TABLE_SIZE}
+          max={MAX_TABLE_SIZE}
+          step={1}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="w-full accent-[var(--ink)]"
+          aria-label="Tamaño de la mesa"
+        />
+        <span className="w-8 text-right font-mono text-xs">{value}</span>
+      </span>
+    </label>
+  );
+}
 
 /**
  * Mesas con sillas alrededor (cena show, gala, matrimonio): se arman en una grilla y se ve en vivo cómo quedan sobre
@@ -58,7 +94,7 @@ export function SeatedTablesDesigner({
             <option value="">Crear mesas nuevas</option>
             {existing.map((s) => (
               <option key={s.id} value={s.id}>
-                Mover las mesas de &ldquo;{s.name}&rdquo;
+                Editar o borrar las mesas de &ldquo;{s.name}&rdquo;
               </option>
             ))}
           </select>
@@ -95,6 +131,9 @@ function TablesCanvas({
   const parsed = parseSeatedTablesLayout({ type: "seated", ...layout });
   const chairs = parsed.ok ? seatedTableSeats(parsed.layout) : [];
   const { size, shape } = layout;
+  // Mesa chica: sillas más chicas, para que no se pisen.
+  const chairR = chairRadius(shape, layout.chairs, size);
+  const fontSize = tableNumberFontSize(size);
 
   function point(e: PointerEvent): Point {
     const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(svgRef.current!.getScreenCTM()!.inverse());
@@ -156,17 +195,19 @@ function TablesCanvas({
                   strokeWidth={moving ? 3 : 2}
                 />
               )}
-              <text x={t.x} y={t.y + 4} textAnchor="middle" fontSize="11" fontWeight="700" fill="#1a1a18" pointerEvents="none">
+              <text x={t.x} y={t.y + (fontSize * 4) / 11} textAnchor="middle" fontSize={fontSize} fontWeight="700" fill="#1a1a18" pointerEvents="none">
                 {t.number}
               </text>
             </g>
           );
         })}
         {chairs.map((c, i) => (
-          <circle key={i} cx={c.x} cy={c.y} r={6} fill="#fff" stroke={color} strokeWidth={2} pointerEvents="none" />
+          <circle key={i} cx={c.x} cy={c.y} r={chairR} fill="#fff" stroke={color} strokeWidth={chairR < 5 ? 1.5 : 2} pointerEvents="none" />
         ))}
       </svg>
-      <p className="text-xs text-[var(--ink-dim)]">Arrastra cada mesa a donde va (con el mouse o el dedo); sus sillas la siguen.</p>
+      <p className="text-xs text-[var(--ink-dim)]">
+        Arrastra cada mesa a donde va (con el mouse o el dedo); sus sillas la siguen. Con &ldquo;Tamaño de la mesa&rdquo; la achicas o agrandas para que calce con el plano.
+      </p>
       {!parsed.ok && <p className="text-sm text-[var(--danger)]">{parsed.error}</p>}
     </>
   );
@@ -190,7 +231,9 @@ function NewTables({ venueId, background, plan, items }: { venueId: string; back
   const [gapY, setGapY] = useState(140);
   // Mesas que se arrastraron a mano (por número): pisan su lugar en la grilla.
   const [moved, setMoved] = useState<Record<number, Point>>({});
-  const size = shape === "round" ? 22 : 30;
+  // Un tamaño por forma: al pasar de redonda a rectangular cada una mantiene el suyo.
+  const [sizes, setSizes] = useState(DEFAULT_TABLE_SIZE);
+  const size = sizes[shape];
 
   const draft = useMemo(
     () => ({
@@ -227,6 +270,7 @@ function NewTables({ venueId, background, plan, items }: { venueId: string; back
             <option value="rect">Rectangular</option>
           </select>
         </label>
+        <TableSizeField value={size} onChange={(n) => setSizes((s) => ({ ...s, [shape]: n }))} />
         <label className="label">
           Sillas por mesa
           <input type="number" min={MIN_CHAIRS} max={MAX_CHAIRS} value={chairs} onChange={num(setChairs)} className="field" />
@@ -323,9 +367,14 @@ function MoveTables({
   onDone: () => void;
 }) {
   const [tables, setTables] = useState<SeatedTable[]>(section.layout.tables);
-  const layout = { ...section.layout, tables };
+  const [size, setSize] = useState(section.layout.size);
+  const [name, setName] = useState(section.name);
+  const layout = { ...section.layout, size, tables };
   const parsed = parseSeatedTablesLayout(layout);
-  const changed = tables.some((t, i) => t.x !== section.layout.tables[i]?.x || t.y !== section.layout.tables[i]?.y);
+  const changed =
+    name.trim() !== section.name ||
+    size !== section.layout.size ||
+    tables.some((t, i) => t.x !== section.layout.tables[i]?.x || t.y !== section.layout.tables[i]?.y);
   // Sin las sillas de esta sección en el fondo (se dibujan arriba, siguiendo a sus mesas).
   const others = background.filter((b) => b.sectionId !== section.id);
 
@@ -333,8 +382,15 @@ function MoveTables({
     <>
       <p className="text-sm text-[var(--ink-muted)]">
         {section.layout.tables.length} mesas de {section.layout.chairs} sillas ({TABLE_SALE_MODE_LABEL[section.layout.mode].toLowerCase()}). Mover
-        no cambia las mesas, sus números ni lo vendido: solo dónde se ven en el mapa.
+        o cambiar el tamaño no cambia las mesas, sus números ni lo vendido: solo cómo se ven en el mapa.
       </p>
+      <div className="grid gap-3 sm:grid-cols-2 lg:max-w-2xl">
+        <label className="label">
+          Nombre de la sección
+          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className="field" />
+        </label>
+        <TableSizeField value={size} onChange={setSize} />
+      </div>
       <TablesCanvas
         layout={layout}
         color={section.color}
@@ -347,16 +403,44 @@ function MoveTables({
         <ActionForm action={moveSeatedTablesAction} className="flex flex-wrap items-center gap-3">
           <input type="hidden" name="sectionId" value={section.id} />
           <input type="hidden" name="tables" value={JSON.stringify(tables)} />
+          <input type="hidden" name="size" value={size} />
+          <input type="hidden" name="name" value={name} />
           <button type="submit" disabled={!parsed.ok || !changed} className="btn btn-dark disabled:cursor-not-allowed disabled:opacity-50">
-            Guardar posiciones
+            Guardar cambios
           </button>
         </ActionForm>
-        <button type="button" onClick={() => setTables(section.layout.tables)} disabled={!changed} className="btn text-sm disabled:opacity-50">
+        <button
+          type="button"
+          onClick={() => {
+            setTables(section.layout.tables);
+            setSize(section.layout.size);
+            setName(section.name);
+          }}
+          disabled={!changed}
+          className="btn text-sm disabled:opacity-50"
+        >
           Deshacer cambios
         </button>
         <button type="button" onClick={onDone} className="text-sm text-[var(--ink-muted)] hover:underline">
           Volver a crear mesas
         </button>
+        {section.sold ? (
+          <span className="ml-auto text-xs text-[var(--ink-dim)]">Tiene entradas vendidas o reservadas: no se puede borrar.</span>
+        ) : (
+          <ActionForm
+            action={deleteSectionAction}
+            onSuccess={onDone}
+            confirm={`¿Borrar "${section.name}" con sus ${section.layout.tables.length} mesas y ${section.layout.tables.length * section.layout.chairs} sillas?${
+              section.priced ? ` También se quitará su precio en ${section.priced} ${section.priced === 1 ? "función" : "funciones"}.` : ""
+            }`}
+            className="ml-auto"
+          >
+            <input type="hidden" name="sectionId" value={section.id} />
+            <button type="submit" className="btn text-sm text-[var(--danger)]">
+              Borrar estas mesas
+            </button>
+          </ActionForm>
+        )}
       </div>
     </>
   );

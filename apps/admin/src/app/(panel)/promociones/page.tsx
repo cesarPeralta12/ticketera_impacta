@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { formatMoney, promoLabel } from "@ticketera/core";
-import { listPromoCodes, prisma, summarizeByPromoter } from "@ticketera/db";
+import { listPromoCodes, listPromoterAccounts, prisma, summarizeByPromoter } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { createPromoAction } from "@/lib/actions/promos";
 import { promoState } from "@/lib/promo-state";
@@ -10,17 +10,19 @@ import { ROLES, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Promociones" };
 
-export default async function PromosPage() {
+export default async function PromosPage({ searchParams }: { searchParams: Promise<{ promotor?: string }> }) {
   await connection();
   const staff = await requireStaff(ROLES.manage);
+  const presetPromoter = (await searchParams).promotor ?? "";
   const now = new Date();
-  const [rows, events] = await Promise.all([
+  const [rows, events, promoterAccounts] = await Promise.all([
     listPromoCodes(staff.organization.id, now),
     prisma.event.findMany({
       where: { organizationId: staff.organization.id, status: { not: "CANCELLED" } },
       orderBy: { createdAt: "desc" },
       select: { id: true, title: true },
     }),
+    listPromoterAccounts(staff.organization.id),
   ]);
   const currency = staff.organization.currency;
   const promoters = summarizeByPromoter(rows);
@@ -35,6 +37,22 @@ export default async function PromosPage() {
           Códigos de descuento para campañas, influencers o promotores (RRPP). Cada código mide cuántas entradas vendió, cuánto
           descontó y, si tiene promotor, la comisión que le corresponde.
         </p>
+      </div>
+
+      <div className="card flex flex-wrap items-center justify-between gap-3 border-[var(--accent)]/40 p-4">
+        <p className="text-sm">
+          <strong>Promotores con cuenta de venta:</strong> venden con cobro por QR desde su panel, con su código y su comisión por evento.
+        </p>
+        <span className="flex gap-2">
+          <Link href="/promotores" className="btn text-sm">
+            Ver promotores
+          </Link>
+          {staff.platform && !staff.readOnly && (
+            <Link href="/promotores#nuevo" className="btn btn-primary text-sm">
+              + Nuevo promotor
+            </Link>
+          )}
+        </span>
       </div>
 
       {promoters.length > 0 && (
@@ -104,7 +122,8 @@ export default async function PromosPage() {
                     <td className="px-3 py-2.5 text-right font-mono">{money(p.sales)}</td>
                     <td className="px-3 py-2.5 text-[var(--ink-muted)]">
                       {p.promoterName ?? "—"}
-                      {p.commissionPercent ? ` (${p.commissionPercent}%)` : ""}
+                      {!p.promoterId && p.promoterName && <span className="badge ml-1.5 bg-[var(--warn-soft)] text-[var(--warn)]">sin cuenta</span>}
+                      {!p.promoterId && p.commissionPercent ? ` (${p.commissionPercent}%)` : ""}
                     </td>
                     <td className="px-5 py-2.5">
                       <span className={`badge ${state.className}`}>{state.text}</span>
@@ -117,7 +136,7 @@ export default async function PromosPage() {
         )}
       </section>
 
-      <section data-tour="crear-codigo" className="card p-6">
+      <section id="nuevo" data-tour="crear-codigo" className="card scroll-mt-6 p-6">
         <h2 className="eyebrow mb-4">Nuevo código</h2>
         <ActionForm action={createPromoAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <label className="label">
@@ -168,11 +187,18 @@ export default async function PromosPage() {
           </label>
           <label className="label">
             Promotor / RRPP (opcional)
-            <input name="promoterName" maxLength={80} placeholder="Luis Vargas" className="field" />
-          </label>
-          <label className="label">
-            Comisión del promotor (%)
-            <input name="commissionPercent" type="number" min={0} max={100} className="field" />
+            <select name="promoterId" defaultValue={promoterAccounts.some((a) => a.id === presetPromoter) ? presetPromoter : ""} className="field">
+              <option value="">Sin promotor</option>
+              {promoterAccounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} · {a.email}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs text-[var(--ink-dim)]">
+              Solo cuentas de promotor. Lo que se compra con este código suma a su comisión según la regla de su evento.
+              ¿No está en la lista? <Link href="/promotores#nuevo" className="underline">Crea su cuenta primero</Link>.
+            </span>
           </label>
           <label className="flex items-center gap-2 self-end pb-2 text-sm">
             <input type="checkbox" name="combinableWithPresale" className="h-4 w-4 accent-[var(--accent)]" />

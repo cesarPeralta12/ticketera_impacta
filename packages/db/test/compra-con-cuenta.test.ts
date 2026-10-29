@@ -90,7 +90,10 @@ describe("comprar online exige cuenta con carnet", () => {
 
   it("en boletería el carnet del cliente también es obligatorio", async () => {
     const { session, type } = await event();
-    const cashier = await prisma.staffUser.create({ data: { email: `caja-${unique()}@prueba.test`, name: "Caja", passwordHash: "!" } });
+    const { organizationId } = await prisma.event.findUniqueOrThrow({ where: { id: session.eventId } });
+    const cashier = await prisma.staffUser.create({
+      data: { email: `caja-${unique()}@prueba.test`, name: "Caja", passwordHash: "!", memberships: { create: { organizationId, role: "CASHIER" } } },
+    });
     const sale = (document: string) =>
       sellAtBoxOffice(
         { sessionId: session.id, items: [{ ticketTypeId: type.id, quantity: 1 }], buyer: { name: "", email: "", document } },

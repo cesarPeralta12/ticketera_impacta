@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { code128Svg, entranceText, formatCode, formatClock, formatDateTime, formatMoney, gateInfo, reentryText, tableLabel, whenWhere } from "@ticketera/core";
+import { code128Svg, entranceText, formatCode, formatClock, formatDateTime, formatMoney, gateInfo, reentryText, tableLabel, whenWhere, zonesText } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, getOrderByCode, prisma } from "@ticketera/db";
 import { PrintButton } from "@/components/print-button";
 import { ticketQrSvg } from "@/lib/qr";
@@ -59,6 +59,7 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
         t.ticketType.sectionId,
         t.ticketType.zones.map((z) => z.id),
       ),
+      includes: zonesText(t.ticketType.zones.map((z) => z.name)),
     })),
   );
   const buyer = order.buyerName === BOX_OFFICE_BUYER.name ? null : order.buyerName;
@@ -132,6 +133,7 @@ export default async function PosTicketPage({ params, searchParams }: Props) {
             )}
             {t.ticketType.entryUntil && <p className="text-xs font-semibold">Válida para entrar hasta las {formatClock(t.ticketType.entryUntil, tz)}</p>}
             {t.entrance && <p className="mt-1 text-sm font-bold">{t.entrance}</p>}
+            {t.includes && <p className="text-sm font-bold">{t.includes}</p>}
             {t.qr && <div className="mx-auto my-2 w-[46mm]" dangerouslySetInnerHTML={{ __html: t.qr }} />}
             {t.barcode && (
               <div className="mx-auto my-2 w-[60mm] [&>svg]:h-auto [&>svg]:w-full" dangerouslySetInnerHTML={{ __html: t.barcode }} />

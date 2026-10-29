@@ -46,7 +46,7 @@ const eventInclude = {
       },
     },
   },
-  ticketType: { select: { name: true, accessMethods: true, qrMode: true, sectionId: true, kind: true, entryUntil: true, maxEntries: true, zones: { select: { id: true } } } },
+  ticketType: { select: { name: true, accessMethods: true, qrMode: true, sectionId: true, kind: true, entryUntil: true, maxEntries: true, zones: { select: { id: true, name: true } } } },
   seat: { include: { section: { select: { name: true } } } },
   // Boliche: la mesa de la entrada y su saldo de consumo.
   credit: { select: { tableNumber: true, amount: true, spent: true, currency: true, seat: { select: { label: true } } } },

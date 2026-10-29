@@ -1,5 +1,5 @@
 import QRCode from "qrcode";
-import { entranceText, gateInfo, signTicketPayload, whenWhere } from "@ticketera/core";
+import { entranceText, gateInfo, signTicketPayload, whenWhere, zonesText } from "@ticketera/core";
 import { RESET_PASSWORD_MINUTES, getOrderByCode, requestStaffPasswordReset, requireEnv } from "@ticketera/db";
 import { passwordChangedMessage, resetPasswordMessage, sendEmailSafely, ticketsMessage } from "@ticketera/mail";
 
@@ -43,6 +43,7 @@ export async function sendOrderTicketsEmail(orderCode: string): Promise<boolean>
         code: t.code,
         typeName: t.ticketType.name,
         entrance: entranceText(gates, t.ticketType.sectionId, t.ticketType.zones.map((z) => z.id)),
+        includes: zonesText(t.ticketType.zones.map((z) => z.name)),
         seat: t.seat ? `${t.seat.section.name} · ${t.seat.label}` : null,
         dynamicUrl: t.ticketType.qrMode === "DYNAMIC" ? `${webUrl()}/entrada/${t.code}` : null,
         maxEntries: t.ticketType.maxEntries,

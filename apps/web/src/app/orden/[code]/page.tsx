@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import QRCode from "qrcode";
-import { code128Svg, consumptionLeft, entranceText, formatCode, formatDateTime, formatMoney, formatClock, gateInfo, reentryText, signTicketPayload, tableLabel, whenWhere, type GateInfo } from "@ticketera/core";
+import { code128Svg, consumptionLeft, entranceText, formatCode, formatDateTime, formatMoney, formatClock, gateInfo, reentryText, signTicketPayload, tableLabel, whenWhere, zonesText, type GateInfo } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, expireStaleOrders, getOrderByCode, requireEnv } from "@ticketera/db";
 import { payOrderAction } from "./actions";
 import { auth } from "@/lib/auth";
@@ -69,12 +69,16 @@ export default async function OrderPage({ params }: Props) {
           <p className="text-sm">
             La reserva vence en <Countdown expiresAt={order.expiresAt.toISOString()} />
           </p>
-          <form action={payOrderAction}>
-            <input type="hidden" name="code" value={order.code} />
-            <button type="submit" className="btn-accent">
-              {latestPayment ? "Pagar de nuevo" : "Pagar"} {formatMoney(order.totalAmount, order.currency)}
-            </button>
-          </form>
+          {order.channel === "PROMOTER" ? (
+            <p className="text-sm text-[var(--ink-muted)]">Tu promotor te muestra el QR para pagar con la app de tu banco. Apenas pagas, tus entradas llegan a tu correo.</p>
+          ) : (
+            <form action={payOrderAction}>
+              <input type="hidden" name="code" value={order.code} />
+              <button type="submit" className="btn-accent">
+                {latestPayment ? "Pagar de nuevo" : "Pagar"} {formatMoney(order.totalAmount, order.currency)}
+              </button>
+            </form>
+          )}
         </section>
       )}
 
@@ -111,7 +115,7 @@ export default async function OrderPage({ params }: Props) {
             <p className="text-sm text-[var(--ink-muted)]">
               {guest
                 ? "Presenta este QR en la puerta. Es personal y vale para un ingreso."
-                : email && order.channel === "ONLINE"
+                : email && (order.channel === "ONLINE" || order.channel === "PROMOTER")
                   ? `Te enviamos las entradas a ${email}. Presenta el QR en la puerta.`
                   : order.tickets.every((t) => !reentryText(t.ticketType.maxEntries))
                     ? "Presenta el QR en la puerta. Cada entrada vale para un ingreso."
@@ -186,7 +190,7 @@ type TicketForList = {
     peoplePerUnit: number;
     entryUntil: Date | null;
     maxEntries: number;
-    zones: { id: string }[];
+    zones: { id: string; name: string }[];
   };
   seat: { label: string; section: { name: string } } | null;
   /** Boliche: mesa y saldo de consumo. */
@@ -271,6 +275,9 @@ async function TicketList({
             <p className="mt-1 text-sm font-bold text-[#16846C]">
               {entranceText(gates, ticket.ticketType.sectionId, ticket.ticketType.zones.map((z) => z.id))}
             </p>
+          )}
+          {!ticket.transferred && zonesText(ticket.ticketType.zones.map((z) => z.name)) && (
+            <p className="mt-1 text-sm font-bold text-[#192438]">{zonesText(ticket.ticketType.zones.map((z) => z.name))}</p>
           )}
           {!ticket.transferred && reentryText(ticket.ticketType.maxEntries) && (
             <p className="mt-1 text-xs text-[#60718B]">{reentryText(ticket.ticketType.maxEntries)}: al salir y al volver, haz leer tu QR en la puerta.</p>

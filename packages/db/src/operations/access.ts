@@ -158,7 +158,7 @@ export async function scanTicket(input: {
       const gate = input.accessPointId
         ? await prisma.accessPoint.findUnique({
             where: { id: input.accessPointId },
-            include: { sections: { select: { id: true } }, zone: { select: { id: true, name: true } } },
+            include: { sections: { select: { id: true } }, zone: { select: { id: true, name: true, capacity: true, blockWhenFull: true } } },
           })
         : null;
       const type = ticket.ticketType;
@@ -215,6 +215,10 @@ export async function scanTicket(input: {
               (!g.zoneId || zoneIds.length === 0 || zoneIds.includes(g.zoneId)),
           )
           .map((g) => g.name);
+      } else if (!input.offline && (await zoneIsFull(gate?.zone ?? null, input.sessionId, ticket))) {
+        // Zona con aforo que bloquea (ej. VIP para 50) y ya llena: no pasa hasta que salga alguien. Una lectura sin
+        // conexión que el teléfono ya dejó pasar se registra igual (la persona ya entró).
+        result = "ZONE_FULL";
       } else {
         // Una lectura sin conexión hecha a tiempo vale aunque la entrada haya vencido mientras se sincronizaba.
         const inTime = deadline !== null && scannedAt <= deadline;
@@ -322,6 +326,21 @@ export async function scanTicket(input: {
     ...(movement ? { movement, zone: zoneAfter?.name ?? null } : {}),
     ...(proofNote ? { proofNote } : {}),
   };
+}
+
+/**
+ * ¿La zona a la que da la puerta está llena y bloquea? Solo si la zona tiene aforo y está marcada para bloquear (por
+ * defecto el aforo solo informa). Quien ya está adentro de esa zona no cuenta como alguien nuevo.
+ */
+async function zoneIsFull(
+  zone: { id: string; capacity: number | null; blockWhenFull: boolean } | null,
+  sessionId: string,
+  ticket: { id: string; inside: boolean; zoneId: string | null },
+) {
+  if (!zone?.blockWhenFull || !zone.capacity) return false;
+  if (ticket.inside && ticket.zoneId === zone.id) return false;
+  const inside = await prisma.ticket.count({ where: { sessionId, inside: true, zoneId: zone.id } });
+  return inside >= zone.capacity;
 }
 
 /** Hasta cuándo puede entrar una entrada: el horario de su tipo o, si no tiene, el último ingreso de la función. */

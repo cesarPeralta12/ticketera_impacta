@@ -1,19 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
-import {
-  TABLE_RADIUS,
-  VENUE_TEMPLATES,
-  isSeatedTablesLayout,
-  isTablesLayout,
-  isZoneLayout,
-  mapItemsOf,
-  templateCapacity,
-  templateSectionSeats,
-} from "@ticketera/core";
+import { TABLE_RADIUS, VENUE_TEMPLATES, templateCapacity, templateSectionSeats } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
-import { VenueThumbnail, type ThumbnailData } from "@/components/venue-thumbnail";
+import { VenueThumbnail, thumbnailOf, type ThumbnailData } from "@/components/venue-thumbnail";
 import { createVenueAction, createVenueFromTemplateAction } from "@/lib/actions/venues";
 import { ROLES, requireStaff } from "@/lib/session";
 import { TIMEZONES } from "@/lib/timezones";
@@ -71,17 +62,7 @@ export default async function VenuesPage() {
           const capacity = v.sections.reduce((sum, s) => sum + s.capacity, 0);
           const seated = v.sections.filter((s) => s.seatingMode === "RESERVED").length;
           const events = [...new Map(v.sessions.map((s) => [s.event.id, s.event])).values()];
-          const thumb: ThumbnailData = {
-            items: mapItemsOf(v.mapItems),
-            zones: v.sections.flatMap((s) => (isZoneLayout(s.layout) ? [{ zone: s.layout, color: s.color }] : [])),
-            seats: v.sections.flatMap((s) =>
-              s.seats.flatMap((seat) =>
-                seat.x !== null && seat.y !== null
-                  ? [{ x: seat.x, y: seat.y, color: s.color, r: isTablesLayout(s.layout) ? TABLE_RADIUS : isSeatedTablesLayout(s.layout) ? 5 : undefined }]
-                  : [],
-              ),
-            ),
-          };
+          const thumb = thumbnailOf(v);
           return (
             <li key={v.id}>
               <Link href={`/recintos/${v.id}`} className="card block space-y-3 p-4 transition-colors hover:border-[var(--accent)]">

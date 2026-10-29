@@ -1,6 +1,6 @@
 "use client";
 
-import type { KeyboardEvent, SVGProps } from "react";
+import { useMemo, type KeyboardEvent, type SVGProps } from "react";
 import {
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
@@ -9,7 +9,9 @@ import {
   hasStage,
   mapItemLabel,
   reservadoSize,
+  seatDotRadius,
   tableHeight,
+  tableNumberFontSize,
   zoneLabelPoint,
   zonePath,
   zoneSize,
@@ -89,6 +91,9 @@ export function SeatPicker({
     const detail = free === 0 ? "AGOTADO" : `${price} · ${free}/${s.seats.length} libres`;
     return { name: s.name, color: s.color, x: midX, y: y - 36, detail };
   });
+
+  // Butacas muy juntas (una tribuna apretada): el punto se achica para que no se pisen.
+  const dots = useMemo(() => sections.map((s) => seatDotRadius(s.seats)), [sections]);
 
   function onKey(event: KeyboardEvent, ticketTypeId: string, seatId: string) {
     if (event.key === "Enter" || event.key === " ") {
@@ -220,7 +225,7 @@ export function SeatPicker({
                 ) : (
                   <rect x={t.x - st.size} y={t.y - tableHeight(st.size) / 2} width={st.size * 2} height={tableHeight(st.size)} rx={4} fill={fill} fillOpacity={chosen ? 0.45 : 0.18} stroke={fill} strokeWidth={1.5} />
                 )}
-                <text x={t.x} y={t.y + 4} textAnchor="middle" fontSize="11" fontWeight="800" fill={free ? "#F5F6F8" : "#7D89A3"}>
+                <text x={t.x} y={t.y + (tableNumberFontSize(st.size) * 4) / 11} textAnchor="middle" fontSize={tableNumberFontSize(st.size)} fontWeight="800" fill={free ? "#F5F6F8" : "#7D89A3"}>
                   {t.number}
                 </text>
               </g>
@@ -228,14 +233,14 @@ export function SeatPicker({
           }),
         )}
 
-        {sections.map((section) =>
+        {sections.map((section, sectionIndex) =>
           section.seats.map((seat) => {
             const isSelected = selected.has(seat.id);
-            const r = section.round ? section.round.radius : section.seatedTables ? 6 : 7;
+            const r = section.round ? section.round.radius : section.seatedTables ? Math.min(6, dots[sectionIndex]!) : dots[sectionIndex]!;
             const rect = section.round?.shape === "rect";
             // Accesibilidad: además del color, la butaca ocupada lleva × y la elegida ✓ (en lounges va el número).
             const mark = !section.round && (seat.taken || isSelected) ? (
-              <text x={seat.x} y={seat.y + 3.5} textAnchor="middle" fontSize="10" fontWeight="900" fill={isSelected ? "#192438" : "#7D89A3"} pointerEvents="none" aria-hidden>
+              <text x={seat.x} y={seat.y + r / 2} textAnchor="middle" fontSize={(r * 10) / 7} fontWeight="900" fill={isSelected ? "#192438" : "#7D89A3"} pointerEvents="none" aria-hidden>
                 {isSelected ? "✓" : "×"}
               </text>
             ) : null;

@@ -78,6 +78,50 @@ export const MAX_SEATS_PER_ROW = 60;
 export const CANVAS_WIDTH = 1000;
 export const CANVAS_HEIGHT = 640;
 
+/** Lo más juntas que pueden ir dos butacas vecinas (de centro a centro): más cerca ya no se distinguen. */
+export const MIN_SEAT_GAP = 8;
+/** Radio del punto de cada butaca en los mapas, cuando hay lugar. */
+export const SEAT_DOT_RADIUS = 7;
+
+/** Distancia entre butacas vecinas de la forma (la más corta: entre butacas de una fila o entre filas). */
+export function shapeSeatSpacing(shape: SectionShape): number {
+  const rowGap = shape.rows > 1 ? Math.abs(shape.rowGap) : Infinity;
+  if (shape.seatsPerRow < 2) return rowGap;
+  if (shape.type === "grid") return Math.min(Math.abs(shape.seatGap), rowGap);
+  // En el arco, las butacas más juntas son las de la primera fila (la de radio más chico).
+  const stepRad = (Math.abs(shape.spanDeg) / (shape.seatsPerRow - 1)) * (Math.PI / 180);
+  return Math.min(2 * Math.abs(shape.startRadius) * Math.sin(stepRad / 2), rowGap);
+}
+
+/** Radio del punto para butacas a esa distancia: el de siempre (`max`), o más chico para que no se pisen. */
+export function dotRadius(spacing: number, max = SEAT_DOT_RADIUS) {
+  return Number.isFinite(spacing) ? Math.max(3, Math.min(max, spacing / 2 - 0.5)) : max;
+}
+
+/** Radio del punto de cada butaca de una sección ya cargada (según lo juntas que quedaron sus butacas). */
+export function seatDotRadius(seats: { x: number; y: number }[], max = SEAT_DOT_RADIUS) {
+  let best = Infinity;
+  for (let i = 0; i < seats.length; i++) {
+    const a = seats[i]!;
+    for (let j = i + 1; j < seats.length; j++) {
+      const d = (a.x - seats[j]!.x) ** 2 + (a.y - seats[j]!.y) ** 2;
+      // Dos butacas en el mismo lugar (un arco de 360°) no achican a todas las demás.
+      if (d >= 1 && d < best) best = d;
+    }
+  }
+  return dotRadius(Math.sqrt(best), max);
+}
+
+/** Por qué no se puede guardar la forma, en palabras para el organizador (null si está bien). */
+export function seatShapeProblem(shape: SectionShape): string | null {
+  if (shapeSeatSpacing(shape) < MIN_SEAT_GAP) {
+    return `Las butacas quedan demasiado juntas: deja al menos ${MIN_SEAT_GAP} de espacio entre butacas y entre filas.`;
+  }
+  const outside = computeSeatPositions(shape).some((s) => s.x < 0 || s.x > CANVAS_WIDTH || s.y < 0 || s.y > CANVAS_HEIGHT);
+  if (outside) return "Hay butacas fuera del mapa: achica la sección o muévela hacia adentro.";
+  return null;
+}
+
 export const SECTION_COLORS = [
   "#F5B700",
   "#FF3D68",

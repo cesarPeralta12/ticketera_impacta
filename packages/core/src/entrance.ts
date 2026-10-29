@@ -78,3 +78,14 @@ export function reentryText(maxEntries: number | undefined): string | null {
   if (maxEntries === undefined || maxEntries === 1) return null;
   return maxEntries === 0 ? "Permite salir y volver a entrar" : `Permite salir y volver a entrar (hasta ${maxEntries} ingresos)`;
 }
+
+/**
+ * Qué zonas incluye una entrada que abre zonas propias: "Incluye: Zona VIP" o "Incluye: Zona VIP y Ultra VIP". Null
+ * si no abre ninguna en particular (entra a las de siempre).
+ */
+export function zonesText(zoneNames: string[]): string | null {
+  const names = [...new Set(zoneNames.map((n) => n.trim()).filter(Boolean))];
+  if (names.length === 0) return null;
+  const list = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} y ${names.at(-1)}`;
+  return `Incluye: ${list}`;
+}

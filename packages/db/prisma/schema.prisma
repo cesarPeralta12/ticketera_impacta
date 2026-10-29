@@ -46,7 +46,9 @@ model Organization {
 
   members    Membership[]
   promoCodes PromoCode[]
+  payouts    CommissionPayout[]
   ticketArts TicketArt[]
+  eventImages EventImage[]
   venues     Venue[]
   events     Event[]
   clients    Client[]
@@ -86,21 +88,31 @@ model StaffUser {
   /// Sube al cambiar la contraseña o al "cerrar todas las sesiones": las sesiones web anteriores dejan de valer.
   sessionVersion     Int      @default(0)
   image              String?
+  /// Teléfono o WhatsApp (los promotores lo dan para que iPass los contacte).
+  phone              String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  memberships     Membership[]
-  scans           AccessScan[]
-  issuedOrders    Order[]
-  doorAssignments DoorAssignment[]
-  deviceTokens    DeviceToken[]
-  emailTokens     EmailToken[]
-  consumptions    ConsumptionRedemption[]
-  printBatches    PrintBatch[]
-  printedSales    Ticket[]                @relation("PrintedSoldBy")
-  settlements     PrintSettlement[]
-  importBatches   ImportBatch[]
-  seatHolds       SeatHold[]
+  memberships       Membership[]
+  scans             AccessScan[]
+  issuedOrders      Order[]                 @relation("IssuedOrders")
+  doorAssignments   DoorAssignment[]
+  deviceTokens      DeviceToken[]
+  emailTokens       EmailToken[]
+  consumptions      ConsumptionRedemption[]
+  printBatches      PrintBatch[]
+  printedSales      Ticket[]                @relation("PrintedSoldBy")
+  settlements       PrintSettlement[]
+  importBatches     ImportBatch[]
+  seatHolds         SeatHold[]
+  /// Promotor: los eventos que vende, las ventas que se le atribuyen y su código para la web.
+  promoterEvents    PromoterAssignment[]
+  promoterOrders    Order[]                 @relation("PromoterOrders")
+  promoterCodes     PromoCode[]             @relation("PromoterCodes")
+  salesAssignments  SalesAssignment[]
+  commissionPayouts CommissionPayout[]      @relation("PayoutPromoter")
+  payoutsMade       CommissionPayout[]      @relation("PayoutStaff")
+  voidedOrders      Order[]                 @relation("VoidedOrders")
 }
 
 /// Funciones (y opcionalmente una puerta) que un portero puede descargar y controlar
@@ -160,16 +172,103 @@ enum StaffRole {
   CASHIER
   /// Organizador/cliente: solo sus eventos, mientras su acceso temporal esté abierto.
   CLIENT
+  /// Promotor o RRPP: vende con cobro por QR los eventos que tiene asignados y ve su comisión.
+  PROMOTER
+}
+
+/// Cómo se calcula la comisión de un promotor en un evento.
+enum CommissionType {
+  /// Un porcentaje de lo que pagó el cliente.
+  PERCENT
+  /// Un monto fijo por entrada (o mesa) vendida.
+  FIXED
+}
+
+/// Evento que un promotor puede vender, con su comisión.
+model PromoterAssignment {
+  id              String         @id @default(cuid())
+  userId          String
+  eventId         String
+  commissionType  CommissionType
+  /// PERCENT: 1 a 100. FIXED: centavos por entrada (o mesa) vendida.
+  commissionValue Int
+  /// Cupo: cuántas entradas (o mesas) puede vender él en este evento. Vacío: hasta agotar.
+  quota           Int?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  user  StaffUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+  @@index([eventId])
+}
+
+/// Qué puede vender una cuenta de venta (cajero o promotor).
+enum SalesScope {
+  /// Todas las funciones a la venta de la organización (como siempre funcionaron los cajeros).
+  ALL
+  /// Solo los eventos y funciones que tiene asignados (SalesAssignment).
+  ASSIGNED
+}
+
+/// Un evento, o una función de un evento, que una cuenta puede vender (cajero o promotor).
+model SalesAssignment {
+  id        String    @id @default(cuid())
+  userId    String
+  eventId   String
+  /// Una función. Vacío: todas las funciones del evento.
+  sessionId String?
+  /// Vigencia opcional: desde y hasta cuándo puede vender.
+  startsAt  DateTime?
+  endsAt    DateTime?
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user    StaffUser     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event   Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  session EventSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([eventId])
+  @@index([sessionId])
+}
+
+/// Una liquidación de comisiones: lo que se le pagó a un promotor, con las ventas que cubre.
+model CommissionPayout {
+  id             String   @id @default(cuid())
+  organizationId String
+  promoterId     String
+  /// Centavos pagados (la suma de la comisión de las ventas que cubre).
+  amount         Int
+  currency       String   @db.Char(3)
+  /// Cuántas ventas cubre.
+  orders         Int
+  note           String?
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  promoter     StaffUser    @relation("PayoutPromoter", fields: [promoterId], references: [id])
+  createdBy    StaffUser    @relation("PayoutStaff", fields: [createdById], references: [id])
+  paidOrders   Order[]
+
+  @@index([organizationId, promoterId])
 }
 
 model Membership {
-  id             String    @id @default(cuid())
+  id             String     @id @default(cuid())
   organizationId String
   userId         String
   role           StaffRole
   /// Solo para rol CLIENT: el cliente cuyos eventos puede ver.
   clientId       String?
-  createdAt      DateTime  @default(now())
+  /// Cajero: si vende todo lo de la organización o solo lo asignado. Un promotor siempre vende solo lo asignado.
+  salesScope     SalesScope @default(ALL)
+  /// Métodos de cobro de boletería que puede usar ("EFECTIVO", "QR", "TARJETA"). Vacío: todos.
+  posMethods     String[]   @default([])
+  createdAt      DateTime   @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         StaffUser    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -367,28 +466,28 @@ enum EventCategory {
 }
 
 model Event {
-  id                  String        @id @default(cuid())
+  id                  String               @id @default(cuid())
   organizationId      String
-  slug                String        @unique
+  slug                String               @unique
   title               String
   description         String?
   imageUrl            String?
-  category            EventCategory @default(OTRO)
-  status              EventStatus   @default(DRAFT)
-  mode                EventMode     @default(TICKETING)
+  category            EventCategory        @default(OTRO)
+  status              EventStatus          @default(DRAFT)
+  mode                EventMode            @default(TICKETING)
   /// Cliente/organizador dueño del evento (null = evento propio de IMPACTA).
   clientId            String?
   /// Espacio temporal del cliente: IMPACTA lo habilita y se cierra solo en clientAccessUntil.
-  clientAccessEnabled Boolean       @default(false)
+  clientAccessEnabled Boolean              @default(false)
   clientAccessUntil   DateTime?
   publishedAt         DateTime?
   /// Revisión de IMPACTA: cuándo lo enviaron y, si lo devolvió, qué hay que corregir.
   submittedAt         DateTime?
   reviewNote          String?
   /// ¿Los compradores pueden transferir sus entradas a otra persona registrada?
-  transfersEnabled    Boolean       @default(true)
+  transfersEnabled    Boolean              @default(true)
   /// Evento pequeño (peña, recital íntimo, obra chica): aparece también en la sección "Eventos pequeños" de la web.
-  small               Boolean       @default(false)
+  small               Boolean              @default(false)
   /// Condiciones que ve el comprador. Edad mínima nula = todo público.
   minAge              Int?
   requiredDocument    String?
@@ -400,8 +499,11 @@ model Event {
   contactPhone        String?
   contactEmail        String?
   promoCodes          PromoCode[]
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
+  promoters           PromoterAssignment[]
+  promoAssets         EventPromoAsset[]
+  salesAssignments    SalesAssignment[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   organization Organization   @relation(fields: [organizationId], references: [id])
   client       Client?        @relation(fields: [clientId], references: [id])
@@ -440,16 +542,17 @@ model EventSession {
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
-  event           Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  venue           Venue               @relation(fields: [venueId], references: [id])
-  ticketTypes     TicketType[]
-  tickets         Ticket[]
-  scans           AccessScan[]
-  credits         ConsumptionCredit[]
-  doorAssignments DoorAssignment[]
-  queue           QueueEntry[]
-  seatHolds       SeatHold[]
-  printBatches    PrintBatch[]
+  event            Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  venue            Venue               @relation(fields: [venueId], references: [id])
+  ticketTypes      TicketType[]
+  tickets          Ticket[]
+  scans            AccessScan[]
+  credits          ConsumptionCredit[]
+  doorAssignments  DoorAssignment[]
+  salesAssignments SalesAssignment[]
+  queue            QueueEntry[]
+  seatHolds        SeatHold[]
+  printBatches     PrintBatch[]
 
   @@index([eventId, startsAt])
 }
@@ -494,6 +597,12 @@ model TicketType {
   entryUntil        DateTime?
   /// Cuántas veces puede entrar: 1 = sin reingreso (lo de siempre); 0 = sin límite.
   maxEntries        Int            @default(1)
+  /// Fase de venta (Fase Hot, Fase 1…): su lugar en las fases de su sección (1, 2, 3…). Vacío: precio común.
+  /// En una sección se vende una sola fase a la vez; la siguiente toma el lugar al agotarse la anterior o al llegar
+  /// su fecha (lo primero que pase).
+  phaseOrder        Int?
+  /// Desde cuándo vende esta fase aunque la anterior no se haya agotado. Vacío: recién cuando se agota la anterior.
+  phaseStartsAt     DateTime?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -531,49 +640,67 @@ enum OrderChannel {
   PRINTED
   /// Importada desde Excel (vendida por otro medio o cortesía): con el monto que se declaró al importarla.
   IMPORT
+  /// Venta de un promotor: el cliente paga con QR (el promotor no recibe efectivo).
+  PROMOTER
 }
 
 /// Una orden PENDING_PAYMENT con expiresAt futuro ES la reserva temporal de inventario.
 model Order {
-  id               String       @id @default(cuid())
+  id                 String       @id @default(cuid())
   /// Código legible para soporte (ver @ticketera/core/codes).
-  code             String       @unique
-  customerId       String?
-  buyerEmail       String
-  buyerName        String
-  buyerDocument    String?
-  status           OrderStatus  @default(PENDING_PAYMENT)
-  channel          OrderChannel @default(ONLINE)
+  code               String       @unique
+  customerId         String?
+  buyerEmail         String
+  buyerName          String
+  buyerDocument      String?
+  status             OrderStatus  @default(PENDING_PAYMENT)
+  channel            OrderChannel @default(ONLINE)
   /// Staff que vendió en boletería o emitió la invitación.
-  issuedById       String?
-  currency         String       @db.Char(3)
-  subtotalAmount   Int
-  feeAmount        Int          @default(0)
+  issuedById         String?
+  currency           String       @db.Char(3)
+  subtotalAmount     Int
+  feeAmount          Int          @default(0)
   /// Descuento de un código promocional (ya restado del total).
-  discountAmount   Int          @default(0)
-  totalAmount      Int
-  expiresAt        DateTime
-  paidAt           DateTime?
+  discountAmount     Int          @default(0)
+  totalAmount        Int
+  expiresAt          DateTime
+  paidAt             DateTime?
   /// Lote de importación del que salió (canal IMPORT).
-  importBatchId    String?
+  importBatchId      String?
   /// Cuándo se le enviaron las entradas por correo desde el panel (las importadas se envían a pedido).
-  ticketsEmailedAt DateTime?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  ticketsEmailedAt   DateTime?
+  /// WhatsApp del comprador (venta de un promotor), para mandarle sus entradas.
+  buyerPhone         String?
+  /// Promotor al que se le atribuye la venta: la hizo él o se compró con su código. Suma a su comisión al pagarse.
+  promoterId         String?
+  /// Comisión del promotor por esta orden (centavos), calculada al crearla con la regla de su evento.
+  commissionAmount   Int          @default(0)
+  /// Liquidación en la que se le pagó la comisión al promotor. Vacío: todavía no se le pagó.
+  commissionPayoutId String?
+  /// Anulación o devolución hecha por un administrador: cuándo, quién y por qué.
+  voidedAt           DateTime?
+  voidedById         String?
+  voidReason         String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
-  customer        Customer?           @relation(fields: [customerId], references: [id])
-  issuedBy        StaffUser?          @relation(fields: [issuedById], references: [id])
-  importBatch     ImportBatch?        @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
-  items           OrderItem[]
-  payments        Payment[]
-  tickets         Ticket[]
-  promoRedemption PromoRedemption?
-  credits         ConsumptionCredit[]
+  customer         Customer?           @relation(fields: [customerId], references: [id])
+  issuedBy         StaffUser?          @relation("IssuedOrders", fields: [issuedById], references: [id])
+  promoter         StaffUser?          @relation("PromoterOrders", fields: [promoterId], references: [id])
+  commissionPayout CommissionPayout?   @relation(fields: [commissionPayoutId], references: [id], onDelete: SetNull)
+  voidedBy         StaffUser?          @relation("VoidedOrders", fields: [voidedById], references: [id])
+  importBatch      ImportBatch?        @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  items            OrderItem[]
+  payments         Payment[]
+  tickets          Ticket[]
+  promoRedemption  PromoRedemption?
+  credits          ConsumptionCredit[]
 
   @@index([status, expiresAt])
   @@index([buyerEmail])
   @@index([channel])
   @@index([importBatchId])
+  @@index([promoterId])
 }
 
 model OrderItem {
@@ -751,14 +878,16 @@ enum GateDirection {
 /// Zona de acceso de un recinto (Exterior, General, VIP, Súper VIP): las puertas dan a una zona, cada tipo de entrada
 /// dice qué zonas abre y el panel muestra cuántas personas hay adentro de cada una.
 model AccessZone {
-  id       String @id @default(cuid())
-  venueId  String
-  name     String
+  id            String  @id @default(cuid())
+  venueId       String
+  name          String
   /// Orden de afuera hacia adentro: 0 exterior, 1 general, 2 VIP…
-  level    Int    @default(1)
+  level         Int     @default(1)
   /// Aforo de la zona (para el aforo en vivo). Vacío: sin tope propio.
-  capacity Int?
-  color    String @default("#2E9E6A")
+  capacity      Int?
+  /// Con el aforo lleno, la puerta no deja entrar a la zona (ZONE_FULL). Apagado: el aforo solo informa.
+  blockWhenFull Boolean @default(false)
+  color         String  @default("#2E9E6A")
 
   venue       Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
   gates       AccessPoint[]
@@ -799,6 +928,8 @@ enum ScanResult {
   NOT_ACTIVATED
   /// Se leyó en una puerta de salida pero la entrada no estaba adentro.
   NOT_INSIDE
+  /// La zona a la que da la puerta está llena (solo si la zona bloquea al llenarse).
+  ZONE_FULL
 }
 
 /// Cómo se muestra la entrada: con un QR fijo, o con uno que cambia cada 30 segundos (ver docs/qr-dinamico.md).
@@ -952,12 +1083,15 @@ model PromoCode {
   promoterName          String?
   /// Comisión del promotor sobre lo vendido con el código (informativa, para el reporte).
   commissionPercent     Int?
+  /// Cuenta del promotor dueño del código: lo que se compra con él suma a su comisión (puede no tener descuento).
+  promoterId            String?
   createdById           String?
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
 
   organization Organization      @relation(fields: [organizationId], references: [id])
   event        Event?            @relation(fields: [eventId], references: [id])
+  promoter     StaffUser?        @relation("PromoterCodes", fields: [promoterId], references: [id])
   redemptions  PromoRedemption[]
 
   @@unique([organizationId, code])
@@ -1104,6 +1238,21 @@ model PrintSettlement {
   @@index([batchId])
 }
 
+/// Foto de un evento subida desde el panel (en vez de pegar un enlace). El sitio la sirve en /imagenes/<id> y el evento
+/// guarda esa dirección en `imageUrl`: todo lo que ya muestra la portada sigue igual. Nunca se modifica (cada subida es
+/// una foto nueva), así se puede guardar en caché para siempre.
+model EventImage {
+  id             String   @id @default(cuid())
+  organizationId String
+  mimeType       String
+  data           Bytes
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
 /// Arte propio de la entrada impresa (PNG o JPG): se dibuja de fondo y encima van el QR, la serie y los datos.
 model TicketArt {
   id             String   @id @default(cuid())
@@ -1208,4 +1357,27 @@ model VenuePlanImage {
   updatedAt DateTime @updatedAt
 
   venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+}
+
+/// Material promocional del evento que los promotores descargan (una imagen o un video, uno por evento). `data` son los bytes
+/// tal cual se subieron: no se recomprimen. Se borra 30 días después de la última función (ver promoAssetExpiry).
+
+model EventPromoAsset {
+  id           String   @id @default(cuid())
+  eventId      String
+  fileName     String
+  mimeType     String
+  byteSize     Int
+  /// Medidas de la imagen (vacío para PDF, video y otros).
+  width        Int?
+  height       Int?
+  /// Vista previa chica (JPG), solo para mostrar en el panel; la descarga siempre es `data`.
+  thumb        Bytes?
+  data         Bytes
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId])
 }

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { DEFAULT_TIMEZONE, MAX_PRINT_BATCH, PRINT_SALE_METHODS, parseSerialRange, parseSessionTimes, slugify, type PrintSaleMethod } from "@ticketera/core";
+import { DEFAULT_TIMEZONE, MAX_PRINT_BATCH, PRINT_SALE_METHODS, normalizeImageUrl, parseSerialRange, parseSessionTimes, slugify, type PrintSaleMethod } from "@ticketera/core";
 import {
   DomainError,
   createEventWithinLimit,
@@ -10,6 +10,7 @@ import {
   movePrintedTickets,
   prisma,
   settlePrintedSeller,
+  submitEventForReview,
   type EventCategory,
   type PrintAction,
 } from "@ticketera/db";
@@ -201,10 +202,14 @@ export async function setPrintBatchArtAction(_prev: FormState, formData: FormDat
 }
 
 const MAX_SMALL_TYPES = 4;
+/** Cupo de cada tipo de un evento pequeño que se vende en la web. */
+const MAX_SMALL_ONLINE = 20_000;
 
 /**
- * "Evento pequeño": en un solo paso crea el lugar (sin mapa: una zona general con el aforo de las entradas), el evento
- * en borrador, su función, los precios y un lote de entradas impresas por tipo. Después solo queda imprimir.
+ * "Evento pequeño", el acceso rápido: en un solo paso crea el lugar (sin mapa: una zona general con el aforo de las
+ * entradas), el evento, su función y los precios. Se vende de una de dos formas:
+ *  - En la web: queda publicado y sale en «Otros eventos» (iPass publica directo).
+ *  - Con entradas impresas: queda en borrador con un lote por tipo, listo para imprimir y vender en mano.
  */
 export async function createSmallEventAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireEditor();
@@ -222,11 +227,13 @@ export async function createSmallEventAction(_prev: FormState, formData: FormDat
     quantity: Number(form[`quantity${i}`]),
   })).filter((r) => r.name || r.price || r.quantity);
   if (rows.length === 0) return { fieldErrors: { name0: "Agrega al menos un tipo de entrada con cantidad y precio." } };
+  const online = form.sale !== "printed";
+  const maxQuantity = online ? MAX_SMALL_ONLINE : MAX_PRINT_BATCH;
   const types: { name: string; unitAmount: number; quantity: number }[] = [];
   for (const { i, ...r } of rows) {
     if (r.name.length < 2) return { fieldErrors: { [`name${i}`]: "Cada tipo necesita un nombre (ej. General)." } };
-    if (!Number.isInteger(r.quantity) || r.quantity < 1 || r.quantity > MAX_PRINT_BATCH) {
-      return { fieldErrors: { [`quantity${i}`]: `Cantidad de "${r.name}": de 1 a ${MAX_PRINT_BATCH}.` } };
+    if (!Number.isInteger(r.quantity) || r.quantity < 1 || r.quantity > maxQuantity) {
+      return { fieldErrors: { [`quantity${i}`]: `Cantidad de "${r.name}": de 1 a ${maxQuantity}.` } };
     }
     const price = moneyField.safeParse(r.price);
     if (!price.success) return { fieldErrors: { [`price${i}`]: `Precio de "${r.name}" inválido (ej. 50 o 0 si es gratis).` } };
@@ -240,11 +247,23 @@ export async function createSmallEventAction(_prev: FormState, formData: FormDat
   const categories = allowedCategories(staff).filter((c) => c !== "BOLICHE");
   if (!(categories as string[]).includes(form.category ?? "")) return { fieldErrors: { category: "Elige una categoría." } };
   const category = form.category as EventCategory;
+  // La foto hace que se vea bien en la web (si pegan el enlace de Google Imágenes, se guarda la imagen real).
+  const image = form.imageUrl ? normalizeImageUrl(form.imageUrl) : null;
+  if (image && !/^https?:\/\//.test(image)) return { fieldErrors: { imageUrl: "La foto debe ser un enlace que empiece con http:// o https://" } };
 
   let event;
   try {
     event = await createEventWithinLimit(
-      { organizationId: staff.organization.id, slug: await uniqueEventSlug(title), title, category, mode: "TICKETING", small: true, description: form.description?.trim() || null },
+      {
+        organizationId: staff.organization.id,
+        slug: await uniqueEventSlug(title),
+        title,
+        category,
+        mode: "TICKETING",
+        small: true,
+        description: form.description?.trim() || null,
+        imageUrl: image,
+      },
       { ignoreLimit: staff.platform },
     );
   } catch (error) {
@@ -279,11 +298,16 @@ export async function createSmallEventAction(_prev: FormState, formData: FormDat
         sortOrder: i,
       },
     });
-    await createPrintBatch({ sessionId: session.id, ticketTypeId: type.id, quantity: t.quantity, mode, staffId: staff.id });
+    if (!online) await createPrintBatch({ sessionId: session.id, ticketTypeId: type.id, quantity: t.quantity, mode, staffId: staff.id });
   }
-  await logAudit({ actorType: "staff", actorId: staff.id, action: "event.small.create", entity: "Event", entityId: event.id, data: { types: types.length, total } });
+  // En la web: iPass publica directo (un organizador lo envía a revisión, como siempre).
+  if (online) {
+    if (staff.platform) await prisma.event.update({ where: { id: event.id }, data: { status: "PUBLISHED", publishedAt: new Date() } });
+    else await submitEventForReview(event.id, staff.id);
+  }
+  await logAudit({ actorType: "staff", actorId: staff.id, action: "event.small.create", entity: "Event", entityId: event.id, data: { types: types.length, total, online } });
   revalidatePath("/eventos");
-  redirect(`/eventos/${event.id}/funciones/${session.id}?tab=impresas`);
+  redirect(online ? `/eventos/${event.id}` : `/eventos/${event.id}/funciones/${session.id}?tab=impresas`);
 }
 
 async function uniqueEventSlug(title: string) {

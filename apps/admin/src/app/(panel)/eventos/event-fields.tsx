@@ -80,7 +80,7 @@ export function EventFields({
           <span>
             Evento pequeño
             <span className="block text-xs font-normal text-[var(--ink-dim)]">
-              Peñas, recitales íntimos, obras o fiestas con pocos cupos: además de la portada, aparece con el filtro «Eventos pequeños» de la web.
+              Peñas, recitales íntimos, obras o fiestas con pocos cupos: además de la portada, aparece en «Otros eventos» de la web.
             </span>
           </span>
         </label>

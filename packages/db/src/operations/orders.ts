@@ -2,26 +2,45 @@ import {
   RESERVATION_MINUTES,
   checkTableSelection,
   checkoutSchema,
+  commissionFor,
   currentPrice,
   findShortage,
   isSeatedTablesLayout,
   onlineSalesEnd,
   orderTotals,
+  phaseStates,
   randomCode,
   remainingByType,
+  withPhases,
   type CheckoutInput,
+  type PhaseInput,
+  type PhaseStock,
+  type SaleWindow,
 } from "@ticketera/core";
 import { prisma } from "../client";
 import type { OrderChannel } from "../generated/prisma/client";
 import { completeTurn, hasActiveTurn } from "./queue";
 import { getHeldSeatIds } from "./holds";
 import { resolvePromo } from "./promos";
-import { TX_OPTIONS } from "./shared";
+import { assertCanSell } from "./sales-scope";
+import { TX_OPTIONS, type Tx } from "./shared";
 import { DomainError, findTakenSeats, loadInventory, lockInventory } from "./shared";
 
 /** Cuántas entradas quedan de cada tipo en una función (sin bloquear: solo para mostrar). */
 export async function getSessionAvailability(sessionId: string, now = new Date()) {
   return remainingByType(await loadInventory(prisma, sessionId, now));
+}
+
+/** Lo vendido o reservado de cada tipo y lo que le queda (para saber qué fase de venta está activa). */
+export async function getSessionStock(sessionId: string, now = new Date()): Promise<PhaseStock> {
+  const lines = await loadInventory(prisma, sessionId, now);
+  return { used: new Map(lines.map((l) => [l.ticketTypeId, l.used])), remaining: remainingByType(lines) };
+}
+
+/** Los precios de una función con sus fases resueltas (ver `withPhases`). Si no tiene fases, no consulta nada. */
+export async function withSessionPhases<T extends PhaseInput & SaleWindow>(sessionId: string, types: T[], now = new Date()) {
+  const stock = types.some((t) => t.phaseOrder !== null) ? await getSessionStock(sessionId, now) : { used: new Map(), remaining: new Map() };
+  return withPhases(types, stock, now);
 }
 
 /**
@@ -97,6 +116,35 @@ export function onlineOnSaleWhere(now: Date) {
  * terminado al crear la orden, para que pase el siguiente de la fila. La boletería
  * (canal POS) no pasa por la cola: atiende a quien está en la fila física.
  */
+/**
+ * Fases de venta: de cada precio pedido que es una fase y no es la que se vende ahora, el motivo para rechazarlo. Se
+ * llama con el inventario ya bloqueado (lockInventory bloquea la sección): dos compras a la vez no se saltan una fase.
+ */
+async function activePhaseCheck(tx: Tx, sessionId: string, requested: { id: string; sectionId: string | null; phaseOrder: number | null }[], now: Date) {
+  const problems = new Map<string, string>();
+  const sections = [...new Set(requested.filter((t) => t.phaseOrder !== null).flatMap((t) => (t.sectionId ? [t.sectionId] : [])))];
+  if (sections.length === 0) return problems;
+  const phases = await tx.ticketType.findMany({
+    where: { sessionId, sectionId: { in: sections }, phaseOrder: { not: null } },
+    select: { id: true, name: true, sectionId: true, phaseOrder: true, phaseStartsAt: true },
+  });
+  const lines = await loadInventory(tx, sessionId, now);
+  const states = phaseStates(phases, { used: new Map(lines.map((l) => [l.ticketTypeId, l.used])), remaining: remainingByType(lines) }, now);
+  for (const t of requested) {
+    const state = states.get(t.id);
+    if (!state || state.state === "active") continue;
+    const active = phases.find((p) => p.sectionId === t.sectionId && states.get(p.id)?.state === "active");
+    const name = phases.find((p) => p.id === t.id)!.name;
+    problems.set(
+      t.id,
+      state.state === "done"
+        ? `La fase "${name}" ya terminó${active ? `: ahora se vende "${active.name}"` : ""}.`
+        : `La fase "${name}" todavía no empieza${active ? `: primero se vende "${active.name}"` : ""}.`,
+    );
+  }
+  return problems;
+}
+
 export async function createPendingOrder(
   input: CheckoutInput,
   options: {
@@ -109,6 +157,10 @@ export async function createPendingOrder(
     promoCode?: string;
     /** Código de una retención: habilita sus butacas apartadas (la boletería no lo necesita). */
     holdCode?: string;
+    /** Venta de un promotor (canal PROMOTER): la cuenta que vende, que tiene que tener el evento asignado. */
+    promoterId?: string;
+    /** WhatsApp del comprador, para mandarle sus entradas. */
+    buyerPhone?: string;
   } = {},
 ) {
   const now = options.now ?? new Date();
@@ -163,6 +215,7 @@ export async function createPendingOrder(
     }
 
     const byId = new Map(types.map((t) => [t.id, t]));
+    const phases = await activePhaseCheck(tx, data.sessionId, types, now);
     for (const item of data.items) {
       const type = byId.get(item.ticketTypeId)!;
       const { session } = type;
@@ -187,6 +240,9 @@ export async function createPendingOrder(
       if (type.entryUntil && type.entryUntil <= now) {
         throw new DomainError("NOT_ON_SALE", `"${type.name}" ya no se vende: pasó su horario de ingreso.`);
       }
+      // Fases de venta: solo se vende la que toca ahora en su sección.
+      const phaseProblem = phases.get(type.id);
+      if (phaseProblem) throw new DomainError("NOT_ON_SALE", phaseProblem);
       const seated = type.section?.seatingMode === "RESERVED";
       if (seated !== Boolean(item.seatIds)) {
         throw new DomainError(
@@ -299,9 +355,9 @@ export async function createPendingOrder(
     });
 
     // Código promocional: se valida con la fila del código bloqueada, así dos compras a la vez no gastan el último uso.
-    let promo: { id: string; discount: number } | null = null;
+    const event = types[0]!.session.event;
+    let promo: { id: string; discount: number; promoterId: string | null } | null = null;
     if (options.promoCode?.trim()) {
-      const event = types[0]!.session.event;
       const resolved = await resolvePromo(tx, {
         code: options.promoCode,
         organizationId: event.organizationId,
@@ -320,7 +376,43 @@ export async function createPendingOrder(
           };
         }),
       });
-      promo = { id: resolved.promo.id, discount: resolved.discount };
+      promo = { id: resolved.promo.id, discount: resolved.discount, promoterId: resolved.promo.promoterId };
+    }
+
+    // Comisión del promotor: el que vende (canal PROMOTER) o el dueño del código que se usó. Se calcula ahora con la
+    // regla de su evento y se guarda en la orden: si después cambia la regla, lo ya vendido no cambia.
+    const totals = orderTotals(priced, promo?.discount ?? 0);
+    const promoterId = channel === "PROMOTER" ? options.promoterId : promo?.promoterId ?? undefined;
+    let commissionAmount = 0;
+    if (promoterId) {
+      const rule = await tx.promoterAssignment.findUnique({ where: { userId_eventId: { userId: promoterId, eventId: event.id } } });
+      if (!rule && channel === "PROMOTER") throw new DomainError("NOT_ON_SALE", "No tienes asignado este evento: pídele a iPass que te lo asigne.");
+      const units = priced.reduce((sum, l) => sum + l.quantity, 0);
+      if (rule && channel === "PROMOTER") {
+        // Solo las funciones que tiene asignadas (con su vigencia) y, si tiene cupo, sin pasarse de él.
+        await assertCanSell(tx, { userId: promoterId, organizationId: event.organizationId, session: { id: data.sessionId, eventId: event.id }, now });
+        if (rule.quota !== null) {
+          const sold = await tx.orderItem.aggregate({
+            where: {
+              order: {
+                promoterId,
+                channel: "PROMOTER",
+                items: { some: { ticketType: { session: { eventId: event.id } } } },
+                OR: [{ status: { in: ["PAID", "PARTIALLY_REFUNDED"] } }, { status: "PENDING_PAYMENT", expiresAt: { gt: now } }],
+              },
+            },
+            _sum: { quantity: true },
+          });
+          const left = rule.quota - (sold._sum.quantity ?? 0);
+          if (units > left) {
+            throw new DomainError(
+              "SOLD_OUT",
+              left <= 0 ? `Ya vendiste tu cupo de ${rule.quota} entradas para este evento.` : `Tu cupo para este evento: te quedan ${left} entrada(s).`,
+            );
+          }
+        }
+      }
+      if (rule) commissionAmount = commissionFor(rule, { totalAmount: totals.totalAmount, units });
     }
 
     if (options.queueToken) await completeTurn(tx, data.sessionId, options.queueToken, now);
@@ -336,7 +428,10 @@ export async function createPendingOrder(
         buyerDocument: data.buyer.document,
         status: "PENDING_PAYMENT",
         currency: [...currencies][0]!,
-        ...orderTotals(priced, promo?.discount ?? 0),
+        ...totals,
+        promoterId,
+        commissionAmount,
+        buyerPhone: options.buyerPhone?.trim() || null,
         expiresAt: new Date(now.getTime() + RESERVATION_MINUTES * 60_000),
         items: { create: priced },
         promoRedemption: promo
@@ -379,7 +474,7 @@ export async function getOrderByCode(code: string) {
       promoRedemption: { include: { promoCode: { select: { code: true } } } },
       tickets: {
         include: {
-          ticketType: { include: { zones: { select: { id: true } } } },
+          ticketType: { include: { zones: { select: { id: true, name: true } } } },
           seat: { include: { section: true } },
           credit: { select: { tableNumber: true, amount: true, spent: true, currency: true, seat: { select: { label: true } } } },
         },

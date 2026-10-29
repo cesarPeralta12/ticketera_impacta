@@ -4,6 +4,7 @@
  */
 import { consumptionLeft, formatMoney, parseDynamicPayload, parseTicketPayload, utcToZonedInput, weeklyNights, zonedDateTimeToUtc } from "@ticketera/core";
 import { prisma } from "../client";
+import { assertCanSell } from "./sales-scope";
 import { DomainError, TX_OPTIONS, audit, requireEnv } from "./shared";
 
 /** Lo más que se cobra de una vez en barra (Bs 100.000), para frenar un error de tipeo. */
@@ -57,6 +58,10 @@ export async function redeemConsumption(input: { raw: string; sessionId: string;
   if (!Number.isInteger(input.amount) || input.amount <= 0 || input.amount > MAX_REDEMPTION) {
     throw new DomainError("INVALID_ITEMS", "Escribe un monto válido.");
   }
+  // Un cajero con funciones asignadas solo cobra en la barra de esas noches.
+  const session = await prisma.eventSession.findUnique({ where: { id: input.sessionId }, select: { id: true, eventId: true, event: { select: { organizationId: true } } } });
+  if (!session) throw new DomainError("NOT_FOUND", "Noche no encontrada.");
+  await assertCanSell(prisma, { userId: input.staffId, organizationId: session.event.organizationId, session });
   const found = await getConsumption(input.raw, input.sessionId);
   if (!found.ok) throw new DomainError("NOT_FOUND", found.reason);
   if (found.credit.tickets.every((t) => t.status === "CANCELLED")) {
@@ -207,6 +212,9 @@ async function copySession(tx: Tx, template: Template, startsAt: Date) {
       consumptionAmount: t.consumptionAmount,
       entryUntil: shift(t.entryUntil),
       maxEntries: t.maxEntries,
+      // Fases de venta: la copia sigue siendo una cadena de fases (si no, todas se venderían a la vez).
+      phaseOrder: t.phaseOrder,
+      phaseStartsAt: shift(t.phaseStartsAt),
     },
     zones: t.zones,
   }));

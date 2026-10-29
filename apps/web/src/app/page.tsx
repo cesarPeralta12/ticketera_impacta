@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import {
   CATEGORY_COLOR,
@@ -46,12 +47,13 @@ export default async function HomePage({ searchParams }: Props) {
   const requested = params.categoria?.toUpperCase();
   const category = Object.values(EventCategory).find((c) => c === requested);
   const search = params.q?.trim().slice(0, 60) || undefined;
-  // Eventos pequeños (peñas, recitales íntimos, obras con pocos cupos): un filtro más, combinable con la categoría.
-  const small = params.pequenos === "1";
-  const filtered = Boolean(category || search || small);
+  // Los eventos pequeños tienen su sección, «Otros eventos» (en la web nunca se dice "pequeño"): los enlaces viejos
+  // al filtro llevan ahí.
+  if (params.pequenos === "1") redirect(category ? `/otros-eventos?categoria=${category.toLowerCase()}` : "/otros-eventos");
+  const filtered = Boolean(category || search);
 
   const now = new Date();
-  const events = await listPublishedEvents(category, search, { small });
+  const events = await listPublishedEvents(category, search);
 
   // Lo destacado solo en la portada sin filtros: con una búsqueda se muestran los resultados.
   const featured = filtered ? [] : pickFeatured(events.map((e) => ({ ...e, ...e.sales })), now, 5);
@@ -69,10 +71,9 @@ export default async function HomePage({ searchParams }: Props) {
 
   const chip = (active: boolean) =>
     `rounded-full border px-3.5 py-1.5 text-sm transition-colors ${active ? "border-[var(--highlight)] bg-[var(--highlight)]/10 font-semibold text-[var(--highlight)]" : "border-[var(--border-light)] text-[var(--ink-muted)] hover:border-[var(--ink-muted)] hover:text-[var(--ink)]"}`;
-  const chipHref = (c: string | null, onlySmall = small) => {
+  const chipHref = (c: string | null) => {
     const qs = new URLSearchParams();
     if (c) qs.set("categoria", c.toLowerCase());
-    if (onlySmall) qs.set("pequenos", "1");
     if (search) qs.set("q", search);
     const s = qs.toString();
     return s ? `/?${s}` : "/";
@@ -93,7 +94,6 @@ export default async function HomePage({ searchParams }: Props) {
         <section aria-label="Buscar y filtrar" className="space-y-4">
           <form action="/" role="search" className="flex flex-col gap-3 sm:flex-row">
             {category && <input type="hidden" name="categoria" value={category.toLowerCase()} />}
-            {small && <input type="hidden" name="pequenos" value="1" />}
             <label className="sr-only" htmlFor="buscar">
               Buscar eventos
             </label>
@@ -120,10 +120,6 @@ export default async function HomePage({ searchParams }: Props) {
                   {CATEGORY_LABEL[c]}
                 </Link>
               ))}
-            <span aria-hidden className="mx-1 self-center text-[var(--border-light)]">|</span>
-            <Link href={chipHref(category ?? null, !small)} aria-pressed={small} className={chip(small)}>
-              Eventos pequeños
-            </Link>
           </nav>
         </section>
 
@@ -162,11 +158,9 @@ export default async function HomePage({ searchParams }: Props) {
             <h2 className="font-display text-2xl leading-none sm:text-3xl">
               {search
                 ? `Resultados para “${search}”`
-                : small
-                  ? `Eventos pequeños${category ? ` · ${CATEGORY_LABEL[category]}` : ""}`
-                  : category
-                    ? CATEGORY_LABEL[category]
-                    : "Todos los eventos"}
+                : category
+                  ? CATEGORY_LABEL[category]
+                  : "Todos los eventos"}
             </h2>
             <p className="mt-1.5 text-sm text-[var(--ink-muted)]">
               {events.length === 0 ? "" : `${events.length} ${events.length === 1 ? "evento" : "eventos"}${filtered ? "" : ", del más próximo al más lejano"}`}
