@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'api.dart';
 import 'models.dart';
 import 'storage.dart';
+import 'presence_view.dart';
 import 'validator.dart';
 
 const defaultServerUrl = String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:3001');
@@ -283,6 +284,25 @@ class DoorService extends ChangeNotifier {
     }
     if (!outcome.verdict.ok) await _record(meta, raw, method, outcome.verdict);
     return outcome;
+  }
+
+  /// Consulta una lectura SIN registrar nada (ni siquiera un rechazo): dónde está la persona y qué pasaría si se
+  /// leyera en esta puerta. Es para quien revisa una zona y solo necesita saber si ya ingresó o no.
+  Future<(ScanOutcome, PresenceView?)> consult(SessionMeta meta, String raw, AccessMethod? method) async {
+    var outcome = await validateScan(tickets: db, meta: meta, raw: raw, method: method, now: serverNow);
+    var current = meta;
+    if (outcome.verdict == ScanVerdict.notFound && extractTicketCode(raw) != null) {
+      try {
+        if (await sync(meta.sessionId)) {
+          current = await db.meta(meta.sessionId) ?? meta;
+          outcome = await validateScan(tickets: db, meta: current, raw: raw, method: method, now: serverNow);
+        }
+      } on ApiException {
+        // Sin internet: se queda el "no existe" local.
+      }
+    }
+    final ticket = outcome.ticket;
+    return (outcome, ticket == null ? null : describePresence(ticket, current, outcome));
   }
 
   /// El portero dijo que NO es una salida: es una entrada que ya se usó. Queda registrada como rechazo.

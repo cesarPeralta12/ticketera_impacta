@@ -72,6 +72,7 @@ class _ResultOverlayState extends State<ResultOverlay> with TickerProviderStateM
       if (t?.type != null) Pill(t!.type!, icon: Icons.confirmation_number_outlined, color: Colors.white),
       if (t?.seat != null) Pill(t!.seat!, icon: Icons.event_seat_outlined, color: Colors.white),
       if (widget.zoneLabel != null) Pill(widget.zoneLabel!, icon: Icons.stars_rounded, color: Colors.white),
+      if (o.verdict.ok && o.includes != null && o.movement != Movement.exit) Pill('Incluye: ${o.includes}', icon: Icons.layers_outlined, color: Colors.white),
       if (o.verdict.ok && t != null && t.maxEntries != 1 && o.movement != Movement.exit)
         Pill(t.maxEntries == 0 ? 'Reingresos sin límite' : 'Ingreso ${t.entryCount + 1} de ${t.maxEntries}', icon: Icons.repeat_rounded, color: Colors.white),
     ];

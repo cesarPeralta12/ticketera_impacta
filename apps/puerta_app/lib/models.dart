@@ -46,7 +46,7 @@ enum GateDirection {
 }
 
 class Gate {
-  const Gate({required this.id, required this.name, this.sectionIds = const [], this.direction = GateDirection.inward, this.zoneId, this.directionKnown = true});
+  const Gate({required this.id, required this.name, this.sectionIds = const [], this.direction = GateDirection.inward, this.zoneId, this.zoneName, this.directionKnown = true});
 
   final String id;
   final String name;
@@ -55,6 +55,9 @@ class Gate {
 
   /// Zona a la que da la puerta (ej. el VIP). Nula = ingreso general.
   final String? zoneId;
+
+  /// Nombre de la zona a la que da la puerta ("Ultra VIP"). Lo manda el servidor nuevo; nulo con uno anterior.
+  final String? zoneName;
 
   /// La lista de funciones no trae la dirección de las puertas (solo la descarga): hasta entonces no se afirma
   /// que sea de entrada.
@@ -66,10 +69,11 @@ class Gate {
         sectionIds: [for (final s in (json['sectionIds'] as List? ?? const [])) s as String],
         direction: GateDirection.fromApi(json['direction'] as String?),
         zoneId: json['zoneId'] as String?,
+        zoneName: json['zoneName'] as String?,
         directionKnown: json['direction'] != null,
       );
 
-  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'sectionIds': sectionIds, if (directionKnown) 'direction': direction.api, 'zoneId': zoneId};
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'sectionIds': sectionIds, if (directionKnown) 'direction': direction.api, 'zoneId': zoneId, if (zoneName != null) 'zoneName': zoneName};
 }
 
 /// Una función (evento + fecha) que el portero puede controlar.
@@ -216,6 +220,8 @@ class TicketRow {
         entries: (json['entries'] as num?)?.toInt(),
         maxEntries: (json['maxEntries'] as num?)?.toInt() ?? 1,
         zoneIds: [for (final z in (json['zoneIds'] as List? ?? const [])) z as String],
+        // Zona en la que está ahora según el servidor (lecturas de cualquier teléfono). Un servidor anterior no la manda.
+        zoneId: json['zoneId'] as String?,
       );
 
   TicketRow copyWith({TicketStatus? status, DateTime? usedAt, bool? inside, int? entries, String? zoneId}) => TicketRow(
@@ -249,6 +255,7 @@ class SessionMeta {
     required this.sections,
     required this.syncedAt,
     required this.ticketCount,
+    this.zones = const {},
   });
 
   final String sessionId;
@@ -258,6 +265,9 @@ class SessionMeta {
   final String? gateId;
   final List<Gate> gates;
   final Map<String, String> sections;
+
+  /// Nombre de cada zona del recinto por id (servidor nuevo; vacío con uno anterior).
+  final Map<String, String> zones;
 
   /// Hora del servidor de la última descarga (para pedir solo los cambios).
   final String syncedAt;
@@ -277,12 +287,21 @@ class SessionMeta {
           if (g.direction != GateDirection.outward && g.zoneId != null && zoneIds.contains(g.zoneId)) g.name,
       ];
 
+  /// "VIP y Ultra VIP": las zonas que abre una entrada, o null si no se conocen sus nombres.
+  String? zonesIncluded(List<String> zoneIds) {
+    final names = [for (final id in zoneIds) if (zones[id] != null) zones[id]!];
+    if (names.isEmpty) return null;
+    if (names.length == 1) return names.first;
+    return '${names.sublist(0, names.length - 1).join(', ')} y ${names.last}';
+  }
+
   Map<String, dynamic> toJson() => {
         'sessionId': sessionId,
         'title': title,
         'gateId': gateId,
         'gates': [for (final g in gates) g.toJson()],
         'sections': sections,
+        'zones': zones,
         'syncedAt': syncedAt,
         'ticketCount': ticketCount,
       };
@@ -293,6 +312,7 @@ class SessionMeta {
         gateId: json['gateId'] as String?,
         gates: [for (final g in json['gates'] as List) Gate.fromJson(g as Map<String, dynamic>)],
         sections: {for (final e in (json['sections'] as Map).entries) e.key as String: e.value as String},
+        zones: {for (final e in ((json['zones'] as Map?) ?? const {}).entries) e.key as String: e.value as String},
         syncedAt: json['syncedAt'] as String,
         ticketCount: json['ticketCount'] as int,
       );
@@ -324,6 +344,7 @@ class DownloadResult {
         gateId: json['gateId'] as String?,
         gates: [for (final g in json['gates'] as List) Gate.fromJson(g as Map<String, dynamic>)],
         sections: {for (final e in (json['sections'] as Map).entries) e.key as String: e.value as String},
+        zones: {for (final e in ((json['zones'] as Map?) ?? const {}).entries) e.key as String: e.value as String},
         syncedAt: json['syncedAt'] as String,
         ticketCount: tickets.length,
       ),
@@ -344,7 +365,8 @@ enum ScanVerdict {
   staticNotAllowed('STATIC_NOT_ALLOWED'),
   outOfHours('OUT_OF_HOURS'),
   notActivated('NOT_ACTIVATED'),
-  notInside('NOT_INSIDE');
+  notInside('NOT_INSIDE'),
+  zoneFull('ZONE_FULL');
 
   const ScanVerdict(this.api);
   final String api;
@@ -364,6 +386,7 @@ enum ScanVerdict {
         ScanVerdict.outOfHours => 'FUERA DE HORARIO',
         ScanVerdict.notActivated => 'IMPRESA SIN VENDER',
         ScanVerdict.notInside => 'NO ESTABA ADENTRO',
+        ScanVerdict.zoneFull => 'ZONA LLENA',
       };
 
   /// Gravedad para elegir color y sonido: aviso (se puede resolver) o rechazo.
@@ -374,6 +397,7 @@ enum ScanVerdict {
         ScanVerdict.qrExpired ||
         ScanVerdict.staticNotAllowed ||
         ScanVerdict.outOfHours ||
+        ScanVerdict.zoneFull ||
         ScanVerdict.notInside =>
           true,
         _ => false,
@@ -409,7 +433,7 @@ enum Movement {
 }
 
 class ScanOutcome {
-  const ScanOutcome({required this.verdict, this.ticket, this.detail, this.movement, this.gateName, this.askExit = false});
+  const ScanOutcome({required this.verdict, this.ticket, this.detail, this.movement, this.gateName, this.askExit = false, this.includes});
 
   final ScanVerdict verdict;
   final TicketRow? ticket;
@@ -426,6 +450,9 @@ class ScanOutcome {
   /// La entrada ya ingresó y se leyó en una puerta que no es solo de salida: el portero decide si la persona está
   /// saliendo (se registra la salida) o si es una entrada ya usada.
   final bool askExit;
+
+  /// Zonas que abre la entrada ("VIP y Ultra VIP"), para decirle al portero qué incluye. Nulo si no se conocen.
+  final String? includes;
 
   /// Título grande de la pantalla de resultado.
   String get title => verdict.ok ? (movement ?? Movement.entry).title : verdict.title;

@@ -121,6 +121,7 @@ Future<ScanOutcome> validateScan({
   }
 
   final gate = meta.gate;
+  final includes = meta.zonesIncluded(ticket.zoneIds);
   final direction = gate?.direction ?? GateDirection.inward;
   final inside = ticket.isInside;
   final gateZone = gate?.zoneId;
@@ -139,6 +140,7 @@ Future<ScanOutcome> validateScan({
         ticket: ticket,
         movement: Movement.exit,
         gateName: gate?.name,
+        includes: includes,
         // En una puerta de entrada (o de entrada y salida) no se sabe si la persona sale o es una lectura repetida:
         // se le pregunta al portero. En una puerta solo de salida no hay duda.
         askExit: direction != GateDirection.outward,
@@ -164,7 +166,7 @@ Future<ScanOutcome> validateScan({
   if (inside) {
     // Ya está adentro: si la puerta da a otra zona que su entrada abre, pasa de zona; si no, ya está usada.
     if (gateZone != null && ticket.zoneId != gateZone) {
-      return ScanOutcome(verdict: ScanVerdict.accepted, ticket: ticket, movement: Movement.zoneChange, gateName: gate?.name);
+      return ScanOutcome(verdict: ScanVerdict.accepted, ticket: ticket, movement: Movement.zoneChange, gateName: gate?.name, includes: includes);
     }
     final at = ticket.usedAt;
     return ScanOutcome(
@@ -176,7 +178,7 @@ Future<ScanOutcome> validateScan({
   if (ticket.hasEntered) {
     // Salió: vuelve a entrar solo si le quedan ingresos.
     if (ticket.canReenter || ticket.status == TicketStatus.valid) {
-      return ScanOutcome(verdict: ScanVerdict.accepted, ticket: ticket, movement: Movement.reentry, gateName: gate?.name);
+      return ScanOutcome(verdict: ScanVerdict.accepted, ticket: ticket, movement: Movement.reentry, gateName: gate?.name, includes: includes);
     }
     final n = ticket.entryCount;
     return ScanOutcome(
@@ -189,7 +191,7 @@ Future<ScanOutcome> validateScan({
     final at = ticket.usedAt;
     return ScanOutcome(verdict: ScanVerdict.alreadyUsed, ticket: ticket, detail: at == null ? 'Ya ingresó antes.' : 'Ingresó a las ${_hhmm(at)}');
   }
-  return ScanOutcome(verdict: ScanVerdict.accepted, ticket: ticket, movement: Movement.entry, gateName: gate?.name);
+  return ScanOutcome(verdict: ScanVerdict.accepted, ticket: ticket, movement: Movement.entry, gateName: gate?.name, includes: includes);
 }
 
 /// Entradas de QR dinámico: solo valen con una prueba vigente. Devuelve el rechazo y su explicación, o null si pasa.

@@ -16,6 +16,7 @@ import '../settings.dart';
 import '../ui/tokens.dart';
 import '../ui/widgets.dart';
 import '../validator.dart' show extractTicketCode;
+import 'consult_sheet.dart';
 import 'result_overlay.dart';
 import 'scan_widgets.dart';
 
@@ -135,8 +136,31 @@ class _ScanScreenState extends State<ScanScreen> {
     return o.movement == Movement.exit ? const Duration(milliseconds: 2000) : const Duration(milliseconds: 2600);
   }
 
+  /// Modo consulta: solo mira dónde está la persona; no registra ingresos, salidas ni rechazos.
+  bool _consultOnly = false;
+
+  Future<void> _consultRead(String raw, AccessMethod? method) async {
+    _busy = true;
+    try {
+      if (method != null) _feedback.detected();
+      final (outcome, view) = await widget.service.consult(widget.meta, raw, method);
+      if (!mounted) return;
+      await showConsultSheet(context, outcome: outcome, view: view, gateName: _gate?.name, zoneName: _gate?.zoneName);
+    } finally {
+      _busy = false;
+      // La cámara sigue viendo el mismo código: se ignora un momento para que la consulta no reaparezca sola.
+      _lastRaw = raw;
+      _lastAt = DateTime.now();
+    }
+  }
+
   Future<void> _handle(String raw, AccessMethod? method) async {
     if (_busy) return;
+    if (_consultOnly) {
+      final at = DateTime.now();
+      if (method != null && raw == _lastRaw && at.difference(_lastAt) < const Duration(seconds: 4)) return;
+      return _consultRead(raw, method);
+    }
     // La cámara ve el mismo código muchos cuadros seguidos: se ignora si es el mismo de hace un momento.
     final now = DateTime.now();
     if (method != null && raw == _lastRaw && now.difference(_lastAt) < const Duration(seconds: 3)) return;
@@ -255,7 +279,8 @@ class _ScanScreenState extends State<ScanScreen> {
   String get _gateLabel {
     final g = _gate;
     if (g == null) return 'Entrada';
-    return g.direction == GateDirection.both ? 'Entrada y salida' : g.direction.label;
+    final base = g.direction == GateDirection.both ? 'Entrada y salida' : g.direction.label;
+    return g.zoneName != null ? '$base · ${g.zoneName}' : base;
   }
 
   @override
@@ -264,7 +289,7 @@ class _ScanScreenState extends State<ScanScreen> {
     final frameColor = style?.color ?? (_locked ? Brand.highlight : Colors.white);
     final used = _counts.used;
     final total = _counts.total;
-    final zoneLabel = (_outcome?.verdict.ok ?? false) && (_gate?.zoneId != null) && _outcome?.movement != Movement.exit ? _gate?.name : null;
+    final zoneLabel = (_outcome?.verdict.ok ?? false) && (_gate?.zoneId != null) && _outcome?.movement != Movement.exit ? (_gate?.zoneName ?? _gate?.name) : null;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -338,8 +363,9 @@ class _ScanScreenState extends State<ScanScreen> {
                               Pill(_gate == null ? _gateLabel : '${_gate!.name} · $_gateLabel', icon: (_gate?.direction ?? GateDirection.inward).icon, color: _gateColor, small: true),
                               ListenableBuilder(
                                 listenable: _settings,
-                                builder: (context, _) => _settings.autoAccept ? const Pill('Ingreso rápido', icon: Icons.bolt_rounded, color: Brand.highlight, small: true) : const SizedBox.shrink(),
+                                builder: (context, _) => _settings.autoAccept && !_consultOnly ? const Pill('Ingreso rápido', icon: Icons.bolt_rounded, color: Brand.highlight, small: true) : const SizedBox.shrink(),
                               ),
+                              if (_consultOnly) const Pill('Solo consulta', icon: Icons.visibility_outlined, color: Brand.violet, small: true),
                             ],
                           ),
                         ],
@@ -357,6 +383,13 @@ class _ScanScreenState extends State<ScanScreen> {
                         onTap: () => _camera.toggleTorch(),
                       ),
                     ),
+                  const SizedBox(width: 8),
+                  RoundIconButton(
+                    icon: Icons.visibility_outlined,
+                    active: _consultOnly,
+                    tooltip: _consultOnly ? 'Volver a registrar' : 'Solo consultar (no registra)',
+                    onTap: () => setState(() => _consultOnly = !_consultOnly),
+                  ),
                   const SizedBox(width: 8),
                   ListenableBuilder(
                     listenable: _settings,
