@@ -211,9 +211,15 @@ export async function promoterSellAction(_prev: PosState, formData: FormData): P
 
   let code: string;
   try {
-    const { order } = await sellAsPromoter(parsed.data, { promoterId: staff.id, buyerPhone: phone || undefined, provider: promoterPaymentProvider() });
+    const { order } = await sellAsPromoter(parsed.data, {
+      promoterId: staff.id,
+      buyerPhone: phone || undefined,
+      provider: promoterPaymentProvider(),
+      promoCode: String(formData.get("promo") ?? "").trim() || undefined,
+    });
     code = order.code;
   } catch (error) {
+    if (error instanceof DomainError && error.code === "PROMO_INVALID") return { error: `Tu oferta: ${error.message}` };
     if (error instanceof DomainError) return { error: error.message, refresh: error.code === "SEAT_TAKEN" || error.code === "SOLD_OUT" };
     throw error;
   }

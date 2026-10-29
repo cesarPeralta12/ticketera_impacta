@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { DEFAULT_TIMEZONE, commissionLabel, formatBytes, formatCode, formatDateTime, formatMoney, whatsappLink } from "@ticketera/core";
-import { prisma, promoAssetsForPromoter, promoterEvents, promoterSales, requireEnv, salesCutoff } from "@ticketera/db";
+import { ensurePromoterCode, prisma, promoAssetsForPromoter, promoterEvents, promoterSales, salesCutoff } from "@ticketera/db";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { CopyButton } from "@/components/copy-button";
 import { CountUp } from "@/components/count-up";
@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: "Vender" };
 const CHANNEL: Record<string, string> = { PROMOTER: "Vendida por ti", ONLINE: "Web con tu código", POS: "Boletería con tu código" };
 
 /**
- * Inicio del promotor: su comisión en vivo, los eventos que vende (con su enlace para la web) y sus últimas ventas.
+ * Inicio del promotor: su comisión en vivo, los eventos que vende (con su código para copiar) y sus últimas ventas.
  * Vende con cobro por QR: nunca recibe efectivo.
  */
 export default async function PromoterHome() {
@@ -25,12 +25,11 @@ export default async function PromoterHome() {
     // (material promocional de sus eventos)
     promoterEvents(staff.id, staff.organization.id, now),
     promoterSales(staff.id, { organizationId: staff.organization.id, take: 25 }, now),
-    prisma.promoCode.findFirst({ where: { organizationId: staff.organization.id, promoterId: staff.id, eventId: null, discountValue: 0 }, select: { code: true } }),
+    prisma.promoCode.findFirst({ where: { organizationId: staff.organization.id, promoterId: staff.id, eventId: null, discountValue: 0 }, select: { code: true } }).then((c) => c ?? ensurePromoterCode(prisma, staff.organization.id, { id: staff.id, name: staff.name })),
     promoAssetsForPromoter(staff.id, staff.organization.id, now),
   ]);
   const currency = staff.organization.currency;
   const money = (c: number) => formatMoney(c, currency);
-  const web = requireEnv("WEB_URL").replace(/\/$/, "");
 
   const stats = [
     {
@@ -86,7 +85,6 @@ export default async function PromoterHome() {
             // Solo las funciones que tiene asignadas (y vigentes) y que todavía se venden.
             const onSale = event.status === "PUBLISHED" ? event.sessions.filter((s) => s.assigned && salesCutoff(s, "PROMOTER") > now) : [];
             const sold = sales.byEvent.find((e) => e.eventId === event.id);
-            const link = code ? `${web}/eventos/${event.slug}?promo=${code.code}` : null;
             return (
               <article key={event.id} className="card overflow-hidden">
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
@@ -103,19 +101,7 @@ export default async function PromoterHome() {
                       </p>
                     )}
                   </div>
-                  {link && event.status === "PUBLISHED" && (
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <CopyButton text={link} label="Copiar tu enlace para la web" />
-                      <a
-                        href={`https://wa.me/?text=${encodeURIComponent(`Compra tus entradas para ${event.title} aquí: ${link}`)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="btn px-2.5 py-1 text-xs"
-                      >
-                        Compartir por WhatsApp
-                      </a>
-                    </div>
-                  )}
+                  {code && event.status === "PUBLISHED" && <CopyButton text={code.code} label="Copiar mi código" />}
                 </div>
                 {(() => {
                   const material = materials.get(event.id);
@@ -177,7 +163,7 @@ export default async function PromoterHome() {
         )}
         {code && (
           <p className="text-xs text-[var(--ink-dim)]">
-            Tu código es <strong className="font-mono">{code.code}</strong>: lo que se compra en la web con tu enlace o con este código también suma a tu
+            Tu código es <strong className="font-mono">{code.code}</strong>: lo que se compra en la web con este código también suma a tu
             comisión.
           </p>
         )}
