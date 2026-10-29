@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { DEFAULT_TIMEZONE, commissionLabel, formatCode, formatDateTime, formatMoney } from "@ticketera/core";
-import { findPromoter, prisma, promoterEvents, promoterSales, requireEnv } from "@ticketera/db";
+import { findPromoter, listPromoCodes, prisma, promoterEvents, promoterSales, requireEnv } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { CopyButton } from "@/components/copy-button";
 import { PromoterAssignmentFields } from "@/components/promoter-assignment-fields";
@@ -25,12 +25,15 @@ export default async function PromoterPage({ params }: { params: Promise<{ userI
   if (!promoter) notFound();
 
   const now = new Date();
-  const [assignments, sales, code, events] = await Promise.all([
+  const [assignments, sales, code, events, allCodes] = await Promise.all([
+    // (todos los códigos de la organización; abajo se muestran los de este promotor)
     promoterEvents(promoter.id, staff.organization.id, now),
     promoterSales(promoter.id, { organizationId: staff.organization.id, take: 30 }, now),
     prisma.promoCode.findFirst({ where: { organizationId: staff.organization.id, promoterId: promoter.id, eventId: null, discountValue: 0 }, select: { code: true } }),
     pickerEvents(staff.organization.id, now),
+    listPromoCodes(staff.organization.id, now),
   ]);
+  const codes = allCodes.filter((c) => c.promoterId === promoter.id);
   const money = (c: number) => formatMoney(c, staff.organization.currency);
   const assigned = new Set(assignments.map((a) => a.eventId));
   const available = events.filter((e) => !assigned.has(e.id));
@@ -217,6 +220,33 @@ export default async function PromoterPage({ params }: { params: Promise<{ userI
           </p>
         </section>
       </div>
+
+      <section className="card space-y-3 p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="eyebrow">Códigos de este promotor</h2>
+          {editable && (
+            <Link href={`/promociones?promotor=${promoter.id}#nuevo`} className="btn px-3 py-1.5 text-sm">
+              + Crear código con descuento para {promoter.name}
+            </Link>
+          )}
+        </div>
+        {codes.length === 0 ? (
+          <p className="text-sm text-[var(--ink-muted)]">Todavía no tiene códigos.</p>
+        ) : (
+          <ul className="divide-y divide-[var(--border)] text-sm">
+            {codes.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                <Link href={`/promociones/${c.id}`} className="font-mono font-semibold text-[var(--accent)] hover:underline">
+                  {c.code}
+                </Link>
+                <span className="text-[var(--ink-muted)]">
+                  {c.event?.title ?? "Todos los eventos"} · {c.paidUses} uso(s) pagado(s) · comisión {money(c.commission)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section className="card overflow-x-auto">
         <h2 className="eyebrow border-b border-[var(--border)] px-5 py-3">Últimas ventas</h2>

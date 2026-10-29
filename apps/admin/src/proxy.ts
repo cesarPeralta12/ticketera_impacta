@@ -50,6 +50,8 @@ export default auth((req) => {
     pathname.startsWith("/restablecer") ||
     pathname.startsWith("/api/auth") ||
     pathname === "/api/health" ||
+    // Tarea agendada del hosting: se identifica con CRON_SECRET (la ruta lo verifica), no con sesión.
+    pathname === "/api/cron/limpiar-material" ||
     // La app móvil de puerta usa tokens propios (Authorization: Bearer), no la cookie del panel.
     pathname.startsWith("/api/v1/") ||
     // Íconos y logos: se ven también en el login.

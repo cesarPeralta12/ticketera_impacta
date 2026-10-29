@@ -500,6 +500,7 @@ model Event {
   contactEmail        String?
   promoCodes          PromoCode[]
   promoters           PromoterAssignment[]
+  promoAssets         EventPromoAsset[]
   salesAssignments    SalesAssignment[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
@@ -1356,4 +1357,27 @@ model VenuePlanImage {
   updatedAt DateTime @updatedAt
 
   venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+}
+
+/// Material promocional del evento que los promotores descargan (una imagen o un video, uno por evento). `data` son los bytes
+/// tal cual se subieron: no se recomprimen. Se borra 30 días después de la última función (ver promoAssetExpiry).
+
+model EventPromoAsset {
+  id           String   @id @default(cuid())
+  eventId      String
+  fileName     String
+  mimeType     String
+  byteSize     Int
+  /// Medidas de la imagen (vacío para PDF, video y otros).
+  width        Int?
+  height       Int?
+  /// Vista previa chica (JPG), solo para mostrar en el panel; la descarga siempre es `data`.
+  thumb        Bytes?
+  data         Bytes
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId])
 }

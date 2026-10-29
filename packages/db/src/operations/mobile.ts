@@ -362,6 +362,7 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
       printState: true,
       printBatch: { select: { mode: true } },
       inside: true,
+      zoneId: true,
       entries: true,
     },
   });
@@ -432,6 +433,8 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
           // Presencia y reglas (para puertas de salida, reingreso y zonas): si está adentro, cuántas veces entró, cuántas
           // puede (0 = sin límite) y qué zonas abre (vacío = las de siempre).
           inside: t.inside,
+          // Zona en la que está ahora (lecturas de cualquier teléfono): así otra puerta sabe si ya está en esa zona.
+          zoneId: t.zoneId,
           entries: t.entries,
           maxEntries: t.ticketType.maxEntries,
           zoneIds: t.ticketType.zones.map((z) => z.id),

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { DEFAULT_TIMEZONE, generatePromoCode, normalizePromoCode, zonedDateTimeToUtc } from "@ticketera/core";
-import { DomainError, createPromoCode, setPromoActive, updatePromoCode } from "@ticketera/db";
+import { DomainError, createPromoCode, listPromoterAccounts, setPromoActive, updatePromoCode } from "@ticketera/db";
 import { formObject, intField, moneyField, zodErrors, type FormState } from "@/lib/forms";
 import { requireEditor } from "@/lib/session";
 
@@ -16,8 +16,8 @@ const baseSchema = z.object({
   maxUsesPerCustomer: optionalInt("El máximo por persona", 1, 1000),
   startsAt: z.string().optional(),
   endsAt: z.string().optional(),
-  promoterName: z.string().max(80).optional(),
-  commissionPercent: optionalInt("La comisión", 0, 100),
+  /** Cuenta de promotor (vacío: sin promotor). */
+  promoterId: z.string().max(40).optional(),
   combinableWithPresale: z.literal("on").optional(),
 });
 
@@ -66,8 +66,10 @@ export async function createPromoAction(_prev: FormState, formData: FormData): P
   const dates = parseDates(data);
   if ("error" in dates) return dates.error;
 
+  const promoterId = data.promoterId || null;
   // Sin código escrito se genera uno legible, con el nombre del promotor si lo hay.
-  const code = data.code ? normalizePromoCode(data.code) : generatePromoCode(data.promoterName ?? "PROMO");
+  const promoterName = promoterId ? (await listPromoterAccounts(staff.organization.id)).find((p) => p.id === promoterId)?.name : undefined;
+  const code = data.code ? normalizePromoCode(data.code) : generatePromoCode(promoterName ?? "PROMO");
   try {
     const promo = await createPromoCode(
       staff.organization.id,
@@ -82,8 +84,7 @@ export async function createPromoAction(_prev: FormState, formData: FormData): P
         maxUsesPerCustomer: data.maxUsesPerCustomer,
         startsAt: dates.startsAt,
         endsAt: dates.endsAt,
-        promoterName: data.promoterName,
-        commissionPercent: data.commissionPercent,
+        promoterId,
       },
       staff.id,
     );
@@ -112,8 +113,7 @@ export async function updatePromoAction(_prev: FormState, formData: FormData): P
         maxUsesPerCustomer: data.maxUsesPerCustomer,
         startsAt: dates.startsAt,
         endsAt: dates.endsAt,
-        promoterName: data.promoterName,
-        commissionPercent: data.commissionPercent,
+        promoterId: data.promoterId || null,
         combinableWithPresale: Boolean(data.combinableWithPresale),
       },
       staff.id,

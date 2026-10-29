@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
-import { DEFAULT_TIMEZONE, commissionLabel, formatCode, formatDateTime, formatMoney, whatsappLink } from "@ticketera/core";
-import { prisma, promoterEvents, promoterSales, requireEnv, salesCutoff } from "@ticketera/db";
+import { DEFAULT_TIMEZONE, commissionLabel, formatBytes, formatCode, formatDateTime, formatMoney, whatsappLink } from "@ticketera/core";
+import { prisma, promoAssetsForPromoter, promoterEvents, promoterSales, requireEnv, salesCutoff } from "@ticketera/db";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { CopyButton } from "@/components/copy-button";
 import { CountUp } from "@/components/count-up";
@@ -21,10 +21,12 @@ export default async function PromoterHome() {
   await connection();
   const staff = await requireStaff(ROLES.promoter);
   const now = new Date();
-  const [assignments, sales, code] = await Promise.all([
+  const [assignments, sales, code, materials] = await Promise.all([
+    // (material promocional de sus eventos)
     promoterEvents(staff.id, staff.organization.id, now),
     promoterSales(staff.id, { organizationId: staff.organization.id, take: 25 }, now),
     prisma.promoCode.findFirst({ where: { organizationId: staff.organization.id, promoterId: staff.id, eventId: null, discountValue: 0 }, select: { code: true } }),
+    promoAssetsForPromoter(staff.id, staff.organization.id, now),
   ]);
   const currency = staff.organization.currency;
   const money = (c: number) => formatMoney(c, currency);
@@ -115,6 +117,41 @@ export default async function PromoterHome() {
                     </div>
                   )}
                 </div>
+                {(() => {
+                  const material = materials.get(event.id);
+                  if (!material) return null;
+                  return (
+                    <div className="border-b border-[var(--border)] px-5 py-4">
+                      <p className="eyebrow mb-2">Material promocional</p>
+                      <ul className="flex flex-wrap gap-3">
+                        {material.assets.map((a) => (
+                          <li key={a.id} className="flex items-center gap-3 rounded-md border border-[var(--border)] p-2 pr-3">
+                            {a.hasThumb ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={`/promotor/material/${a.id}?miniatura=1`} alt="" className="h-14 w-14 rounded object-cover" />
+                            ) : (
+                              <span className="grid h-14 w-14 place-items-center rounded bg-[var(--surface-2)] text-xs text-[var(--ink-dim)]">Video</span>
+                            )}
+                            <span className="text-sm">
+                              <span className="block max-w-[14rem] truncate font-medium">{a.fileName}</span>
+                              <span className="block text-xs text-[var(--ink-dim)]">
+                                {formatBytes(a.byteSize)}
+                                {a.width && a.height ? ` · ${a.width}×${a.height} px` : ""}
+                              </span>
+                              <a href={`/promotor/material/${a.id}`} className="text-xs font-semibold text-[var(--accent)] hover:underline">
+                                Descargar original
+                              </a>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="mt-2 text-xs text-[var(--ink-dim)]">
+                        Se descarga en su calidad original, sin comprimir.
+                        {material.expiresAt ? ` Disponible hasta el ${formatDateTime(material.expiresAt, DEFAULT_TIMEZONE)} (30 días después del evento): después se elimina.` : ""}
+                      </p>
+                    </div>
+                  );
+                })()}
                 {onSale.length === 0 ? (
                   <p className="px-5 py-3 text-sm text-[var(--ink-muted)]">
                     {event.status === "PUBLISHED" ? "No tiene funciones a la venta ahora." : "Todavía no está a la venta."}

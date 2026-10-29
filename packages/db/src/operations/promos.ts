@@ -132,9 +132,26 @@ export type PromoInput = {
   maxUsesPerCustomer?: number | null;
   startsAt?: Date | null;
   endsAt?: Date | null;
+  /** Cuenta de promotor dueña del código (la forma normal desde el panel). Su nombre se copia de la cuenta. */
+  promoterId?: string | null;
+  /** Solo para códigos antiguos sin cuenta: el panel ya no los crea. */
   promoterName?: string | null;
   commissionPercent?: number | null;
 };
+
+/**
+ * Resuelve el promotor de un código: tiene que ser una cuenta de promotor activa de la organización. Con cuenta, la
+ * comisión sale de su asignación por evento (no del código), así que no se guarda un porcentaje aparte.
+ */
+async function resolvePromoter(organizationId: string, promoterId: string) {
+  // (Misma consulta que findPromoter; no se importa de promoters.ts porque ese módulo ya depende de este.)
+  const promoter = await prisma.staffUser.findFirst({
+    where: { id: promoterId, active: true, memberships: { some: { organizationId, role: "PROMOTER" } } },
+    select: { id: true, name: true },
+  });
+  if (!promoter) throw new DomainError("PROMO_INVALID", "Ese promotor no existe o no tiene cuenta activa: elige una cuenta de la lista.");
+  return promoter;
+}
 
 function checkInput(input: PromoInput) {
   const fail = (message: string) => new DomainError("PROMO_INVALID", message);
@@ -149,12 +166,22 @@ function checkInput(input: PromoInput) {
   if (input.commissionPercent != null && (input.commissionPercent < 0 || input.commissionPercent > 100)) throw fail("La comisión debe estar entre 0 y 100%.");
 }
 
+/** Cuentas de promotor activas de la organización: la lista para elegir el promotor de un código. */
+export function listPromoterAccounts(organizationId: string) {
+  return prisma.staffUser.findMany({
+    where: { active: true, memberships: { some: { organizationId, role: "PROMOTER" } } },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, email: true },
+  });
+}
+
 export async function createPromoCode(organizationId: string, input: PromoInput, actorId: string) {
   checkInput(input);
   if (input.eventId) {
     const event = await prisma.event.findFirst({ where: { id: input.eventId, organizationId }, select: { id: true } });
     if (!event) throw new DomainError("NOT_FOUND", "Evento no encontrado.");
   }
+  const promoter = input.promoterId ? await resolvePromoter(organizationId, input.promoterId) : null;
   try {
     const promo = await prisma.promoCode.create({
       data: {
@@ -169,8 +196,9 @@ export async function createPromoCode(organizationId: string, input: PromoInput,
         maxUsesPerCustomer: input.maxUsesPerCustomer ?? null,
         startsAt: input.startsAt ?? null,
         endsAt: input.endsAt ?? null,
-        promoterName: input.promoterName?.trim() || null,
-        commissionPercent: input.commissionPercent ?? null,
+        promoterId: promoter?.id ?? null,
+        promoterName: promoter ? promoter.name : input.promoterName?.trim() || null,
+        commissionPercent: promoter ? null : (input.commissionPercent ?? null),
         createdById: actorId,
       },
     });
@@ -189,12 +217,16 @@ export async function createPromoCode(organizationId: string, input: PromoInput,
 export async function updatePromoCode(
   organizationId: string,
   promoId: string,
-  input: Pick<PromoInput, "description" | "maxUses" | "maxUsesPerCustomer" | "startsAt" | "endsAt" | "promoterName" | "commissionPercent" | "combinableWithPresale">,
+  input: Pick<PromoInput, "description" | "maxUses" | "maxUsesPerCustomer" | "startsAt" | "endsAt" | "promoterId" | "promoterName" | "commissionPercent" | "combinableWithPresale">,
   actorId: string,
 ) {
   const promo = await prisma.promoCode.findFirst({ where: { id: promoId, organizationId } });
   if (!promo) throw new DomainError("NOT_FOUND", "Código no encontrado.");
   checkInput({ ...input, code: promo.code, discountType: promo.discountType, discountValue: promo.discountValue });
+  // promoterId: una cuenta la liga; null la quita (el código queda sin promotor). Un código antiguo con solo nombre
+  // y sin cuenta conserva su nombre hasta que se le elija una cuenta.
+  const promoter = input.promoterId ? await resolvePromoter(organizationId, input.promoterId) : null;
+  const legacyName = !promo.promoterId && !promoter;
   const updated = await prisma.promoCode.update({
     where: { id: promo.id },
     data: {
@@ -203,8 +235,9 @@ export async function updatePromoCode(
       maxUsesPerCustomer: input.maxUsesPerCustomer ?? null,
       startsAt: input.startsAt ?? null,
       endsAt: input.endsAt ?? null,
-      promoterName: input.promoterName?.trim() || null,
-      commissionPercent: input.commissionPercent ?? null,
+      ...(legacyName
+        ? { promoterName: input.promoterName === undefined ? promo.promoterName : input.promoterName?.trim() || null, commissionPercent: input.commissionPercent ?? promo.commissionPercent }
+        : { promoterId: promoter?.id ?? null, promoterName: promoter?.name ?? null, commissionPercent: null }),
       combinableWithPresale: input.combinableWithPresale ?? promo.combinableWithPresale,
     },
   });
@@ -222,17 +255,18 @@ export async function setPromoActive(organizationId: string, promoId: string, ac
 async function promoStats(promoIds: string[], now: Date) {
   const redemptions = await prisma.promoRedemption.findMany({
     where: { promoCodeId: { in: promoIds }, order: COUNTED(now) },
-    select: { promoCodeId: true, discountAmount: true, order: { select: { status: true, totalAmount: true, _count: { select: { tickets: true } } } } },
+    select: { promoCodeId: true, discountAmount: true, order: { select: { status: true, totalAmount: true, commissionAmount: true, _count: { select: { tickets: true } } } } },
   });
-  const stats = new Map<string, { uses: number; paidUses: number; tickets: number; sales: number; discount: number }>();
+  const stats = new Map<string, { uses: number; paidUses: number; tickets: number; sales: number; discount: number; commissionAmount: number }>();
   for (const r of redemptions) {
-    const s = stats.get(r.promoCodeId) ?? { uses: 0, paidUses: 0, tickets: 0, sales: 0, discount: 0 };
+    const s = stats.get(r.promoCodeId) ?? { uses: 0, paidUses: 0, tickets: 0, sales: 0, discount: 0, commissionAmount: 0 };
     s.uses += 1;
     if (r.order.status === "PAID" || r.order.status === "PARTIALLY_REFUNDED") {
       s.paidUses += 1;
       s.tickets += r.order._count.tickets;
       s.sales += r.order.totalAmount;
       s.discount += r.discountAmount;
+      s.commissionAmount += r.order.commissionAmount;
     }
     stats.set(r.promoCodeId, s);
   }
@@ -250,24 +284,28 @@ export async function listPromoCodes(organizationId: string, now = new Date()) {
   });
   const stats = await promoStats(promos.map((p) => p.id), now);
   return promos.map((p) => {
-    const s = stats.get(p.id) ?? { uses: 0, paidUses: 0, tickets: 0, sales: 0, discount: 0 };
-    return { ...p, ...s, commission: p.commissionPercent ? Math.round((s.sales * p.commissionPercent) / 100) : 0 };
+    const s = stats.get(p.id) ?? { uses: 0, paidUses: 0, tickets: 0, sales: 0, discount: 0, commissionAmount: 0 };
+    // Con cuenta de promotor, la comisión es la que quedó guardada en cada orden (regla de su evento); los códigos
+    // antiguos sin cuenta usan su porcentaje informativo.
+    const commission = p.promoterId ? s.commissionAmount : p.commissionPercent ? Math.round((s.sales * p.commissionPercent) / 100) : 0;
+    return { ...p, ...s, commission };
   });
 }
 
 /** Resumen por promotor (RRPP): usos, entradas, ventas, descuentos y comisión de todos sus códigos. */
 export function summarizeByPromoter(rows: PromoRow[]) {
-  const byPromoter = new Map<string, { promoter: string; codes: number; paidUses: number; tickets: number; sales: number; discount: number; commission: number }>();
+  const byPromoter = new Map<string, { promoter: string; promoterId: string | null; codes: number; paidUses: number; tickets: number; sales: number; discount: number; commission: number }>();
   for (const r of rows) {
     if (!r.promoterName) continue;
-    const s = byPromoter.get(r.promoterName) ?? { promoter: r.promoterName, codes: 0, paidUses: 0, tickets: 0, sales: 0, discount: 0, commission: 0 };
+    const key = r.promoterId ?? `nombre:${r.promoterName}`;
+    const s = byPromoter.get(key) ?? { promoter: r.promoterName, promoterId: r.promoterId, codes: 0, paidUses: 0, tickets: 0, sales: 0, discount: 0, commission: 0 };
     s.codes += 1;
     s.paidUses += r.paidUses;
     s.tickets += r.tickets;
     s.sales += r.sales;
     s.discount += r.discount;
     s.commission += r.commission;
-    byPromoter.set(r.promoterName, s);
+    byPromoter.set(key, s);
   }
   return [...byPromoter.values()].toSorted((a, b) => b.sales - a.sales);
 }

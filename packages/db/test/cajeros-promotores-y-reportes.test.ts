@@ -277,4 +277,16 @@ describe("zonas: tres niveles, aforo que bloquea y nombres en la app de puerta",
     expect(ultraGate).toMatchObject({ zoneId: zones.ultra.id, zoneName: "Ultra VIP", direction: "IN" });
     expect(download.gates.every((g) => "sectionIds" in g)).toBe(true);
   });
+
+  it("la app de puerta sabe en qué zona está cada persona ahora, aunque haya entrado por otro teléfono", async () => {
+    const { session, doors, scan, zones } = await club();
+    const code = async (holderName: string) => (await prisma.ticket.findFirstOrThrow({ where: { sessionId: session.id, holderName } })).code;
+    const uri = await code("Uri");
+    const current = async () => ((await getDoorDownload({ sessionId: session.id }))!.tickets.find((t) => t.code === uri) as { zoneId?: string | null })?.zoneId ?? null;
+    expect(await current()).toBeNull(); // todavía afuera
+    await scan("Uri", doors.general);
+    expect(await current()).toBe(zones.general.id);
+    await scan("Uri", doors.ultra);
+    expect(await current()).toBe(zones.ultra.id);
+  });
 });
