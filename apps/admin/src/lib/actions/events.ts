@@ -27,7 +27,10 @@ import {
   EventMode,
   Prisma,
   createEventWithinLimit,
+  deleteEventCompletely,
   duplicateSession,
+  eventFootprint,
+  hasHistory,
   prisma,
   publicationProblem,
   setTicketTypeQrMode,
@@ -212,6 +215,35 @@ export async function unpublishEventAction(_prev: FormState, formData: FormData)
   await audit(staff.id, "event.unpublish", "Event", event.id);
   revalidatePath(`/eventos/${event.id}`, "layout");
   return { ok: true };
+}
+
+/** Para comparar el nombre escrito al confirmar: sin mayúsculas, acentos ni espacios de más. */
+const plainTitle = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").replace(/\s+/g, " ").trim().toLowerCase();
+
+/**
+ * Borrar un evento con TODO lo suyo (ver deleteEventCompletely): funciones, precios, ventas, pagos, entradas, ingresos,
+ * códigos y asignaciones. Si ya tiene ventas, entradas o ingresos, hay que escribir su nombre para confirmar.
+ */
+export async function deleteEventAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const event = await ownedEvent(staff.organization.id, String(formData.get("eventId")));
+  if (!event) return { error: "Evento no encontrado." };
+  const footprint = await eventFootprint(event.id);
+  if (hasHistory(footprint) && plainTitle(String(formData.get("confirmTitle") ?? "")) !== plainTitle(event.title)) {
+    return { fieldErrors: { confirmTitle: `Escribe el nombre del evento tal cual: ${event.title}` } };
+  }
+  await deleteEventCompletely(event.id);
+  await logAudit({
+    actorType: "staff",
+    actorId: staff.id,
+    action: "event.delete",
+    entity: "Event",
+    entityId: event.id,
+    severity: hasHistory(footprint) ? "warn" : "info",
+    data: { title: event.title, ...footprint },
+  });
+  revalidatePath("/eventos");
+  redirect("/eventos");
 }
 
 /** Horarios y venta online de una función, tal como vienen del formulario (ver SessionTimesFields). */

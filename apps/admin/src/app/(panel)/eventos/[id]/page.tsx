@@ -15,7 +15,7 @@ import {
   suggestedTimes,
   utcToZonedInput,
 } from "@ticketera/core";
-import { clientAccessOpen, defaultClientAccessUntil, getEventReport, listPromoAssets, prisma } from "@ticketera/db";
+import { clientAccessOpen, defaultClientAccessUntil, eventFootprint, getEventReport, hasHistory, listPromoAssets, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { EventChecklist } from "@/components/event-checklist";
 import { EventReport } from "@/components/event-report";
@@ -24,6 +24,7 @@ import { updateClientAccessAction } from "@/lib/actions/clients";
 import { repeatNightsAction } from "@/lib/actions/nightlife";
 import {
   createSessionAction,
+  deleteEventAction,
   duplicateSessionAction,
   publishEventAction,
   unpublishEventAction,
@@ -80,6 +81,18 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
     }),
     defaultClientAccessUntil(event.id),
   ]);
+  // Solo en Configuración (y para quien edita): lo que se pierde si se borra.
+  const footprint = tab === "configuracion" && !staff.readOnly ? await eventFootprint(event.id) : null;
+  const lost = footprint
+    ? [
+        `${footprint.sessions} función(es) con sus precios`,
+        footprint.sales > 0 && `${footprint.sales} venta(s) cobrada(s) por ${formatMoney(footprint.paidAmount, staff.organization.currency)}`,
+        footprint.orders > footprint.sales && `${footprint.orders - footprint.sales} orden(es) más (invitaciones, impresas, reservas o anuladas)`,
+        footprint.tickets > 0 && `${footprint.tickets} entrada(s) emitida(s): sus QR dejan de servir`,
+        footprint.scans > 0 && `${footprint.scans} ingreso(s) registrados en puerta`,
+        footprint.promoCodes > 0 && `${footprint.promoCodes} código(s) de descuento`,
+      ].filter((x): x is string => Boolean(x))
+    : [];
   const status = EVENT_STATUS[event.status];
   const guestList = event.mode === "GUEST_LIST";
   const ready = event.sessions.length > 0 && event.sessions.every((s) => s.ticketTypes.length > 0);
@@ -451,6 +464,42 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
               </button>
             </ActionForm>
           </section>
+
+          {footprint && (
+            <section className="card border-[var(--danger)]/40 p-6">
+              <h2 className="eyebrow mb-1 text-[var(--danger)]">Borrar evento</h2>
+              <ActionForm
+                action={deleteEventAction}
+                confirm={`¿Borrar "${event.title}" con todo lo suyo? No se puede deshacer.`}
+                className="space-y-3"
+              >
+                <input type="hidden" name="eventId" value={event.id} />
+                <p className="text-sm text-[var(--ink-muted)]">Se borra para siempre, con todo lo relacionado:</p>
+                <ul className="list-disc space-y-0.5 pl-5 text-sm">
+                  {lost.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                  <li>sus promotores, cajeros y porteros asignados (las cuentas siguen; solo dejan de tener este evento)</li>
+                </ul>
+                {hasHistory(footprint) && (
+                  <>
+                    <p className="rounded-md bg-[var(--danger-soft)] px-3 py-2 text-sm text-[var(--danger)]">
+                      Ya tiene movimiento: los compradores pierden sus entradas y las ventas salen de los reportes y de la
+                      conciliación. Los pagos de comisión ya entregados a los promotores quedan en su historial. Si solo
+                      quieres que no se venda más, usa «Pasar a borrador».
+                    </p>
+                    <label className="label max-w-md">
+                      Para confirmar, escribe el nombre del evento: {event.title}
+                      <input name="confirmTitle" required autoComplete="off" className="field" />
+                    </label>
+                  </>
+                )}
+                <button type="submit" className="btn border-[var(--danger)] text-[var(--danger)]">
+                  Borrar evento y todo lo suyo
+                </button>
+              </ActionForm>
+            </section>
+          )}
           </>
           )}
         </div>
