@@ -28,20 +28,48 @@ enum AccessMethod {
 /// Cómo se leyó una entrada (los tres métodos más el código escrito a mano).
 String scanMethodApi(AccessMethod? method) => method?.api ?? 'MANUAL';
 
+/// Para qué lado sirve una puerta: entrada (lo de siempre), salida, o las dos según si la persona está adentro.
+enum GateDirection {
+  inward('IN', 'Entrada', Icons.south_east),
+  outward('OUT', 'Salida', Icons.north_east),
+  both('BOTH', 'Entrada y salida', Icons.swap_vert);
+
+  const GateDirection(this.api, this.label, this.icon);
+
+  final String api;
+  final String label;
+  final IconData icon;
+
+  /// Un servidor anterior no manda la dirección: se entiende que es una puerta de entrada.
+  static GateDirection fromApi(String? value) =>
+      GateDirection.values.firstWhere((d) => d.api == value, orElse: () => GateDirection.inward);
+}
+
 class Gate {
-  const Gate({required this.id, required this.name, this.sectionIds = const []});
+  const Gate({required this.id, required this.name, this.sectionIds = const [], this.direction = GateDirection.inward, this.zoneId, this.directionKnown = true});
 
   final String id;
   final String name;
   final List<String> sectionIds;
+  final GateDirection direction;
+
+  /// Zona a la que da la puerta (ej. el VIP). Nula = ingreso general.
+  final String? zoneId;
+
+  /// La lista de funciones no trae la dirección de las puertas (solo la descarga): hasta entonces no se afirma
+  /// que sea de entrada.
+  final bool directionKnown;
 
   factory Gate.fromJson(Map<String, dynamic> json) => Gate(
         id: json['id'] as String,
         name: json['name'] as String,
         sectionIds: [for (final s in (json['sectionIds'] as List? ?? const [])) s as String],
+        direction: GateDirection.fromApi(json['direction'] as String?),
+        zoneId: json['zoneId'] as String?,
+        directionKnown: json['direction'] != null,
       );
 
-  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'sectionIds': sectionIds};
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'sectionIds': sectionIds, if (directionKnown) 'direction': direction.api, 'zoneId': zoneId};
 }
 
 /// Una función (evento + fecha) que el portero puede controlar.
@@ -85,7 +113,7 @@ extension AssignmentJson on Assignment {
         'title': title,
         'startsAt': startsAt.toUtc().toIso8601String(),
         'venue': venue,
-        'gates': [for (final g in gates) {'id': g.id, 'name': g.name}],
+        'gates': [for (final g in gates) g.toJson()],
         'methods': [for (final m in methods) m.api],
       };
 }
@@ -118,6 +146,11 @@ class TicketRow {
     this.usedAt,
     this.qrDynamic = false,
     this.key,
+    this.inside,
+    this.entries,
+    this.maxEntries = 1,
+    this.zoneIds = const [],
+    this.zoneId,
   });
 
   final String code;
@@ -143,6 +176,30 @@ class TicketRow {
   /// Llave de la entrada (base64url), solo al bajarla del servidor. En el teléfono se guarda cifrada y no viaja aquí.
   final String? key;
 
+  /// ¿Está adentro ahora? Un servidor anterior no lo manda: se entiende que "usada" es "adentro".
+  final bool? inside;
+
+  /// Cuántas veces entró (nulo = según el estado).
+  final int? entries;
+
+  /// Cuántas veces puede entrar: 1 = un solo ingreso (lo de siempre), 0 = sin límite.
+  final int maxEntries;
+
+  /// Zonas que abre su tipo de entrada (vacío = las de siempre, sin restricción).
+  final List<String> zoneIds;
+
+  /// Zona en la que quedó según lo leído en este teléfono (el servidor no la manda).
+  final String? zoneId;
+
+  bool get isInside => inside ?? status == TicketStatus.used;
+  int get entryCount => entries ?? (status == TicketStatus.used ? 1 : 0);
+
+  /// ¿Ya entró alguna vez? (una que salió y puede volver baja como "válida", pero ya había entrado).
+  bool get hasEntered => entryCount > 0;
+
+  /// Entró, salió, y todavía le quedan ingresos.
+  bool get canReenter => !isInside && hasEntered && (maxEntries == 0 || entryCount < maxEntries);
+
   factory TicketRow.fromJson(Map<String, dynamic> json) => TicketRow(
         code: json['code'] as String,
         status: TicketStatus.fromCode(json['status'] as String),
@@ -155,9 +212,13 @@ class TicketRow {
         methods: [for (final m in (json['methods'] as List? ?? const [])) m as String],
         qrDynamic: json['dynamic'] as bool? ?? false,
         key: json['key'] as String?,
+        inside: json['inside'] as bool?,
+        entries: (json['entries'] as num?)?.toInt(),
+        maxEntries: (json['maxEntries'] as num?)?.toInt() ?? 1,
+        zoneIds: [for (final z in (json['zoneIds'] as List? ?? const [])) z as String],
       );
 
-  TicketRow copyWith({TicketStatus? status, DateTime? usedAt}) => TicketRow(
+  TicketRow copyWith({TicketStatus? status, DateTime? usedAt, bool? inside, int? entries, String? zoneId}) => TicketRow(
         code: code,
         status: status ?? this.status,
         sectionId: sectionId,
@@ -170,6 +231,11 @@ class TicketRow {
         usedAt: usedAt ?? this.usedAt,
         qrDynamic: qrDynamic,
         key: key,
+        inside: inside ?? this.inside,
+        entries: entries ?? this.entries,
+        maxEntries: maxEntries,
+        zoneIds: zoneIds,
+        zoneId: zoneId ?? this.zoneId,
       );
 }
 
@@ -199,10 +265,16 @@ class SessionMeta {
 
   Gate? get gate => gates.where((g) => g.id == gateId).firstOrNull;
 
-  /// Nombres de las puertas por las que entra una sección.
+  /// Nombres de las puertas de entrada por las que entra una sección.
   List<String> gatesFor(String? sectionId) => [
         for (final g in gates)
-          if (sectionId != null && g.sectionIds.contains(sectionId)) g.name,
+          if (g.direction != GateDirection.outward && sectionId != null && g.sectionIds.contains(sectionId)) g.name,
+      ];
+
+  /// Nombres de las puertas de entrada que dan a una zona.
+  List<String> gatesForZones(List<String> zoneIds) => [
+        for (final g in gates)
+          if (g.direction != GateDirection.outward && g.zoneId != null && zoneIds.contains(g.zoneId)) g.name,
       ];
 
   Map<String, dynamic> toJson() => {
@@ -269,7 +341,10 @@ enum ScanVerdict {
   invalid('INVALID'),
   methodNotAllowed('METHOD_NOT_ALLOWED'),
   qrExpired('QR_EXPIRED'),
-  staticNotAllowed('STATIC_NOT_ALLOWED');
+  staticNotAllowed('STATIC_NOT_ALLOWED'),
+  outOfHours('OUT_OF_HOURS'),
+  notActivated('NOT_ACTIVATED'),
+  notInside('NOT_INSIDE');
 
   const ScanVerdict(this.api);
   final String api;
@@ -286,17 +361,74 @@ enum ScanVerdict {
         ScanVerdict.methodNotAllowed => 'MÉTODO NO PERMITIDO',
         ScanVerdict.qrExpired => 'QR VENCIDO',
         ScanVerdict.staticNotAllowed => 'EXIGE QR DINÁMICO',
+        ScanVerdict.outOfHours => 'FUERA DE HORARIO',
+        ScanVerdict.notActivated => 'IMPRESA SIN VENDER',
+        ScanVerdict.notInside => 'NO ESTABA ADENTRO',
       };
+
+  /// Gravedad para elegir color y sonido: aviso (se puede resolver) o rechazo.
+  bool get isWarning => switch (this) {
+        ScanVerdict.alreadyUsed ||
+        ScanVerdict.wrongGate ||
+        ScanVerdict.methodNotAllowed ||
+        ScanVerdict.qrExpired ||
+        ScanVerdict.staticNotAllowed ||
+        ScanVerdict.outOfHours ||
+        ScanVerdict.notInside =>
+          true,
+        _ => false,
+      };
+
+  static ScanVerdict? fromApi(String value) {
+    for (final v in ScanVerdict.values) {
+      if (v.api == value) return v;
+    }
+    return null;
+  }
+}
+
+/// Qué pasó con la persona al aceptar la lectura.
+enum Movement {
+  entry('ENTRY', 'Ingreso', 'ACCESO AUTORIZADO'),
+  reentry('REENTRY', 'Reingreso', 'REINGRESO AUTORIZADO'),
+  exit('EXIT', 'Salida', 'SALIDA REGISTRADA'),
+  zoneChange('ZONE_CHANGE', 'Cambio de zona', 'PASO AUTORIZADO');
+
+  const Movement(this.api, this.label, this.title);
+
+  final String api;
+  final String label;
+  final String title;
+
+  static Movement? fromApi(String? value) {
+    for (final m in Movement.values) {
+      if (m.api == value) return m;
+    }
+    return null;
+  }
 }
 
 class ScanOutcome {
-  const ScanOutcome({required this.verdict, this.ticket, this.detail});
+  const ScanOutcome({required this.verdict, this.ticket, this.detail, this.movement, this.gateName, this.askExit = false});
 
   final ScanVerdict verdict;
   final TicketRow? ticket;
 
   /// Texto de apoyo: por dónde debe entrar, cuándo entró antes, etc.
   final String? detail;
+
+  /// Solo en las aceptadas: ingreso, reingreso, salida o cambio de zona.
+  final Movement? movement;
+
+  /// Puerta por la que se leyó (para decir "pasó a la zona de Acceso VIP").
+  final String? gateName;
+
+  /// La entrada ya ingresó y se leyó en una puerta que no es solo de salida: el portero decide si la persona está
+  /// saliendo (se registra la salida) o si es una entrada ya usada.
+  final bool askExit;
+
+  /// Título grande de la pantalla de resultado.
+  String get title => verdict.ok ? (movement ?? Movement.entry).title : verdict.title;
 }
 
 /// Lectura guardada en el teléfono, pendiente de subir.
@@ -309,6 +441,8 @@ class PendingScan {
     required this.method,
     required this.scannedAt,
     required this.verdict,
+    this.movement,
+    this.zoneId,
   });
 
   final String id;
@@ -321,6 +455,13 @@ class PendingScan {
   /// Lo que decidió el teléfono. Los rechazos se suben tal cual; una aceptada la confirma el servidor.
   final ScanVerdict verdict;
 
+  /// Ingreso, reingreso, salida o cambio de zona: solo sirve para rehacer el estado local (el servidor lo decide
+  /// por la dirección de la puerta, así que no se envía).
+  final Movement? movement;
+
+  /// Zona en la que quedó la persona (la de la puerta) según este teléfono.
+  final String? zoneId;
+
   Map<String, dynamic> toApi() => {
         'id': id,
         'raw': raw,
@@ -330,4 +471,16 @@ class PendingScan {
         'accessPointId': ?gateId,
         if (!verdict.ok) 'offlineResult': verdict.api,
       };
+}
+
+/// Una lectura reciente, para la lista "Últimas lecturas".
+class RecentScan {
+  const RecentScan({required this.at, required this.verdict, required this.movement, this.holder, this.type, this.code});
+
+  final DateTime at;
+  final ScanVerdict verdict;
+  final Movement? movement;
+  final String? holder;
+  final String? type;
+  final String? code;
 }

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../app_services.dart';
 import '../door_service.dart';
+import '../ui/tokens.dart';
+import '../ui/widgets.dart';
 
 /// Inicio de sesión con la cuenta de portero.
 class LoginScreen extends StatefulWidget {
@@ -19,7 +22,9 @@ class _LoginScreenState extends State<LoginScreen> {
   late final _server = TextEditingController(text: widget.service.serverUrl);
   bool _busy = false;
   bool _showServer = false;
+  bool _showPassword = false;
   String? _error;
+  int _shake = 0;
 
   @override
   void initState() {
@@ -37,9 +42,17 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  void _fail(String message) {
+    setState(() {
+      _error = message;
+      _shake++;
+    });
+    AppServices.of(context).feedback.fail();
+  }
+
   Future<void> _submit() async {
     if (_email.text.trim().isEmpty || _password.text.isEmpty) {
-      setState(() => _error = 'Ingresa tu email y contraseña.');
+      _fail('Escribe tu correo y tu contraseña.');
       return;
     }
     setState(() {
@@ -49,7 +62,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await widget.service.login(server: _server.text, email: _email.text, password: _password.text);
     } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) _fail(e.offline ? 'No hay conexión con el servidor. Revisa tu internet.' : e.message);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -57,72 +70,165 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 24),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: AutofillGroup(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(Icons.qr_code_scanner, size: 56, color: scheme.primary),
-                    const SizedBox(height: 12),
-                    Text('Impacta Puerta', textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineMedium),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Inicia sesión con tu cuenta de portero',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: scheme.onSurfaceVariant),
+                    StaggerIn(
+                      index: 0,
+                      child: GestureDetector(
+                        // Quien administra el teléfono puede cambiar el servidor tocando el logo varias veces.
+                        onLongPress: () => setState(() => _showServer = !_showServer),
+                        child: Column(
+                          children: [
+                            const _LogoBadge(),
+                            const SizedBox(height: 20),
+                            const BrandMark(size: 44),
+                            const SizedBox(height: 6),
+                            Text('CONTROL DE ACCESO', style: Type.label.copyWith(letterSpacing: 4, color: Brand.yellow)),
+                          ],
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 28),
-                    TextField(
-                      controller: _email,
-                      keyboardType: TextInputType.emailAddress,
-                      autofillHints: const [AutofillHints.username],
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(labelText: 'Email'),
+                    const SizedBox(height: 40),
+                    StaggerIn(
+                      index: 1,
+                      child: Text('Inicia sesión', style: Type.heading.copyWith(fontSize: 24)),
+                    ),
+                    const SizedBox(height: 4),
+                    const StaggerIn(index: 1, child: Text('Con tu cuenta de portero o de administración.', style: Type.muted)),
+                    const SizedBox(height: 22),
+                    StaggerIn(
+                      index: 2,
+                      child: AppField(
+                        controller: _email,
+                        label: 'Correo',
+                        icon: Icons.alternate_email,
+                        keyboardType: TextInputType.emailAddress,
+                        autofillHints: const [AutofillHints.username],
+                        textInputAction: TextInputAction.next,
+                      ),
                     ),
                     const SizedBox(height: 14),
-                    TextField(
-                      controller: _password,
-                      obscureText: true,
-                      autofillHints: const [AutofillHints.password],
-                      onSubmitted: (_) => _submit(),
-                      decoration: const InputDecoration(labelText: 'Contraseña'),
-                    ),
-                    if (_showServer) ...[
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: _server,
-                        keyboardType: TextInputType.url,
-                        decoration: const InputDecoration(labelText: 'Servidor', hintText: 'https://panel.impacta.bo'),
+                    StaggerIn(
+                      index: 3,
+                      child: AppField(
+                        controller: _password,
+                        label: 'Contraseña',
+                        icon: Icons.lock_outline,
+                        obscure: !_showPassword,
+                        autofillHints: const [AutofillHints.password],
+                        onSubmitted: (_) => _submit(),
+                        suffix: IconButton(
+                          tooltip: _showPassword ? 'Ocultar' : 'Mostrar',
+                          icon: Icon(_showPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: Brand.muted),
+                          onPressed: () => setState(() => _showPassword = !_showPassword),
+                        ),
                       ),
-                    ],
-                    if (_error != null) ...[
-                      const SizedBox(height: 14),
-                      Text(_error!, style: TextStyle(color: scheme.error), textAlign: TextAlign.center),
-                    ],
+                    ),
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 260),
+                      curve: Curves.easeOutCubic,
+                      child: _showServer
+                          ? Padding(
+                              padding: const EdgeInsets.only(top: 14),
+                              child: AppField(controller: _server, label: 'Servidor', icon: Icons.dns_outlined, keyboardType: TextInputType.url),
+                            )
+                          : const SizedBox(width: double.infinity),
+                    ),
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 260),
+                      curve: Curves.easeOutCubic,
+                      child: _error == null
+                          ? const SizedBox(width: double.infinity)
+                          : Shake(
+                              trigger: _shake,
+                              child: Container(
+                                margin: const EdgeInsets.only(top: 14),
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: Brand.red.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: Brand.red.withValues(alpha: 0.4)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.error_outline, color: Brand.red, size: 20),
+                                    const SizedBox(width: 10),
+                                    Expanded(child: Text(_error!, style: Type.body.copyWith(color: const Color(0xFFFFC2C8), fontSize: 15))),
+                                  ],
+                                ),
+                              ),
+                            ),
+                    ),
+                    const SizedBox(height: 24),
+                    StaggerIn(index: 4, child: PrimaryButton(label: 'ENTRAR', icon: Icons.arrow_forward_rounded, loading: _busy, onPressed: _submit)),
                     const SizedBox(height: 22),
-                    FilledButton(
-                      onPressed: _busy ? null : _submit,
-                      child: _busy
-                          ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5))
-                          : const Text('Entrar'),
-                    ),
-                    TextButton(
-                      onPressed: () => setState(() => _showServer = !_showServer),
-                      child: Text(_showServer ? 'Ocultar servidor' : 'Configurar servidor'),
-                    ),
+                    Center(child: Text('Versión $appVersion', style: Type.muted.copyWith(fontSize: 12, color: Brand.faint))),
                   ],
                 ),
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Insignia del logo: cuadrado amarillo con el visor de lectura.
+class _LogoBadge extends StatefulWidget {
+  const _LogoBadge();
+
+  @override
+  State<_LogoBadge> createState() => _LogoBadgeState();
+}
+
+class _LogoBadgeState extends State<_LogoBadge> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 2400))..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 92,
+      height: 92,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFFD34D), Brand.yellow]),
+        boxShadow: [BoxShadow(color: Brand.yellow.withValues(alpha: 0.38), blurRadius: 36, offset: const Offset(0, 14))],
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          const Icon(Icons.qr_code_scanner_rounded, size: 52, color: Brand.yellowInk),
+          // Línea de lectura que baja y sube.
+          AnimatedBuilder(
+            animation: _c,
+            builder: (context, _) {
+              final t = (_c.value < 0.5 ? _c.value * 2 : (1 - _c.value) * 2);
+              return Positioned(
+                top: 20 + t * 52,
+                left: 16,
+                right: 16,
+                child: Container(height: 3, decoration: BoxDecoration(color: Brand.yellowInk.withValues(alpha: 0.75), borderRadius: BorderRadius.circular(2))),
+              );
+            },
+          ),
+        ],
       ),
     );
   }

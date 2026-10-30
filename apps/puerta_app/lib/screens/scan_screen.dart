@@ -2,19 +2,29 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:nfc_manager/nfc_manager.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../app_services.dart';
 import '../door_service.dart';
+import '../feedback.dart';
 import '../models.dart';
 import '../nfc_reader.dart';
 import '../scan_cooldown.dart';
+import '../settings.dart';
+import '../ui/tokens.dart';
+import '../ui/widgets.dart';
 import '../validator.dart' show extractTicketCode;
+import 'result_overlay.dart';
+import 'scan_widgets.dart';
 
 /// Pantalla de lectura: cámara (QR), código de barras o NFC, según lo elegido en el inicio.
 class ScanScreen extends StatefulWidget {
-  const ScanScreen({super.key, required this.service, required this.meta, required this.method, required this.assignment});
+  const ScanScreen({super.key, required this.service, required this.meta, required this.method, required this.assignment, this.previewOverride});
+
+  /// Solo para pruebas visuales: en lugar de la cámara y del NFC (que necesitan el teléfono), se dibuja esto.
+  final Widget? previewOverride;
 
   final DoorService service;
   final SessionMeta meta;
@@ -26,16 +36,28 @@ class ScanScreen extends StatefulWidget {
 }
 
 class _ScanScreenState extends State<ScanScreen> {
-  late final MobileScannerController? _camera = widget.method == AccessMethod.nfc
+  bool get _testing => widget.previewOverride != null;
+  bool get _useCamera => widget.method != AccessMethod.nfc;
+
+  late final MobileScannerController? _camera = widget.method == AccessMethod.nfc || _testing
       ? null
       : MobileScannerController(
           formats: widget.method == AccessMethod.qr
               ? const [BarcodeFormat.qrCode]
               : const [BarcodeFormat.code128, BarcodeFormat.code39, BarcodeFormat.ean13, BarcodeFormat.ean8],
-          detectionSpeed: DetectionSpeed.noDuplicates,
+          // "noDuplicates" no vuelve a leer el mismo QR hasta que la cámara vea otro: había que salir y volver a entrar a la
+          // pantalla. Con "normal" sigue leyendo; las repeticiones las filtra la pausa por entrada (ScanCooldown).
+          detectionSpeed: DetectionSpeed.normal,
+          detectionTimeoutMs: 400,
         );
 
+  late AppSettings _settings;
+  late DoorFeedback _feedback;
+  bool _servicesReady = false;
+
   ScanOutcome? _outcome;
+  int _serial = 0;
+  bool _locked = false;
   Timer? _clearTimer;
   bool _busy = false;
   String? _lastRaw;
@@ -43,14 +65,35 @@ class _ScanScreenState extends State<ScanScreen> {
 
   /// Entradas recién procesadas: la cámara no las vuelve a leer sola (ver ScanCooldown).
   final ScanCooldown _cooldown = ScanCooldown();
-  ({int total, int used}) _counts = (total: 0, used: 0);
+  ({int total, int used, int inside}) _counts = (total: 0, used: 0, inside: 0);
   String? _nfcMessage;
   Timer? _syncTimer;
+
+  Gate? get _gate => widget.meta.gate;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final app = AppServices.of(context);
+    _settings = app.settings;
+    _feedback = app.feedback;
+    if (!_servicesReady) {
+      _servicesReady = true;
+      _applyWakelock();
+      _settings.addListener(_applyWakelock);
+    }
+  }
+
+  void _applyWakelock() {
+    // Sin el plugin (pruebas) o sin permiso, la pantalla simplemente puede apagarse: no es un error de la lectura.
+    (_settings.keepAwake ? WakelockPlus.enable() : WakelockPlus.disable()).catchError((_) {});
+  }
 
   @override
   void initState() {
     super.initState();
     _refreshCounts();
+    if (_testing) return;
     if (widget.method == AccessMethod.nfc) _startNfc();
     // Mientras se lee, sube las lecturas en cuanto hay internet.
     _syncTimer = Timer.periodic(const Duration(seconds: 15), (_) => widget.service.sync(widget.meta.sessionId).catchError((_) => false));
@@ -60,14 +103,36 @@ class _ScanScreenState extends State<ScanScreen> {
   void dispose() {
     _clearTimer?.cancel();
     _syncTimer?.cancel();
+    _settings.removeListener(_applyWakelock);
+    WakelockPlus.disable().catchError((_) {});
     _camera?.dispose();
-    if (widget.method == AccessMethod.nfc) NfcManager.instance.stopSession().catchError((_) {});
+    if (widget.method == AccessMethod.nfc && !_testing) NfcManager.instance.stopSession().catchError((_) {});
     super.dispose();
   }
 
   Future<void> _refreshCounts() async {
     final c = await widget.service.gateCounts(widget.meta.sessionId);
     if (mounted) setState(() => _counts = c);
+  }
+
+  void _dismiss() {
+    _clearTimer?.cancel();
+    if (mounted) setState(() => _outcome = null);
+  }
+
+  void _show(ScanOutcome outcome) {
+    _clearTimer?.cancel();
+    setState(() {
+      _outcome = outcome;
+      _serial++;
+      _locked = false;
+    });
+    _clearTimer = Timer(_shownFor(outcome), _dismiss);
+  }
+
+  Duration _shownFor(ScanOutcome o) {
+    if (!o.verdict.ok) return const Duration(milliseconds: 4200);
+    return o.movement == Movement.exit ? const Duration(milliseconds: 2000) : const Duration(milliseconds: 2600);
   }
 
   Future<void> _handle(String raw, AccessMethod? method) async {
@@ -85,27 +150,48 @@ class _ScanScreenState extends State<ScanScreen> {
     _busy = true;
     try {
       _clearTimer?.cancel();
-      if (mounted) setState(() => _outcome = null);
+      if (method != null) _feedback.detected();
+      if (mounted) {
+        setState(() {
+          _outcome = null;
+          _locked = true;
+        });
+      }
       final outcome = await widget.service.inspect(widget.meta, raw, method);
       if (!mounted) return;
 
       var shown = outcome;
       if (outcome.verdict.ok) {
-        // Entrada válida: el portero ve todos los datos y decide. Nada se marca hasta que acepte.
-        HapticFeedback.selectionClick();
-        final accepted = await _askConfirm(outcome);
+        final movement = outcome.movement ?? Movement.entry;
+        // Un ingreso lo confirma el portero (ve los datos y decide); una salida o un paso de zona se registra solo,
+        // y con "ingreso rápido" también el ingreso.
+        final ask = !_settings.autoAccept && (movement == Movement.entry || movement == Movement.reentry);
+        var accepted = true;
+        var declinedExit = false;
+        if (outcome.askExit) {
+          // La entrada ya ingresó: ¿la persona está saliendo? (aunque esté activado el ingreso rápido)
+          final choice = await showExitSheet(context, outcome: outcome);
+          accepted = choice == ExitChoice.exit;
+          declinedExit = choice == ExitChoice.used;
+        } else if (ask) {
+          accepted = await showConfirmSheet(context, outcome: outcome, sectionName: widget.meta.sections[outcome.ticket!.sectionId], gateName: widget.meta.gate?.name);
+        }
         if (!mounted) return;
-        if (accepted) {
+        if (declinedExit) {
+          // "No es una salida": se trata como una entrada que ya se usó.
+          shown = await widget.service.declineExit(widget.meta, raw, method, outcome);
+          if (code != null) _cooldown.block(code, CooldownFor.rejected, DateTime.now());
+        } else if (accepted) {
           shown = await widget.service.confirm(widget.meta, raw, method);
-          if (code != null) _cooldown.block(code, CooldownFor.accepted, DateTime.now());
-          HapticFeedback.lightImpact();
-          // Sube el ingreso al servidor de una vez (si hay internet), para que el panel lo vea en vivo.
+          if (code != null) _cooldown.block(code, shown.movement == Movement.exit ? CooldownFor.exited : CooldownFor.accepted, DateTime.now());
+          // Sube el movimiento al servidor de una vez (si hay internet), para que el panel lo vea en vivo.
           unawaited(widget.service.sync(widget.meta.sessionId).catchError((_) => false));
         } else {
           // Cancelada o se acabó el tiempo: la entrada sigue válida. Se espera unos segundos antes de volver a leerla
           // sola (si no, el diálogo reaparece al instante); escribir el código a mano la atiende ya.
           if (code != null) _cooldown.block(code, CooldownFor.cancelled, DateTime.now());
           _lastRaw = null;
+          setState(() => _locked = false);
           ScaffoldMessenger.of(context)
             ..clearSnackBars()
             ..showSnackBar(const SnackBar(content: Text('Lectura cancelada. La entrada no se marcó como usada.')));
@@ -113,30 +199,14 @@ class _ScanScreenState extends State<ScanScreen> {
         }
       } else {
         if (code != null) _cooldown.block(code, CooldownFor.rejected, DateTime.now());
-        HapticFeedback.heavyImpact();
       }
-      setState(() => _outcome = shown);
-      _clearTimer = Timer(const Duration(milliseconds: 3500), () {
-        if (mounted) setState(() => _outcome = null);
-      });
+      _feedback.outcome(shown);
+      _show(shown);
       await _refreshCounts();
     } finally {
       _busy = false;
+      if (mounted && _outcome == null && _locked) setState(() => _locked = false);
     }
-  }
-
-  /// Ventana con los datos de la entrada. Devuelve true solo si el portero toca Aceptar a tiempo.
-  Future<bool> _askConfirm(ScanOutcome outcome) async {
-    final accepted = await showDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      builder: (context) => _ConfirmDialog(
-        ticket: outcome.ticket!,
-        sectionName: widget.meta.sections[outcome.ticket!.sectionId],
-        gateName: widget.meta.gate?.name,
-      ),
-    );
-    return accepted == true;
   }
 
   Future<void> _startNfc() async {
@@ -155,7 +225,9 @@ class _ScanScreenState extends State<ScanScreen> {
         final code = codeFromTag(tag);
         if (code == null) {
           if (mounted) {
-            setState(() => _outcome = const ScanOutcome(verdict: ScanVerdict.invalid, detail: 'La etiqueta no tiene una entrada.'));
+            final bad = const ScanOutcome(verdict: ScanVerdict.invalid, detail: 'La etiqueta no tiene una entrada.');
+            _feedback.outcome(bad);
+            _show(bad);
           }
           return;
         }
@@ -170,288 +242,232 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Future<void> _manualEntry() async {
-    final controller = TextEditingController();
-    final otpController = TextEditingController();
-    String joined() => '${controller.text.trim()} ${otpController.text.trim()}'.trim();
-    final code = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Escribir el código'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: controller,
-              autofocus: true,
-              textCapitalization: TextCapitalization.characters,
-              decoration: const InputDecoration(labelText: 'Código de la entrada', hintText: 'K7Q3M-XPA2B'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: otpController,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              decoration: const InputDecoration(labelText: 'Número de 6 dígitos', helperText: 'Solo si la entrada es de QR dinámico'),
-              onSubmitted: (_) => Navigator.pop(context, joined()),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, joined()),
-            style: FilledButton.styleFrom(minimumSize: const Size(100, 44)),
-            child: const Text('Validar'),
-          ),
-        ],
-      ),
-    );
+    final code = await showManualEntry(context);
     if (code != null && code.trim().isNotEmpty) await _handle(code, null);
   }
 
+  Color get _gateColor => switch (_gate?.direction ?? GateDirection.inward) {
+        GateDirection.inward => Brand.green,
+        GateDirection.outward => Brand.amber,
+        GateDirection.both => Brand.blue,
+      };
+
+  String get _gateLabel {
+    final g = _gate;
+    if (g == null) return 'Entrada';
+    return g.direction == GateDirection.both ? 'Entrada y salida' : g.direction.label;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final method = widget.method;
+    final style = _outcome == null ? null : OutcomeStyle.of(_outcome!);
+    final frameColor = style?.color ?? (_locked ? Brand.yellow : Colors.white);
+    final used = _counts.used;
+    final total = _counts.total;
+    final zoneLabel = (_outcome?.verdict.ok ?? false) && (_gate?.zoneId != null) && _outcome?.movement != Movement.exit ? _gate?.name : null;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(method.label),
-        actions: [
-          if (_camera != null)
-            IconButton(
-              tooltip: 'Linterna',
-              icon: const Icon(Icons.flashlight_on_outlined),
-              onPressed: () => _camera.toggleTorch(),
-            ),
-          IconButton(tooltip: 'Escribir el código', icon: const Icon(Icons.keyboard_outlined), onPressed: _manualEntry),
-        ],
-      ),
-      body: Column(
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
         children: [
-          Container(
-            width: double.infinity,
-            color: Theme.of(context).colorScheme.surfaceContainerHigh,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // 1. Cámara o espera de NFC
+          if (_testing && _useCamera)
+            widget.previewOverride!
+          else if (_camera != null)
+            MobileScanner(
+              controller: _camera,
+              onDetect: (capture) {
+                final raw = capture.barcodes.map((b) => b.rawValue).whereType<String>().firstOrNull;
+                if (raw != null) _handle(raw, widget.method);
+              },
+              errorBuilder: (context, error) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(30),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.no_photography_outlined, size: 64, color: Brand.red),
+                      const SizedBox(height: 14),
+                      const Text('NO SE PUDO USAR LA CÁMARA', textAlign: TextAlign.center, style: Type.title),
+                      const SizedBox(height: 8),
+                      Text('Revisa el permiso de la cámara en los ajustes del teléfono.\n(${error.errorCode.name})', textAlign: TextAlign.center, style: Type.muted),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else
+            Container(color: Brand.ink, child: NfcWaiting(message: _nfcMessage)),
+
+          // 2. Sombras arriba y abajo para que los controles se lean sobre la cámara
+          IgnorePointer(
+            child: Column(
               children: [
-                Flexible(child: Text(widget.meta.title, overflow: TextOverflow.ellipsis)),
-                Text('${_counts.used} / ${_counts.total}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                Container(height: 190, decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black.withValues(alpha: 0.82), Colors.transparent]))),
+                const Spacer(),
+                Container(height: 230, decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black.withValues(alpha: 0.9), Colors.transparent]))),
               ],
             ),
           ),
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (_camera != null)
-                  MobileScanner(
-                    controller: _camera,
-                    onDetect: (capture) {
-                      final raw = capture.barcodes.map((b) => b.rawValue).whereType<String>().firstOrNull;
-                      if (raw != null) _handle(raw, method);
-                    },
-                    errorBuilder: (context, error) => Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Text('No se pudo usar la cámara. Revisa el permiso en los ajustes.\n${error.errorCode.name}', textAlign: TextAlign.center),
-                      ),
-                    ),
-                  )
-                else
-                  _NfcWaiting(message: _nfcMessage),
-                if (_camera != null && _outcome == null) const _Viewfinder(),
-                if (_outcome != null) Positioned(left: 0, right: 0, bottom: 0, child: _ResultBanner(outcome: _outcome!)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
-class _Viewfinder extends StatelessWidget {
-  const _Viewfinder();
+          // 3. Visor
+          if (_useCamera) ScanFrame(color: frameColor, locked: _locked || _outcome != null),
 
-  @override
-  Widget build(BuildContext context) => IgnorePointer(
-        child: Center(
-          child: Container(
-            width: 260,
-            height: 260,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.white70, width: 2),
-              borderRadius: BorderRadius.circular(18),
-            ),
-          ),
-        ),
-      );
-}
-
-class _NfcWaiting extends StatelessWidget {
-  const _NfcWaiting({this.message});
-
-  final String? message;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.nfc, size: 96, color: message == null ? scheme.primary : scheme.error),
-            const SizedBox(height: 16),
-            Text(
-              message ?? 'Acerca la pulsera o tarjeta a la parte trasera del teléfono',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ResultBanner extends StatelessWidget {
-  const _ResultBanner({required this.outcome});
-
-  final ScanOutcome outcome;
-
-  @override
-  Widget build(BuildContext context) {
-    final v = outcome.verdict;
-    final color = v.ok
-        ? const Color(0xFF0F8A6B)
-        : switch (v) {
-            ScanVerdict.alreadyUsed ||
-            ScanVerdict.cancelled ||
-            ScanVerdict.wrongGate ||
-            ScanVerdict.methodNotAllowed ||
-            ScanVerdict.qrExpired ||
-            ScanVerdict.staticNotAllowed =>
-              const Color(0xFFB45309),
-            _ => const Color(0xFFB91C1C),
-          };
-    final t = outcome.ticket;
-    final lines = [
-      if (t?.holder != null) t!.holder!,
-      [if (t?.type != null) t!.type!, if (t?.seat != null) t!.seat!].join(' · '),
-      if (outcome.detail != null) outcome.detail!,
-    ].where((l) => l.isNotEmpty);
-    return Container(
-      color: color,
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(v.ok ? Icons.check_circle : Icons.cancel, color: Colors.white, size: 52),
-          const SizedBox(height: 6),
-          Text(v.title, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w800)),
-          for (final line in lines) Text(line, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 16)),
-        ],
-      ),
-    );
-  }
-}
-
-/// Cuánto tiempo tiene el portero para aceptar antes de que la lectura se cancele sola.
-const _confirmSeconds = 12;
-
-class _ConfirmDialog extends StatefulWidget {
-  const _ConfirmDialog({required this.ticket, this.sectionName, this.gateName});
-
-  final TicketRow ticket;
-  final String? sectionName;
-  final String? gateName;
-
-  @override
-  State<_ConfirmDialog> createState() => _ConfirmDialogState();
-}
-
-class _ConfirmDialogState extends State<_ConfirmDialog> with SingleTickerProviderStateMixin {
-  late final AnimationController _timer = AnimationController(vsync: this, duration: const Duration(seconds: _confirmSeconds))
-    ..addStatusListener((status) {
-      if (status == AnimationStatus.completed && mounted) Navigator.of(context).pop(false);
-    })
-    ..forward();
-
-  @override
-  void dispose() {
-    _timer.dispose();
-    super.dispose();
-  }
-
-  String _code(String c) => c.length == 10 ? '${c.substring(0, 5)}-${c.substring(5)}' : c;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = widget.ticket;
-    final scheme = Theme.of(context).colorScheme;
-    final rows = <(String, String)>[
-      ('Tipo de entrada', t.type ?? '—'),
-      if (widget.sectionName != null) ('Sector', widget.sectionName!),
-      if (t.seat != null) ('Asiento', t.seat!),
-      if (t.document != null && t.document!.isNotEmpty) ('Carnet', t.document!),
-      ('Código', _code(t.code)),
-      if (widget.gateName != null) ('Puerta', widget.gateName!),
-    ];
-    return AlertDialog(
-      scrollable: true,
-      title: Row(
-        children: [
-          Icon(Icons.verified_outlined, color: scheme.primary),
-          const SizedBox(width: 10),
-          const Expanded(child: Text('Entrada válida')),
-        ],
-      ),
-      content: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(t.holder ?? 'Sin nombre', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 12),
-          for (final (label, value) in rows)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
+          // 4. Barra superior
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(width: 120, child: Text(label, style: TextStyle(color: scheme.onSurfaceVariant))),
-                  Expanded(child: Text(value, style: const TextStyle(fontWeight: FontWeight.w600))),
+                  RoundIconButton(icon: Icons.arrow_back_rounded, tooltip: 'Volver', onTap: () => Navigator.of(context).maybePop()),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(widget.meta.title.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: Type.title.copyWith(fontSize: 21)),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              Pill(_gate == null ? _gateLabel : '${_gate!.name} · $_gateLabel', icon: (_gate?.direction ?? GateDirection.inward).icon, color: _gateColor, small: true),
+                              ListenableBuilder(
+                                listenable: _settings,
+                                builder: (context, _) => _settings.autoAccept ? const Pill('Ingreso rápido', icon: Icons.bolt_rounded, color: Brand.yellow, small: true) : const SizedBox.shrink(),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (_camera != null)
+                    ValueListenableBuilder<MobileScannerState>(
+                      valueListenable: _camera,
+                      builder: (context, state, _) => RoundIconButton(
+                        icon: state.torchState == TorchState.on ? Icons.flashlight_on_rounded : Icons.flashlight_off_rounded,
+                        active: state.torchState == TorchState.on,
+                        tooltip: 'Linterna',
+                        onTap: () => _camera.toggleTorch(),
+                      ),
+                    ),
+                  const SizedBox(width: 8),
+                  ListenableBuilder(
+                    listenable: _settings,
+                    builder: (context, _) => RoundIconButton(
+                      icon: _settings.sound ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+                      active: _settings.sound,
+                      tooltip: 'Sonido',
+                      onTap: () => _settings.setSound(!_settings.sound),
+                    ),
+                  ),
                 ],
               ),
             ),
-          const SizedBox(height: 14),
-          AnimatedBuilder(
-            animation: _timer,
-            builder: (context, _) => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                LinearProgressIndicator(value: 1 - _timer.value, minHeight: 6, borderRadius: BorderRadius.circular(3)),
-                const SizedBox(height: 6),
-                Text(
-                  'Se cancela sola en ${(_confirmSeconds * (1 - _timer.value)).ceil()} s si no aceptas',
-                  style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          ),
+
+          // 5. Instrucción sobre el visor
+          if (_useCamera && _outcome == null && !_locked)
+            Align(
+              alignment: const Alignment(0, 0.52),
+              child: IgnorePointer(
+                child: Text(
+                  widget.method == AccessMethod.qr ? 'Apunta al QR de la entrada' : 'Apunta al código de barras',
+                  style: Type.body.copyWith(color: Colors.white70, fontWeight: FontWeight.w600),
                 ),
-              ],
+              ),
+            ),
+
+          // 6. Panel inferior: aforo y acciones
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                  decoration: BoxDecoration(color: Brand.surface.withValues(alpha: 0.94), borderRadius: BorderRadius.circular(26), border: Border.all(color: Brand.stroke)),
+                  child: Row(
+                    children: [
+                      RingGauge(
+                        value: total == 0 ? 0 : used / total,
+                        size: 62,
+                        stroke: 7,
+                        child: Text(total == 0 ? '0%' : '${(used / total * 100).round()}%', style: Type.muted.copyWith(fontSize: 12.5, fontWeight: FontWeight.w800, color: Brand.text)),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.baseline,
+                                textBaseline: TextBaseline.alphabetic,
+                                children: [
+                                  AnimatedNumber(value: used, style: Type.number.copyWith(fontSize: 30), duration: const Duration(milliseconds: 450)),
+                                  Text(' / $total', style: Type.muted.copyWith(fontSize: 17, fontWeight: FontWeight.w700)),
+                                ],
+                              ),
+                            ),
+                            Text('${_counts.inside} adentro ahora', style: Type.muted.copyWith(fontSize: 12.5), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      PressScale(
+                        onTap: () => showRecentScans(context, () => widget.service.recentScans(widget.meta.sessionId)),
+                        child: Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(color: Brand.surface3, borderRadius: BorderRadius.circular(16), border: Border.all(color: Brand.stroke)),
+                          child: const Icon(Icons.history_rounded, color: Brand.text),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: 'Escribir el código',
+                        child: PressScale(
+                          onTap: _manualEntry,
+                          child: Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(color: Brand.yellow, borderRadius: BorderRadius.circular(16)),
+                            child: const Icon(Icons.keyboard_alt_outlined, color: Brand.yellowInk),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
+
+          // 7. Resultado a pantalla completa
+          if (_outcome != null)
+            Positioned.fill(
+              child: ResultOverlay(
+                key: ValueKey(_serial),
+                outcome: _outcome!,
+                zoneLabel: zoneLabel,
+                duration: _shownFor(_outcome!),
+                onDismiss: _dismiss,
+              ),
+            ),
         ],
       ),
-      actionsAlignment: MainAxisAlignment.spaceBetween,
-      actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
-        FilledButton.icon(
-          onPressed: () => Navigator.of(context).pop(true),
-          style: FilledButton.styleFrom(minimumSize: const Size(190, 52)),
-          icon: const Icon(Icons.login),
-          label: const Text('ACEPTAR INGRESO'),
-        ),
-      ],
     );
   }
 }

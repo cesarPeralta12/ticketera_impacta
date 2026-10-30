@@ -27,6 +27,12 @@ class DoorService extends ChangeNotifier {
 
   ApiClient? _api;
   String? staffName;
+
+  /// Rol de la cuenta (OWNER, ADMIN, OPERATOR).
+  String? role;
+
+  /// El grabador de pulseras NFC es solo para administradores.
+  bool get canWriteBracelets => role == 'OWNER' || role == 'ADMIN';
   String serverUrl = defaultServerUrl;
 
   /// Funciones del portero (las del servidor, o las últimas conocidas si no hay internet).
@@ -67,6 +73,7 @@ class DoorService extends ChangeNotifier {
     serverUrl = await sessionStore.serverUrl ?? defaultServerUrl;
     final token = await sessionStore.token;
     staffName = await sessionStore.name;
+    role = await sessionStore.role;
     clockOffsetMs = int.tryParse(await db.getKv('clock_offset') ?? '') ?? 0;
     _api = ApiClient(baseUrl: serverUrl, token: token);
     notifyListeners();
@@ -93,7 +100,8 @@ class DoorService extends ChangeNotifier {
       deviceId: await sessionStore.deviceId,
       deviceName: await _deviceName(),
     );
-    await sessionStore.save(server: url, token: result.token, refreshToken: result.refreshToken, email: email.trim(), name: result.name);
+    await sessionStore.save(server: url, token: result.token, refreshToken: result.refreshToken, email: email.trim(), name: result.name, role: result.role);
+    role = result.role;
     serverUrl = url;
     staffName = result.name;
     mustChangePassword = result.mustChangePassword;
@@ -114,6 +122,7 @@ class DoorService extends ChangeNotifier {
     await db.clearAll();
     db.useKey(await sessionStore.resetDbKey()); // lo que quede cifrado con la clave anterior ya no se puede leer
     _readAt.clear();
+    role = null;
     _api = ApiClient(baseUrl: serverUrl);
     mustChangePassword = false;
     assignments = const [];
@@ -180,6 +189,28 @@ class DoorService extends ChangeNotifier {
 
   Future<SessionMeta?> meta(String sessionId) => db.meta(sessionId);
 
+  // ── Pulseras NFC ──
+
+  Future<List<TicketRow>> searchBraceletCandidates(String sessionId, String query) => db.searchNfcCandidates(sessionId, query);
+
+  /// Códigos cuya pulsera ya se grabó desde este teléfono (para no duplicar).
+  Future<Set<String>> braceletsWritten(String sessionId) async {
+    final raw = await db.getKv('bracelets_$sessionId');
+    if (raw == null || raw.isEmpty) return {};
+    return raw.split(',').toSet();
+  }
+
+  /// Marca la pulsera como grabada y avisa al servidor (si no hay internet, queda solo en este teléfono).
+  Future<void> markBraceletWritten(String sessionId, String code, {required bool locked}) async {
+    final all = {...await braceletsWritten(sessionId), code};
+    await db.putKv('bracelets_$sessionId', all.join(','));
+    try {
+      await _guard((api) => api.reportBraceletWrite(sessionId: sessionId, code: code, locked: locked));
+    } on ApiException {
+      // El registro en el servidor es de ayuda; la pulsera ya quedó grabada.
+    }
+  }
+
   /// Descarga completa de la función para la puerta elegida (reemplaza lo descargado antes).
   Future<SessionMeta> download(Assignment a, Gate? gate) async {
     final started = DateTime.now();
@@ -226,7 +257,9 @@ class DoorService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<({int total, int used})> gateCounts(String sessionId) => db.gateCounts(sessionId);
+  Future<({int total, int used, int inside})> gateCounts(String sessionId) => db.gateCounts(sessionId);
+
+  Future<List<RecentScan>> recentScans(String sessionId) => db.recentScans(sessionId);
 
   /// Revisa una lectura SIN marcarla como usada: el portero ve los datos y decide si acepta el ingreso.
   ///
@@ -252,6 +285,20 @@ class DoorService extends ChangeNotifier {
     return outcome;
   }
 
+  /// El portero dijo que NO es una salida: es una entrada que ya se usó. Queda registrada como rechazo.
+  Future<ScanOutcome> declineExit(SessionMeta meta, String raw, AccessMethod? method, ScanOutcome asked) async {
+    _readAt.remove(raw);
+    final at = asked.ticket?.usedAt;
+    final time = at == null ? null : '${at.hour.toString().padLeft(2, '0')}:${at.minute.toString().padLeft(2, '0')}';
+    final outcome = ScanOutcome(
+      verdict: ScanVerdict.alreadyUsed,
+      ticket: asked.ticket,
+      detail: time == null ? 'Ya está adentro.' : 'Ingresó a las $time y no salió.',
+    );
+    await _record(meta, raw, method, ScanVerdict.alreadyUsed);
+    return outcome;
+  }
+
   /// El portero aceptó el ingreso: se vuelve a validar (por si otra lectura la usó mientras tanto)
   /// y recién ahí se marca como usada y se guarda para subirla.
   Future<ScanOutcome> confirm(SessionMeta meta, String raw, AccessMethod? method) async {
@@ -262,8 +309,11 @@ class DoorService extends ChangeNotifier {
     final code = extractTicketCode(raw);
     if (outcome.verdict.ok && code != null) {
       final now = serverNow;
-      await db.markUsed(meta.sessionId, code, now);
-      await _record(meta, raw, method, ScanVerdict.accepted, at: now, code: code);
+      final movement = outcome.movement ?? Movement.entry;
+      // La zona en la que queda la persona: la de la puerta por la que pasó (una salida la deja afuera).
+      final zoneId = movement == Movement.exit ? null : meta.gate?.zoneId;
+      await db.applyMovement(meta.sessionId, code, movement, now, zoneId: zoneId);
+      await _record(meta, raw, method, ScanVerdict.accepted, at: now, code: code, movement: movement, zoneId: zoneId);
     } else {
       await _record(meta, raw, method, outcome.verdict);
     }
@@ -271,7 +321,16 @@ class DoorService extends ChangeNotifier {
     return outcome;
   }
 
-  Future<void> _record(SessionMeta meta, String raw, AccessMethod? method, ScanVerdict verdict, {DateTime? at, String? code}) async {
+  Future<void> _record(
+    SessionMeta meta,
+    String raw,
+    AccessMethod? method,
+    ScanVerdict verdict, {
+    DateTime? at,
+    String? code,
+    Movement? movement,
+    String? zoneId,
+  }) async {
     await db.addScan(
       PendingScan(
         id: _scanId(),
@@ -281,6 +340,8 @@ class DoorService extends ChangeNotifier {
         method: scanMethodApi(method),
         scannedAt: at ?? serverNow,
         verdict: verdict,
+        movement: movement,
+        zoneId: zoneId,
       ),
       code: code ?? extractTicketCode(raw),
     );

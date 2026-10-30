@@ -203,6 +203,9 @@ en iOS requiere el permiso *Near Field Communication Tag Reading* de la cuenta d
   (solo de ventas pagadas). Un uso se libera si la reserva vence sin pagar; el código y el descuento no se editan una
   vez creados (se desactiva y se crea otro).
 
+### Grabador de pulseras NFC
+Los dueños y administradores ven en la app de puerta el botón **Grabar pulseras NFC** (con los datos de la función ya descargados). Se busca la entrada por nombre, carnet o código —solo salen entradas válidas de tipos con NFC activado—, se acerca la pulsera y la app **graba el código** como un registro NDEF de texto, lo **vuelve a leer para comprobarlo** y la marca como "Grabada" en la lista. Opcionalmente la bloquea para siempre. Cada grabación queda en el registro de seguridad del panel (quién, qué entrada y desde qué teléfono). Sirven etiquetas NDEF (NTAG213/215/216). Un QR dinámico no admite NFC, y si la entrada se transfiere hay que grabar la pulsera de nuevo.
+
 ## Correo (confirmar email, contraseña y entradas)
 
 El sistema envía cuatro correos: **confirmar el email** (obligatorio para comprar), **cambiar la contraseña**

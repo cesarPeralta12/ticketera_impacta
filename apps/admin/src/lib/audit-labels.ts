@@ -11,6 +11,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   "device.revoked": "Teléfono desconectado",
   "auth.key_shared": "Entrada abierta desde muchos aparatos (posible entrada compartida)",
   "ticket.key_issued": "Entrada de QR dinámico abierta en un celular",
+  "nfc.written": "Pulsera NFC grabada",
   "scan.batch": "Lecturas en puerta",
   "staff.create": "Cuenta creada",
   "staff.activate": "Cuenta activada",
@@ -59,6 +60,8 @@ export function describeData(action: string, data: unknown): string {
       return `entrada ${typeof d.code === "string" ? d.code : ""} abierta desde ${d.devices ?? "varios"} aparatos distintos en 24 h`;
     case "ticket.key_issued":
       return typeof d.code === "string" ? `entrada ${d.code}` : "";
+    case "nfc.written":
+      return `entrada ${typeof d.code === "string" ? d.code : ""}${d.locked ? " · pulsera bloqueada" : ""}`;
     case "scan.batch":
       return `${d.total ?? 0} lectura(s): ${d.accepted ?? 0} entraron, ${d.rejected ?? 0} rechazadas${d.expired ? `, ${d.expired} QR vencidos` : ""}${d.offline ? `, ${d.offline} sin conexión` : ""}${d.BAD_PROOF ? ` · ${d.BAD_PROOF} con prueba SOSPECHOSA` : ""}`;
     default: {
