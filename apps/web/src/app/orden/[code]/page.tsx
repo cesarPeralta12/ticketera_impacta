@@ -3,12 +3,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import QRCode from "qrcode";
-import { code128Svg, entranceText, formatCode, formatDateTime, formatMoney, formatClock, gateInfo, reentryText, signTicketPayload, signVoucherPayload, tableLabel, whenWhere, zonesText, type GateInfo } from "@ticketera/core";
+import { code128Svg, entranceText, formatCode, formatDateTime, formatMoney, formatClock, gateInfo, reentryText, signTicketPayload, signVoucherPayload, tableLabel, usedTicketText, whenWhere, zonesText, type GateInfo } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, expireStaleOrders, getOrderByCode, requireEnv } from "@ticketera/db";
 import { payOrderAction } from "./actions";
 import { auth } from "@/lib/auth";
 import { AutoRefresh, Countdown } from "./live";
 import { ResendTickets } from "./resend-button";
+import { DownloadTicketButton } from "@/components/ticket-image";
 import { WhenWhereBlock } from "@/components/when-where";
 
 export const metadata: Metadata = { title: "Tu orden", robots: { index: false } };
@@ -129,6 +130,7 @@ export default async function OrderPage({ params }: Props) {
             ownerId={order.customerId}
             gates={(session?.venue.accessPoints ?? []).map(gateInfo)}
             timeZone={session?.venue.timezone ?? "America/La_Paz"}
+            event={session ? { title: session.event.title, when: formatDateTime(session.startsAt, session.venue.timezone), venue: session.venue.name } : null}
           />
           {isOwner && order.channel === "ONLINE" && (
             <p className="text-sm text-[var(--ink-muted)]">
@@ -205,12 +207,15 @@ async function TicketList({
   ownerId,
   gates,
   timeZone,
+  event,
 }: {
   tickets: TicketForList[];
   guest: boolean;
   ownerId: string | null;
   gates: GateInfo[];
   timeZone: string;
+  /** Para la imagen descargable de cada entrada. */
+  event: { title: string; when: string; venue: string } | null;
 }) {
   // Persona N de M dentro de cada mesa.
   const seen = new Map<string, number>();
@@ -308,13 +313,13 @@ async function TicketList({
           )}
           {ticket.qr && (
             <div
-              className={`mx-auto my-3 w-48 ${ticket.status === "VALID" ? "" : "opacity-30"}`}
+              className={`mx-auto my-3 w-48 ${ticket.status === "CANCELLED" ? "opacity-30" : ""}`}
               dangerouslySetInnerHTML={{ __html: ticket.qr }}
             />
           )}
           {ticket.barcode && (
             <div
-              className={`mx-auto my-3 w-full max-w-60 overflow-hidden rounded-md bg-white [&>svg]:h-auto [&>svg]:w-full ${ticket.status === "VALID" ? "" : "opacity-30"}`}
+              className={`mx-auto my-3 w-full max-w-60 overflow-hidden rounded-md bg-white [&>svg]:h-auto [&>svg]:w-full ${ticket.status === "CANCELLED" ? "opacity-30" : ""}`}
               dangerouslySetInnerHTML={{ __html: ticket.barcode }}
             />
           )}
@@ -324,7 +329,29 @@ async function TicketList({
             </p>
           )}
           <p className="font-mono text-sm tracking-wider">{formatCode(ticket.code)}</p>
-          {ticket.status === "USED" && <p className="mt-1 text-xs font-semibold text-[#60718B]">Ya utilizada</p>}
+          {ticket.status === "USED" && <p className="mt-1 text-xs font-semibold text-[#60718B]">{usedTicketText(ticket.ticketType.maxEntries)}</p>}
+          {event && (ticket.qr || ticket.barcode) && ticket.status !== "CANCELLED" && (
+            <DownloadTicketButton
+              ticket={{
+                code: formatCode(ticket.code),
+                eventTitle: event.title,
+                when: event.when,
+                venue: event.venue,
+                holder: ticket.holderName,
+                typeName: guest ? `Invitación · ${ticket.ticketType.name}` : ticket.ticketType.name,
+                lines: [
+                  entranceText(gates, ticket.ticketType.sectionId, ticket.ticketType.zones.map((z) => z.id)),
+                  ticket.seat && ticket.ticketType.kind !== "TABLE" ? `${ticket.seat.section.name} · ${ticket.seat.label}` : null,
+                  ticket.ticketType.kind === "TABLE" && ticket.credit ? tableLabel(ticket.ticketType.name, ticket.credit.tableNumber, ticket.credit.seat?.label) : null,
+                  zonesText(ticket.ticketType.zones.map((z) => z.name)),
+                  ticket.ticketType.entryUntil ? `Válida para entrar hasta las ${formatClock(ticket.ticketType.entryUntil, timeZone)}` : null,
+                  reentryText(ticket.ticketType.maxEntries),
+                ].filter((l): l is string => Boolean(l)),
+                qrSvg: ticket.qr,
+                barcodeSvg: ticket.barcode,
+              }}
+            />
+          )}
           {ticket.status === "CANCELLED" && (
             <p className="mt-1 text-xs font-semibold text-[#C62842]">
               {ticket.expiredAt && ticket.ticketType.entryUntil

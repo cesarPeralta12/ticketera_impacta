@@ -3,8 +3,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import QRCode from "qrcode";
-import { MAX_TRANSFERS_PER_TICKET, code128Svg, formatCode, formatDateTime, formatMoney, formatClock, signTicketPayload } from "@ticketera/core";
+import { MAX_TRANSFERS_PER_TICKET, code128Svg, formatCode, formatDateTime, formatMoney, formatClock, reentryText, signTicketPayload, usedTicketText } from "@ticketera/core";
 import { listCustomerTickets, listTransfers, requireEnv } from "@ticketera/db";
+import { DownloadTicketButton } from "@/components/ticket-image";
 import { auth } from "@/lib/auth";
 import { acceptTransferAction, cancelTransferAction, declineTransferAction } from "./actions";
 import { OfflineReady } from "./offline-ready";
@@ -146,13 +147,34 @@ export default async function MyTicketsPage({ searchParams }: Props) {
                   <p className="mt-2 text-xs text-[#60718B]">El QR cambia cada 30 segundos y funciona sin internet. No sirve una captura.</p>
                 </div>
               )}
-              {t.qr && <div className={`mx-auto my-3 w-44 ${t.status === "USED" ? "opacity-30" : ""}`} dangerouslySetInnerHTML={{ __html: t.qr }} />}
+              {/* Siempre nítido: con reingreso, una entrada ya leída se vuelve a leer al salir y al volver. */}
+              {t.qr && <div className="mx-auto my-3 w-44" dangerouslySetInnerHTML={{ __html: t.qr }} />}
               {t.barcode && (
-                <div className={`mx-auto my-3 w-full max-w-60 overflow-hidden rounded-md bg-white [&>svg]:h-auto [&>svg]:w-full ${t.status === "USED" ? "opacity-30" : ""}`} dangerouslySetInnerHTML={{ __html: t.barcode }} />
+                <div className="mx-auto my-3 w-full max-w-60 overflow-hidden rounded-md bg-white [&>svg]:h-auto [&>svg]:w-full" dangerouslySetInnerHTML={{ __html: t.barcode }} />
               )}
               {t.accessMethods.includes("NFC") && <p className="my-2 text-xs font-semibold text-[#60718B]">{t.qr || t.barcode ? "También se lee por NFC." : "Se lee por NFC: acércala al lector."}</p>}
               <p className="font-mono text-sm tracking-wider">{formatCode(t.code)}</p>
-              {t.status === "USED" && <p className="mt-1 text-xs font-semibold text-[#60718B]">Ya utilizada</p>}
+              {t.status === "USED" && <p className="mt-1 text-xs font-semibold text-[#60718B]">{usedTicketText(t.maxEntries)}</p>}
+              {(t.qr || t.barcode) && (
+                <DownloadTicketButton
+                  ticket={{
+                    code: formatCode(t.code),
+                    eventTitle: t.eventTitle,
+                    when: formatDateTime(t.startsAt, t.timezone),
+                    venue: t.venueName,
+                    holder: t.holderName,
+                    typeName: t.typeName,
+                    lines: [
+                      t.entrance,
+                      t.seat,
+                      t.entryUntil ? `Válida para entrar hasta las ${formatClock(t.entryUntil, t.timezone)}` : null,
+                      reentryText(t.maxEntries),
+                    ].filter((l): l is string => Boolean(l)),
+                    qrSvg: t.qr,
+                    barcodeSvg: t.barcode,
+                  }}
+                />
+              )}
 
               {t.pending ? (
                 <div className="mt-3 rounded-lg bg-[#fff4d6] p-3 text-left text-xs">

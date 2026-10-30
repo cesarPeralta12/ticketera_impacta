@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { entranceFor, entranceLabel, entranceText, isExitScan, reentryText, zonesText } from "./entrance";
+import { entranceFor, entranceLabel, entranceText, isExitScan, reentryText, usedTicketText, zonesText } from "./entrance";
 
 const norte = { name: "Acceso norte", sectionIds: ["campo"] };
 const sur = { name: "Acceso sur", sectionIds: ["palco"] };
@@ -70,6 +70,12 @@ describe("por qué puerta entra una entrada", () => {
     expect(reentryText(undefined)).toBeNull();
     expect(reentryText(2)).toBe("Permite salir y volver a entrar (hasta 2 ingresos)");
     expect(reentryText(0)).toBe("Permite salir y volver a entrar");
+  });
+
+  it("una entrada ya leída con reingreso no se muestra como usada", () => {
+    expect(usedTicketText(1)).toBe("Ya utilizada");
+    expect(usedTicketText(0)).toMatch(/sirve para salir y volver/);
+    expect(usedTicketText(3)).toMatch(/sirve para salir y volver/);
   });
 });
 

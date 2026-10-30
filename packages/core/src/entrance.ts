@@ -79,6 +79,11 @@ export function reentryText(maxEntries: number | undefined): string | null {
   return maxEntries === 0 ? "Permite salir y volver a entrar" : `Permite salir y volver a entrar (hasta ${maxEntries} ingresos)`;
 }
 
+/** Bajo el QR de una entrada ya leída en puerta. Con reingreso no está "usada": el mismo QR sirve para salir y volver. */
+export function usedTicketText(maxEntries: number | undefined): string {
+  return reentryText(maxEntries) ? "Ya ingresó: este mismo QR sirve para salir y volver a entrar" : "Ya utilizada";
+}
+
 /**
  * Qué zonas incluye una entrada que abre zonas propias: "Incluye: Zona VIP" o "Incluye: Zona VIP y Ultra VIP". Null
  * si no abre ninguna en particular (entra a las de siempre).
