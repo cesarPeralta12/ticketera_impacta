@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { formatDateTime } from "@ticketera/core";
+import { formatDateTime, utcToZonedInput } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { assignDoorAction, revokeDeviceAction, unassignDoorAction } from "@/lib/actions/door";
+import { enterOrganizationAction } from "@/lib/actions/platform";
 import { revokeUserSessionsAction } from "@/lib/actions/users";
+import { DoorSessionPicker, type DoorPickSession } from "@/components/door-session-picker";
 import { SalesAccessCard } from "@/components/sales-access-card";
 import { ROLE_LABEL } from "@/lib/labels";
 import { ROLES, requireStaff } from "@/lib/session";
@@ -31,7 +33,7 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
   if (!member) notFound();
   const isOperator = member.role === "OPERATOR";
 
-  const [assignments, sessions, devices] = await Promise.all([
+  const [assignments, sessions, devices, nightlifeOrgs] = await Promise.all([
     prisma.doorAssignment.findMany({
       where: { userId, session: { event: { organizationId: staff.organization.id } } },
       orderBy: { session: { startsAt: "asc" } },
@@ -44,18 +46,33 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
         event: { organizationId: staff.organization.id, status: { not: "CANCELLED" } },
       },
       orderBy: { startsAt: "asc" },
-      take: 100,
+      // Un boliche repite sus noches cada semana: con un tope chico las noches más lejanas no se podían elegir.
+      take: 1000,
       include: {
-        event: { select: { title: true } },
+        event: { select: { title: true, category: true, status: true, client: { select: { name: true } } } },
         venue: { select: { id: true, name: true, timezone: true, accessPoints: { orderBy: { name: "asc" } } } },
       },
     }),
     prisma.deviceToken.findMany({ where: { userId }, orderBy: { lastSeenAt: "desc" }, take: 20 }),
+    // iPass ve los boliches como organizadores aparte: su portero se asigna dentro de cada uno.
+    staff.organization.isPlatform ? prisma.organization.findMany({ where: { kind: "NIGHTLIFE", status: "ACTIVE" }, orderBy: { name: "asc" }, select: { id: true, name: true } }) : Promise.resolve([]),
   ]);
 
-  const gates = [...new Map(sessions.flatMap((s) => s.venue.accessPoints).map((g) => [g.id, g])).values()];
-  // Varios recintos tienen una "Puerta principal": se agrupan por recinto para no elegir la de otro lugar.
-  const venues = [...new Map(sessions.map((s) => [s.venue.id, s.venue])).values()].filter((v) => v.accessPoints.length > 0);
+  const assignedGate = new Map(assignments.map((a) => [a.sessionId, a.accessPoint?.name ?? null]));
+  // Varios recintos tienen una "Puerta principal": cada función lleva solo las puertas de su recinto.
+  const options: DoorPickSession[] = sessions.map((s) => ({
+    id: s.id,
+    title: s.event.title,
+    when: formatDateTime(s.startsAt, s.venue.timezone),
+    day: utcToZonedInput(s.startsAt, s.venue.timezone).slice(0, 10),
+    venueId: s.venue.id,
+    venueName: s.venue.name,
+    clientName: s.event.client?.name ?? null,
+    nightlife: s.event.category === "BOLICHE",
+    published: s.event.status === "PUBLISHED",
+    gates: s.venue.accessPoints.map((g) => ({ id: g.id, name: g.name, out: g.direction === "OUT" })),
+    assignedGate: assignedGate.get(s.id) ?? null,
+  }));
 
   return (
     <div className="space-y-6">
@@ -71,7 +88,7 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
 
       {isOperator ? (
         <section className="card p-6">
-          <h2 className="eyebrow mb-1">Funciones asignadas</h2>
+          <h2 className="eyebrow mb-1">Funciones asignadas{assignments.length > 0 ? ` (${assignments.length})` : ""}</h2>
           <p className="mb-4 text-sm text-[var(--ink-muted)]">
             Una cuenta por puerta: al iniciar sesión en la app, el portero ve estas funciones y la app descarga
             sola las entradas de su puerta, sin pedirle que la elija.
@@ -82,7 +99,7 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
               Sin funciones asignadas: al iniciar sesión en la app no verá ningún evento.
             </p>
           ) : (
-            <ul className="mb-5 divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
+            <ul className="mb-5 max-h-72 divide-y divide-[var(--border)] overflow-y-auto rounded-lg border border-[var(--border)]">
               {assignments.map((a) => (
                 <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                   <span>
@@ -109,49 +126,30 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
               organización: si el evento es de otro organizador, esta cuenta debe crearse dentro de él (Organizadores → Ver → Gestionar sus cuentas).
               También hace falta que el evento tenga al menos una función con fecha futura.
             </p>
-          ) : gates.length === 0 ? (
-            <p className="rounded-md bg-[var(--warn-soft)] px-3 py-2 text-sm text-[var(--warn)]">
-              El recinto de estas funciones no tiene puertas. Créalas en{" "}
-              <Link href="/recintos" className="font-semibold underline">
-                Recintos
-              </Link>{" "}
-              (sección &ldquo;Puertas de acceso&rdquo;) y vuelve aquí.
-            </p>
           ) : (
-            <ActionForm action={assignDoorAction} successMessage="Asignado." className="flex flex-wrap items-end gap-3">
+            <ActionForm action={assignDoorAction} successMessage="Asignado." className="space-y-3">
               <input type="hidden" name="userId" value={userId} />
-              <label className="label">
-                Función
-                <select name="sessionId" required className="field min-w-64">
-                  {sessions.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.event.title} · {formatDateTime(s.startsAt, s.venue.timezone)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="label">
-                Puerta
-                <select name="accessPointId" required defaultValue="" className="field">
-                  <option value="" disabled>
-                    Elige la puerta
-                  </option>
-                  {venues.map((v) => (
-                    <optgroup key={v.id} label={v.name}>
-                      {v.accessPoints.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name}
-                          {g.direction === "OUT" && !/salida/i.test(g.name) ? " (salida)" : ""}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </label>
-              <button type="submit" className="btn btn-primary">
-                Asignar
-              </button>
+              <DoorSessionPicker sessions={options} />
             </ActionForm>
+          )}
+          {nightlifeOrgs.length > 0 && (
+            <div className="mt-4 rounded-md bg-[var(--surface-2)] px-4 py-3 text-sm text-[var(--ink-muted)]">
+              <p>
+                Los <strong>boliches</strong> son organizadores aparte: sus noches no aparecen en esta lista, y sus porteros se asignan dentro de cada uno. Entra
+                al boliche y abre la cuenta del portero:
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {nightlifeOrgs.map((o) => (
+                  <form key={o.id} action={enterOrganizationAction}>
+                    <input type="hidden" name="organizationId" value={o.id} />
+                    <input type="hidden" name="next" value="/usuarios" />
+                    <button type="submit" className="btn px-3 py-1.5 text-xs">
+                      Entrar a {o.name} → Cuentas
+                    </button>
+                  </form>
+                ))}
+              </div>
+            </div>
           )}
         </section>
       ) : member.role === "CASHIER" || member.role === "BAR" ? (

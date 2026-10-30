@@ -387,7 +387,8 @@ async function seedSalesDemo(db: Db, orgId: string) {
 
   const owner = await prisma.membership.findFirst({ where: { organizationId: orgId, role: "OWNER" } });
   const fest = await prisma.event.findFirst({ where: { organizationId: orgId, slug: slugify("Loko Fest — Edición Aniversario") } });
-  if (owner && !(await prisma.promoCode.findFirst({ where: { organizationId: orgId } }))) {
+  // (El código personal de un promotor también es un PromoCode: se busca el de la demo, no cualquiera.)
+  if (owner && !(await prisma.promoCode.findFirst({ where: { organizationId: orgId, code: "IMPACTA10" } }))) {
     await db.createPromoCode(orgId, { code: "IMPACTA10", description: "10% en todos los eventos", discountType: "PERCENT", discountValue: 10 }, owner.userId);
     await db.createPromoCode(
       orgId,
