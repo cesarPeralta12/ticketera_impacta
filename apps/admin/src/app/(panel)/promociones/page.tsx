@@ -4,18 +4,21 @@ import { connection } from "next/server";
 import { formatMoney, promoLabel } from "@ticketera/core";
 import { listPromoCodes, listPromoterAccounts, prisma, summarizeByPromoter } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
+import { FilterForm } from "@/components/filter-form";
 import { createPromoAction } from "@/lib/actions/promos";
 import { promoState } from "@/lib/promo-state";
 import { ROLES, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Promociones" };
 
-export default async function PromosPage({ searchParams }: { searchParams: Promise<{ promotor?: string }> }) {
+export default async function PromosPage({ searchParams }: { searchParams: Promise<{ promotor?: string; q?: string }> }) {
   await connection();
   const staff = await requireStaff(ROLES.manage);
-  const presetPromoter = (await searchParams).promotor ?? "";
+  const sp = await searchParams;
+  const presetPromoter = sp.promotor ?? "";
+  const q = (sp.q ?? "").trim().toLowerCase();
   const now = new Date();
-  const [rows, events, promoterAccounts] = await Promise.all([
+  const [allRows, events, promoterAccounts] = await Promise.all([
     listPromoCodes(staff.organization.id, now),
     prisma.event.findMany({
       where: { organizationId: staff.organization.id, status: { not: "CANCELLED" } },
@@ -24,8 +27,9 @@ export default async function PromosPage({ searchParams }: { searchParams: Promi
     }),
     listPromoterAccounts(staff.organization.id),
   ]);
+  const rows = q ? allRows.filter((r) => [r.code, r.description, r.promoterName, r.event?.title].some((v) => v?.toLowerCase().includes(q))) : allRows;
   const currency = staff.organization.currency;
-  const promoters = summarizeByPromoter(rows);
+  const promoters = summarizeByPromoter(allRows);
   const money = (c: number) => formatMoney(c, currency);
 
   return (
@@ -85,10 +89,17 @@ export default async function PromosPage({ searchParams }: { searchParams: Promi
         </section>
       )}
 
+      <FilterForm>
+        <label className="label grow basis-64">
+          Buscar un código
+          <input type="search" name="q" defaultValue={sp.q ?? ""} placeholder="Código, descripción, promotor o evento" className="field" autoComplete="off" />
+        </label>
+      </FilterForm>
+
       <section className="card overflow-x-auto">
-        <h2 className="eyebrow border-b border-[var(--border)] px-5 py-3">Códigos ({rows.length})</h2>
+        <h2 className="eyebrow border-b border-[var(--border)] px-5 py-3">Códigos ({rows.length}{q ? ` de ${allRows.length}` : ""})</h2>
         {rows.length === 0 ? (
-          <p className="px-5 py-4 text-sm text-[var(--ink-muted)]">Todavía no hay códigos. Crea el primero aquí abajo.</p>
+          <p className="px-5 py-4 text-sm text-[var(--ink-muted)]">{q ? "Ningún código coincide con la búsqueda." : "Todavía no hay códigos. Crea el primero aquí abajo."}</p>
         ) : (
           <table className="w-full text-left text-sm">
             <thead className="eyebrow border-b border-[var(--border)]">

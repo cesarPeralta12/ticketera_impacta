@@ -173,6 +173,19 @@ describe("administración propia", () => {
     expect(await prisma.auditLog.count({ where: { entityId: organization.id, action: { in: ["organizer.self_managed_on", "organizer.self_managed_off"] } } })).toBe(2);
   });
 
+  it("se puede dar la administración propia desde el alta", async () => {
+    const actor = await impactaAdmin();
+    const suffix = randomCode(6).toLowerCase();
+    const { organization } = await createOrganizer({
+      name: `Boliche ${suffix}`,
+      kind: "NIGHTLIFE",
+      selfManaged: true,
+      admin: { name: "Dueño", email: `edita-${suffix}@prueba.test`, password: PASSWORD },
+      actorId: actor.id,
+    });
+    expect(organization.selfManaged).toBe(true);
+  });
+
   it("no se aplica a iPass ni a un organizador que no existe", async () => {
     const actor = await impactaAdmin();
     const platform = await prisma.organization.findFirst({ where: { isPlatform: true } });

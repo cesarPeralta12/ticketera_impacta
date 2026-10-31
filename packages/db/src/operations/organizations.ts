@@ -30,6 +30,8 @@ export async function createOrganizer(input: {
   taxId?: string;
   contactEmail?: string;
   admin: { name: string; email: string; password: string };
+  /** Administración propia desde el alta (por defecto, solo lectura). */
+  selfManaged?: boolean;
   actorId: string;
 }) {
   const slug = await uniqueOrganizationSlug(input.name);
@@ -43,6 +45,7 @@ export async function createOrganizer(input: {
           currency: DEFAULT_CURRENCY,
           taxId: input.taxId?.trim() || null,
           contactEmail: input.contactEmail?.trim().toLowerCase() || null,
+          selfManaged: input.selfManaged ?? false,
         },
       });
       const admin = await tx.staffUser.create({
@@ -60,7 +63,7 @@ export async function createOrganizer(input: {
         action: "organizer.create",
         entity: "Organization",
         entityId: organization.id,
-        data: { adminId: admin.id, kind: input.kind ?? "EVENTS" },
+        data: { adminId: admin.id, kind: input.kind ?? "EVENTS", selfManaged: input.selfManaged ?? false },
       });
       return { organization, admin };
     });

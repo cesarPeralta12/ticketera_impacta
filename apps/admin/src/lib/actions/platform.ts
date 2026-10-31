@@ -78,6 +78,8 @@ const organizerSchema = z.object({
     .min(MIN_PASSWORD_LENGTH, `La contraseña temporal necesita al menos ${MIN_PASSWORD_LENGTH} caracteres.`),
   /** Usuario de eventos o de boliche. */
   kind: z.enum(["EVENTS", "NIGHTLIFE"]).default("EVENTS"),
+  /** Qué puede hacer su dueño: solo ver (por defecto) o ver y editar con aprobación. */
+  permission: z.enum(["view", "edit"]).default("view"),
 });
 
 /** Alta de un organizador con su cuenta de administrador (contraseña temporal). */
@@ -93,6 +95,7 @@ export async function createOrganizerAction(_prev: FormState, formData: FormData
       taxId: data.taxId,
       contactEmail: data.contactEmail,
       admin: { name: data.adminName, email: data.adminEmail, password: data.adminPassword },
+      selfManaged: data.permission === "edit",
       actorId: staff.id,
     });
   } catch (error) {
@@ -102,7 +105,7 @@ export async function createOrganizerAction(_prev: FormState, formData: FormData
   revalidatePath("/organizadores");
   return {
     ok: true,
-    message: `${data.kind === "NIGHTLIFE" ? "Boliche" : "Organizador"} creado. Ya puede entrar al panel con ${data.adminEmail} y la contraseña temporal (solo lectura).`,
+    message: `${data.kind === "NIGHTLIFE" ? "Boliche" : "Organizador"} creado. Ya puede entrar al panel con ${data.adminEmail} y la contraseña temporal (${data.permission === "edit" ? "puede editar; lo que publique pasa por tu aprobación" : "solo lectura"}).`,
   };
 }
 

@@ -4,19 +4,33 @@ import { connection } from "next/server";
 import { DEFAULT_TIMEZONE, formatDateTime } from "@ticketera/core";
 import { clientAccessOpen, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
+import { FilterForm } from "@/components/filter-form";
 import { createClientAction } from "@/lib/actions/clients";
 import { redirect } from "next/navigation";
 import { requirePlatform } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Clientes" };
 
-export default async function ClientsPage() {
+export default async function ClientsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   await connection();
   const staff = await requirePlatform();
+  const q = ((await searchParams).q ?? "").trim();
   // Los clientes son de Impacta (eventos que Impacta opera para otros), no de un organizador.
   if (staff.viewingAs) redirect("/");
   const clients = await prisma.client.findMany({
-    where: { organizationId: staff.organization.id },
+    where: {
+      organizationId: staff.organization.id,
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: "insensitive" } },
+              { taxId: { contains: q, mode: "insensitive" } },
+              { events: { some: { title: { contains: q, mode: "insensitive" } } } },
+              { memberships: { some: { user: { email: { contains: q, mode: "insensitive" } } } } },
+            ],
+          }
+        : {}),
+    },
     orderBy: { name: "asc" },
     include: {
       events: { orderBy: { createdAt: "desc" }, select: { id: true, title: true, clientAccessEnabled: true, clientAccessUntil: true } },
@@ -35,6 +49,15 @@ export default async function ClientsPage() {
           cuentas (rol cliente, en Usuarios) solo ven esos eventos y solo mientras su espacio esté abierto.
         </p>
       </div>
+
+      <FilterForm>
+        <label className="label grow basis-64">
+          Buscar
+          <input type="search" name="q" defaultValue={q} placeholder="Cliente, NIT, evento o correo" className="field" autoComplete="off" />
+        </label>
+      </FilterForm>
+
+      {clients.length === 0 && q && <p className="card p-6 text-center text-[var(--ink-muted)]">Ningún cliente coincide con la búsqueda.</p>}
 
       <ul className="grid gap-3 md:grid-cols-2">
         {clients.map((c) => (

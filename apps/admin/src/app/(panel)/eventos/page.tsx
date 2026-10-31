@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { CATEGORY_COLOR, CATEGORY_LABEL, formatDateTime, sellableCapacity } from "@ticketera/core";
-import { prisma } from "@ticketera/db";
+import { EventCategory, EventStatus, prisma } from "@ticketera/db";
+import { FilterForm } from "@/components/filter-form";
+import { PAGE_SIZE, Pager, pageFrom } from "@/components/pager";
 import { EVENT_STATUS } from "@/lib/labels";
 import { enterOrganizationAction } from "@/lib/actions/platform";
 import { ROLES, isGlobalView, isNightlife, requireStaff } from "@/lib/session";
@@ -10,13 +12,35 @@ import { Help } from "@/components/help";
 
 export const metadata: Metadata = { title: "Eventos" };
 
-export default async function EventsPage() {
+/** Eventos propios que se muestran a la vez (con filtros se afina la lista). */
+const OWN_LIMIT = 60;
+
+type Props = { searchParams: Promise<{ q?: string; estado?: string; tipo?: string; desde?: string; hasta?: string; org?: string; pagina?: string }> };
+
+export default async function EventsPage({ searchParams }: Props) {
   await connection();
   const staff = await requireStaff(ROLES.manage);
+  const sp = await searchParams;
+  const q = (sp.q ?? "").trim();
+  const status = Object.values(EventStatus).find((s) => s === sp.estado);
+  const category = Object.values(EventCategory).find((c) => c === sp.tipo);
+  // Fechas escritas en la hora de Bolivia (UTC-4): una función entra si cae entre «desde» y «hasta».
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(sp.desde ?? "") ? new Date(`${sp.desde}T00:00:00-04:00`) : null;
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(sp.hasta ?? "") ? new Date(`${sp.hasta}T23:59:59-04:00`) : null;
+  const filters = {
+    ...(status ? { status } : {}),
+    ...(category ? { category } : {}),
+    ...(from || to ? { sessions: { some: { cancelledAt: null, startsAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } } } : {}),
+  };
+  const filtered = Boolean(q || status || category || from || to || sp.org);
+  const organizations = isGlobalView(staff) ? await prisma.organization.findMany({ where: { isPlatform: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }) : [];
 
+  const ownWhere = { organizationId: staff.organization.id, ...filters, ...(q ? { title: { contains: q, mode: "insensitive" as const } } : {}) };
+  const ownTotal = await prisma.event.count({ where: ownWhere });
   const events = await prisma.event.findMany({
-    where: { organizationId: staff.organization.id },
+    where: ownWhere,
     orderBy: { createdAt: "desc" },
+    take: OWN_LIMIT,
     include: {
       sessions: {
         where: { cancelledAt: null },
@@ -30,10 +54,19 @@ export default async function EventsPage() {
     },
   });
   // Impacta ve también los eventos de todos los organizadores (para abrirlos, entra en el organizador).
+  const othersWhere = {
+    organizationId: sp.org ? sp.org : { not: staff.organization.id },
+    ...filters,
+    ...(q ? { OR: [{ title: { contains: q, mode: "insensitive" as const } }, { organization: { name: { contains: q, mode: "insensitive" as const } } }] } : {}),
+  };
+  const othersTotal = isGlobalView(staff) ? await prisma.event.count({ where: othersWhere }) : 0;
+  const page = pageFrom(sp.pagina, Math.ceil(othersTotal / PAGE_SIZE));
   const others = isGlobalView(staff)
     ? await prisma.event.findMany({
-        where: { organizationId: { not: staff.organization.id } },
+        where: othersWhere,
         orderBy: [{ organization: { name: "asc" } }, { createdAt: "desc" }],
+        skip: (page - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
         include: {
           organization: { select: { id: true, name: true } },
           sessions: {
@@ -50,7 +83,7 @@ export default async function EventsPage() {
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <p className="eyebrow">{events.length} evento(s)</p>
+          <p className="eyebrow">{ownTotal} evento(s)</p>
           <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
             {isGlobalView(staff) ? "Eventos de iPass" : isNightlife(staff) ? "Noches" : "Eventos"}
             <Help title="Cómo se arma un evento">
@@ -74,7 +107,61 @@ export default async function EventsPage() {
         )}
       </div>
 
-      {events.length === 0 ? (
+      <FilterForm>
+        <label className="label grow basis-56">
+          Buscar
+          <input type="search" name="q" defaultValue={q} placeholder={isGlobalView(staff) ? "Nombre del evento u organizador" : "Nombre del evento"} className="field" autoComplete="off" />
+        </label>
+        <label className="label">
+          Estado
+          <select name="estado" defaultValue={status ?? ""} className="field">
+            <option value="">Todos</option>
+            {Object.values(EventStatus).map((s) => (
+              <option key={s} value={s}>
+                {EVENT_STATUS[s].text}
+              </option>
+            ))}
+          </select>
+        </label>
+        {!isNightlife(staff) && (
+          <label className="label">
+            Tipo
+            <select name="tipo" defaultValue={category ?? ""} className="field">
+              <option value="">Todos</option>
+              {Object.values(EventCategory).map((c) => (
+                <option key={c} value={c}>
+                  {CATEGORY_LABEL[c]}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {organizations.length > 0 && (
+          <label className="label">
+            Organizador
+            <select name="org" defaultValue={sp.org ?? ""} className="field max-w-52">
+              <option value="">Todos</option>
+              {organizations.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label className="label">
+          Desde
+          <input type="date" name="desde" defaultValue={sp.desde ?? ""} className="field" />
+        </label>
+        <label className="label">
+          Hasta
+          <input type="date" name="hasta" defaultValue={sp.hasta ?? ""} className="field" />
+        </label>
+      </FilterForm>
+
+      {events.length === 0 && filtered ? (
+        <p className="card p-6 text-center text-[var(--ink-muted)]">Ningún evento propio coincide con la búsqueda.</p>
+      ) : events.length === 0 ? (
         <div className="card border-dashed p-8 text-center">
           <p className="font-medium">{isNightlife(staff) ? "Todavía no hay noches." : "Todavía no hay eventos."}</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-[var(--ink-muted)]">
@@ -138,11 +225,15 @@ export default async function EventsPage() {
         </ul>
       )}
 
+      {ownTotal > events.length && (
+        <p className="text-center text-xs text-[var(--ink-dim)]">Mostrando los {events.length} más recientes de {ownTotal}: usa la búsqueda o los filtros para afinar.</p>
+      )}
+
       {isGlobalView(staff) && (
         <section className="space-y-2">
-          <h2 className="eyebrow">De los organizadores ({others.length})</h2>
+          <h2 className="eyebrow">De los organizadores ({othersTotal})</h2>
           {others.length === 0 ? (
-            <p className="card p-5 text-sm text-[var(--ink-muted)]">Los organizadores todavía no cargaron eventos.</p>
+            <p className="card p-5 text-sm text-[var(--ink-muted)]">{filtered ? "Ningún evento de los organizadores coincide con la búsqueda." : "Los organizadores todavía no cargaron eventos."}</p>
           ) : (
             <div className="card overflow-x-auto">
               <table className="w-full text-left text-sm">
@@ -178,6 +269,7 @@ export default async function EventsPage() {
               </table>
             </div>
           )}
+          <Pager path="/eventos" params={{ q, estado: status, tipo: category, desde: sp.desde, hasta: sp.hasta, org: sp.org }} page={page} total={othersTotal} />
         </section>
       )}
     </div>
