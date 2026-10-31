@@ -24,3 +24,6 @@ Thumbs.db
 packages/db/.pgdata/
 .dev-mail/
 credenciales*.md
+
+# Estado interno de las herramientas de IA: no va al repositorio
+.omc/
