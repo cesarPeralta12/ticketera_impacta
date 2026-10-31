@@ -5,16 +5,21 @@ import { prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { approveEventAction, enterOrganizationAction, rejectEventAction } from "@/lib/actions/platform";
 import { MODE_LABEL } from "@/lib/labels";
+import { PAGE_SIZE, Pager, pageFrom } from "@/components/pager";
 import { requirePlatform } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Aprobaciones" };
 
-export default async function ApprovalsPage() {
+export default async function ApprovalsPage({ searchParams }: { searchParams: Promise<{ pagina?: string }> }) {
   await connection();
   await requirePlatform();
+  const total = await prisma.event.count({ where: { status: "PENDING_REVIEW" } });
+  const page = pageFrom((await searchParams).pagina, Math.ceil(total / PAGE_SIZE));
   const events = await prisma.event.findMany({
     where: { status: "PENDING_REVIEW" },
     orderBy: { submittedAt: "asc" },
+    take: PAGE_SIZE,
+    skip: (page - 1) * PAGE_SIZE,
     include: {
       organization: { select: { id: true, name: true } },
       sessions: {
@@ -31,7 +36,7 @@ export default async function ApprovalsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <p className="eyebrow">{events.length} esperando</p>
+        <p className="eyebrow">{total} esperando</p>
         <h1 className="text-2xl font-semibold tracking-tight">Aprobaciones</h1>
         <p className="text-sm text-[var(--ink-muted)]">
           Eventos que los organizadores enviaron. Al aprobarlos salen en la web y quedan a la venta. Si algo no está
@@ -114,6 +119,7 @@ export default async function ApprovalsPage() {
           </div>
         </article>
       ))}
+      <Pager path="/aprobaciones" params={{}} page={page} total={total} />
     </div>
   );
 }

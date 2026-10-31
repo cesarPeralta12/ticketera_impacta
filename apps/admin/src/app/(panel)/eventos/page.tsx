@@ -12,10 +12,7 @@ import { Help } from "@/components/help";
 
 export const metadata: Metadata = { title: "Eventos" };
 
-/** Eventos propios que se muestran a la vez (con filtros se afina la lista). */
-const OWN_LIMIT = 60;
-
-type Props = { searchParams: Promise<{ q?: string; estado?: string; tipo?: string; desde?: string; hasta?: string; org?: string; pagina?: string }> };
+type Props = { searchParams: Promise<{ q?: string; estado?: string; tipo?: string; desde?: string; hasta?: string; org?: string; pagina?: string; propios?: string }> };
 
 export default async function EventsPage({ searchParams }: Props) {
   await connection();
@@ -37,10 +34,12 @@ export default async function EventsPage({ searchParams }: Props) {
 
   const ownWhere = { organizationId: staff.organization.id, ...filters, ...(q ? { title: { contains: q, mode: "insensitive" as const } } : {}) };
   const ownTotal = await prisma.event.count({ where: ownWhere });
+  const ownPage = pageFrom(sp.propios, Math.ceil(ownTotal / PAGE_SIZE));
   const events = await prisma.event.findMany({
     where: ownWhere,
     orderBy: { createdAt: "desc" },
-    take: OWN_LIMIT,
+    take: PAGE_SIZE,
+    skip: (ownPage - 1) * PAGE_SIZE,
     include: {
       sessions: {
         where: { cancelledAt: null },
@@ -107,7 +106,7 @@ export default async function EventsPage({ searchParams }: Props) {
         )}
       </div>
 
-      <FilterForm>
+      <FilterForm key={JSON.stringify(sp)}>
         <label className="label grow basis-56">
           Buscar
           <input type="search" name="q" defaultValue={q} placeholder={isGlobalView(staff) ? "Nombre del evento u organizador" : "Nombre del evento"} className="field" autoComplete="off" />
@@ -225,9 +224,7 @@ export default async function EventsPage({ searchParams }: Props) {
         </ul>
       )}
 
-      {ownTotal > events.length && (
-        <p className="text-center text-xs text-[var(--ink-dim)]">Mostrando los {events.length} más recientes de {ownTotal}: usa la búsqueda o los filtros para afinar.</p>
-      )}
+      <Pager path="/eventos" param="propios" params={{ q, estado: status, tipo: category, desde: sp.desde, hasta: sp.hasta, org: sp.org, pagina: sp.pagina }} page={ownPage} total={ownTotal} />
 
       {isGlobalView(staff) && (
         <section className="space-y-2">
@@ -269,7 +266,7 @@ export default async function EventsPage({ searchParams }: Props) {
               </table>
             </div>
           )}
-          <Pager path="/eventos" params={{ q, estado: status, tipo: category, desde: sp.desde, hasta: sp.hasta, org: sp.org }} page={page} total={othersTotal} />
+          <Pager path="/eventos" params={{ q, estado: status, tipo: category, desde: sp.desde, hasta: sp.hasta, org: sp.org, propios: sp.propios }} page={page} total={othersTotal} />
         </section>
       )}
     </div>

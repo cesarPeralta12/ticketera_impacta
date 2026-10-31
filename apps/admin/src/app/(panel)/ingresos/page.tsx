@@ -6,11 +6,12 @@ import { prisma, type Prisma } from "@ticketera/db";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { startOfToday } from "@/lib/dates";
 import { MOVEMENT_LABEL, SCAN_LABEL } from "@/lib/labels";
+import { PAGE_SIZE, Pager, pageFrom } from "@/components/pager";
 import { ROLES, eventScope, isGlobalView, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Ingresos en puerta" };
 
-type Props = { searchParams: Promise<{ org?: string; solo?: string }> };
+type Props = { searchParams: Promise<{ org?: string; solo?: string; pagina?: string }> };
 
 /**
  * Entradas que se van registrando en las puertas, en vivo. IMPACTA (vista general) ve las de
@@ -20,17 +21,21 @@ export default async function EntriesPage({ searchParams }: Props) {
   await connection();
   const staff = await requireStaff(ROLES.manage);
   const global = isGlobalView(staff);
-  const { org = "", solo = "" } = await searchParams;
+  const { org = "", solo = "", pagina } = await searchParams;
 
   const eventFilter: Prisma.EventWhereInput = global && org ? { organizationId: org } : eventScope(staff);
   const scope: Prisma.AccessScanWhereInput = { session: { event: eventFilter } };
   const since = startOfToday();
 
+  const listWhere = { ...scope, ...(solo === "rechazos" ? { result: { not: "ACCEPTED" as const } } : {}) };
+  const total = await prisma.accessScan.count({ where: listWhere });
+  const page = pageFrom(pagina, Math.ceil(total / PAGE_SIZE));
   const [scans, acceptedToday, rejectedToday, organizers] = await Promise.all([
     prisma.accessScan.findMany({
-      where: { ...scope, ...(solo === "rechazos" ? { result: { not: "ACCEPTED" } } : {}) },
+      where: listWhere,
       orderBy: { scannedAt: "desc" },
-      take: 150,
+      take: PAGE_SIZE,
+      skip: (page - 1) * PAGE_SIZE,
       include: {
         ticket: {
           select: {
@@ -184,6 +189,7 @@ export default async function EntriesPage({ searchParams }: Props) {
           </tbody>
         </table>
       </div>
+      <Pager path="/ingresos" params={{ org, solo }} page={page} total={total} />
     </div>
   );
 }

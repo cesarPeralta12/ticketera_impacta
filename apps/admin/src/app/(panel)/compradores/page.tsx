@@ -5,11 +5,12 @@ import { DEFAULT_TIMEZONE, formatDateTime, formatMoney } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { CHANNEL_LABEL } from "@/lib/labels";
 import { buyersDirectory } from "@/lib/sales";
+import { PAGE_SIZE, Pager, pageFrom } from "@/components/pager";
 import { ROLES, isGlobalView, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Compradores" };
 
-type Props = { searchParams: Promise<{ q?: string; org?: string; orden?: string }> };
+type Props = { searchParams: Promise<{ q?: string; org?: string; orden?: string; pagina?: string }> };
 
 const SORTS = {
   reciente: { label: "Compra más reciente", by: (a: { lastPurchase: Date }, b: { lastPurchase: Date }) => +b.lastPurchase - +a.lastPurchase },
@@ -26,7 +27,7 @@ export default async function BuyersPage({ searchParams }: Props) {
   await connection();
   const staff = await requireStaff(ROLES.manage);
   const global = isGlobalView(staff);
-  const { q = "", org = "", orden = "reciente" } = await searchParams;
+  const { q = "", org = "", orden = "reciente", pagina } = await searchParams;
   const sort = SORTS[orden as keyof typeof SORTS] ?? SORTS.reciente;
 
   const [{ buyers, anonymousPos }, organizers] = await Promise.all([
@@ -34,7 +35,8 @@ export default async function BuyersPage({ searchParams }: Props) {
     global ? prisma.organization.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }) : [],
   ]);
   const sorted = buyers.toSorted(sort.by as (a: (typeof buyers)[number], b: (typeof buyers)[number]) => number);
-  const shown = sorted.slice(0, 300);
+  const page = pageFrom(pagina, Math.ceil(sorted.length / PAGE_SIZE));
+  const shown = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const exportHref = `/compradores/csv?${new URLSearchParams(Object.entries({ q, org }).filter(([, v]) => v)).toString()}`;
   const totalSpent = buyers.reduce((sum, b) => sum + b.total, 0);
 
@@ -139,12 +141,8 @@ export default async function BuyersPage({ searchParams }: Props) {
             ))}
           </tbody>
         </table>
-        {sorted.length > shown.length && (
-          <p className="border-t border-[var(--border)] px-4 py-3 text-xs text-[var(--ink-dim)]">
-            Se muestran {shown.length} de {sorted.length}. La exportación a Excel trae a todos.
-          </p>
-        )}
       </div>
+      <Pager path="/compradores" params={{ q, org, orden: orden === "reciente" ? undefined : orden }} page={page} total={sorted.length} />
     </div>
   );
 }

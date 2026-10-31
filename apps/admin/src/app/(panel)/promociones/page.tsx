@@ -5,13 +5,14 @@ import { formatMoney, promoLabel } from "@ticketera/core";
 import { listPromoCodes, listPromoterAccounts, prisma, summarizeByPromoter } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { FilterForm } from "@/components/filter-form";
+import { PAGE_SIZE, Pager, pageFrom } from "@/components/pager";
 import { createPromoAction } from "@/lib/actions/promos";
 import { promoState } from "@/lib/promo-state";
 import { ROLES, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Promociones" };
 
-export default async function PromosPage({ searchParams }: { searchParams: Promise<{ promotor?: string; q?: string }> }) {
+export default async function PromosPage({ searchParams }: { searchParams: Promise<{ promotor?: string; q?: string; pagina?: string }> }) {
   await connection();
   const staff = await requireStaff(ROLES.manage);
   const sp = await searchParams;
@@ -27,7 +28,9 @@ export default async function PromosPage({ searchParams }: { searchParams: Promi
     }),
     listPromoterAccounts(staff.organization.id),
   ]);
-  const rows = q ? allRows.filter((r) => [r.code, r.description, r.promoterName, r.event?.title].some((v) => v?.toLowerCase().includes(q))) : allRows;
+  const matching = q ? allRows.filter((r) => [r.code, r.description, r.promoterName, r.event?.title].some((v) => v?.toLowerCase().includes(q))) : allRows;
+  const page = pageFrom(sp.pagina, Math.ceil(matching.length / PAGE_SIZE));
+  const rows = matching.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const currency = staff.organization.currency;
   const promoters = summarizeByPromoter(allRows);
   const money = (c: number) => formatMoney(c, currency);
@@ -89,7 +92,7 @@ export default async function PromosPage({ searchParams }: { searchParams: Promi
         </section>
       )}
 
-      <FilterForm>
+      <FilterForm key={JSON.stringify(sp)}>
         <label className="label grow basis-64">
           Buscar un código
           <input type="search" name="q" defaultValue={sp.q ?? ""} placeholder="Código, descripción, promotor o evento" className="field" autoComplete="off" />
@@ -97,8 +100,8 @@ export default async function PromosPage({ searchParams }: { searchParams: Promi
       </FilterForm>
 
       <section className="card overflow-x-auto">
-        <h2 className="eyebrow border-b border-[var(--border)] px-5 py-3">Códigos ({rows.length}{q ? ` de ${allRows.length}` : ""})</h2>
-        {rows.length === 0 ? (
+        <h2 className="eyebrow border-b border-[var(--border)] px-5 py-3">Códigos ({matching.length}{q ? ` de ${allRows.length}` : ""})</h2>
+        {matching.length === 0 ? (
           <p className="px-5 py-4 text-sm text-[var(--ink-muted)]">{q ? "Ningún código coincide con la búsqueda." : "Todavía no hay códigos. Crea el primero aquí abajo."}</p>
         ) : (
           <table className="w-full text-left text-sm">
@@ -146,6 +149,8 @@ export default async function PromosPage({ searchParams }: { searchParams: Promi
           </table>
         )}
       </section>
+
+      <Pager path="/promociones" params={{ q: sp.q, promotor: sp.promotor }} page={page} total={matching.length} />
 
       <section id="nuevo" data-tour="crear-codigo" className="card scroll-mt-6 p-6">
         <h2 className="eyebrow mb-4">Nuevo código</h2>

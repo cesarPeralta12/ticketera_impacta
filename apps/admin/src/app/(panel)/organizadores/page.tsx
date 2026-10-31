@@ -114,7 +114,7 @@ export default async function OrganizersPage({ searchParams }: Props) {
         </div>
       </div>
 
-      <FilterForm>
+      <FilterForm key={JSON.stringify(sp)}>
         <label className="label grow basis-56">
           Buscar
           <input type="search" name="q" defaultValue={filters.q} placeholder="Nombre, NIT o correo" className="field" autoComplete="off" />

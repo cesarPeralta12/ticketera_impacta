@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { TABLE_RADIUS, VENUE_TEMPLATES, templateCapacity, templateSectionSeats } from "@ticketera/core";
-import { prisma } from "@ticketera/db";
+import { prisma, type Prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { FilterForm } from "@/components/filter-form";
+import { PAGE_SIZE, Pager, pageFrom } from "@/components/pager";
 import { VenueThumbnail, thumbnailOf, type ThumbnailData } from "@/components/venue-thumbnail";
 import { createVenueAction, createVenueFromTemplateAction } from "@/lib/actions/venues";
 import { ROLES, requireStaff } from "@/lib/session";
@@ -24,16 +25,22 @@ function templateThumbnail(template: (typeof VENUE_TEMPLATES)[number]): Thumbnai
 }
 
 /** Biblioteca de recintos (con su miniatura y los eventos que los usan) y recintos nuevos, en blanco o desde una plantilla. */
-export default async function VenuesPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+export default async function VenuesPage({ searchParams }: { searchParams: Promise<{ q?: string; pagina?: string }> }) {
   await connection();
   const staff = await requireStaff(ROLES.manage);
-  const q = ((await searchParams).q ?? "").trim();
-  const venues = await prisma.venue.findMany({
-    where: {
+  const sp = await searchParams;
+  const q = (sp.q ?? "").trim();
+  const venuesWhere: Prisma.VenueWhereInput = {
       organizationId: staff.organization.id,
       ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { city: { contains: q, mode: "insensitive" } }, { address: { contains: q, mode: "insensitive" } }] } : {}),
-    },
+  };
+  const total = await prisma.venue.count({ where: venuesWhere });
+  const page = pageFrom(sp.pagina, Math.ceil(total / PAGE_SIZE));
+  const venues = await prisma.venue.findMany({
+    where: venuesWhere,
     orderBy: { name: "asc" },
+    take: PAGE_SIZE,
+    skip: (page - 1) * PAGE_SIZE,
     include: {
       sections: { select: { seatingMode: true, capacity: true, color: true, layout: true, seats: { select: { x: true, y: true } } } },
       sessions: { select: { event: { select: { id: true, title: true, status: true } } }, orderBy: { startsAt: "desc" } },
@@ -44,7 +51,7 @@ export default async function VenuesPage({ searchParams }: { searchParams: Promi
   return (
     <div className="space-y-6">
       <div>
-        <p className="eyebrow">{venues.length} recinto(s)</p>
+        <p className="eyebrow">{total} recinto(s)</p>
         <h1 className="text-2xl font-semibold tracking-tight">Recintos</h1>
         <p className="text-sm text-[var(--ink-muted)]">
           Cada recinto tiene sus secciones (generales o con butacas) y sus puertas de acceso. Se diseña una vez y se
@@ -52,7 +59,7 @@ export default async function VenuesPage({ searchParams }: { searchParams: Promi
         </p>
       </div>
 
-      <FilterForm>
+      <FilterForm key={JSON.stringify(sp)}>
         <label className="label grow basis-64">
           Buscar
           <input type="search" name="q" defaultValue={q} placeholder="Nombre, ciudad o dirección del recinto" className="field" autoComplete="off" />
@@ -101,6 +108,7 @@ export default async function VenuesPage({ searchParams }: { searchParams: Promi
           );
         })}
       </ul>
+      <Pager path="/recintos" params={{ q }} page={page} total={total} />
 
       {!staff.readOnly && (
         <>

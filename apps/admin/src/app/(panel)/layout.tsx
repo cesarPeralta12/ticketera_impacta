@@ -35,8 +35,7 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
         title: "Plataforma",
         items: [
           { href: "/", label: "Resumen general", icon: "home" },
-          { href: "/organizadores", label: "Organizadores", icon: "briefcase" },
-          { href: "/organizadores?tipo=boliche", label: "Boliches", icon: "glass" },
+          { href: "/organizadores", label: "Organizadores y boliches", icon: "briefcase" },
           // Lo que publican los organizadores con administración propia espera aquí (con la cantidad pendiente).
           { href: "/aprobaciones", label: "Aprobaciones", icon: "check", ...(pending > 0 ? { badge: pending } : {}) },
           { href: "/ordenes", label: "Ventas", icon: "receipt" },

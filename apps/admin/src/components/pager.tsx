@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 /** Cuántas filas o grupos por página en las listas del panel. */
-export const PAGE_SIZE = 25;
+export const PAGE_SIZE = 50;
 
 /** Número de página pedido en la dirección (?pagina=3), entre 1 y `pages`. */
 export function pageFrom(raw: string | undefined, pages: number): number {
@@ -12,13 +12,13 @@ export function pageFrom(raw: string | undefined, pages: number): number {
 /**
  * Paginador de una lista: conserva los filtros de la dirección y solo cambia la página. No se dibuja si todo cabe en una.
  */
-export function Pager({ path, params, page, total, size = PAGE_SIZE }: { path: string; params: Record<string, string | undefined>; page: number; total: number; size?: number }) {
+export function Pager({ path, params, page, total, size = PAGE_SIZE, param = "pagina" }: { path: string; params: Record<string, string | undefined>; page: number; total: number; size?: number; param?: string }) {
   const pages = Math.max(1, Math.ceil(total / size));
   if (pages <= 1) return null;
   const href = (n: number) => {
     const search = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) if (v) search.set(k, v);
-    if (n > 1) search.set("pagina", String(n));
+    if (n > 1) search.set(param, String(n));
     const q = search.toString();
     return q ? `${path}?${q}` : path;
   };

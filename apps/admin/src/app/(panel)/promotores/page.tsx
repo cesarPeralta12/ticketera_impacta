@@ -6,6 +6,7 @@ import { MIN_PASSWORD_LENGTH, promotersReport } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { Help } from "@/components/help";
+import { PAGE_SIZE, Pager, pageFrom } from "@/components/pager";
 import { PromoterAssignmentFields } from "@/components/promoter-assignment-fields";
 import { createPromoterAction } from "@/lib/actions/promoters";
 import { pickerEvents } from "@/lib/picker-events";
@@ -17,12 +18,14 @@ export const metadata: Metadata = { title: "Promotores" };
  * Los promotores de la organización: qué eventos venden, cuánto vendió cada uno (pagado), su comisión y lo que falta
  * pagarles, en vivo. iPass da de alta un promotor en un solo paso (cuenta, código, evento, comisión y cupo).
  */
-export default async function PromotersPage() {
+export default async function PromotersPage({ searchParams }: { searchParams: Promise<{ pagina?: string }> }) {
   await connection();
   const staff = await requireStaff(ROLES.manage);
-  const [promoters, events] = await Promise.all([promotersReport(staff.organization.id), staff.canAdminister ? pickerEvents(staff.organization.id) : []]);
+  const [allPromoters, events] = await Promise.all([promotersReport(staff.organization.id), staff.canAdminister ? pickerEvents(staff.organization.id) : []]);
   const money = (c: number) => formatMoney(c, staff.organization.currency);
-  const total = promoters.reduce(
+  const page = pageFrom((await searchParams).pagina, Math.ceil(allPromoters.length / PAGE_SIZE));
+  const promoters = allPromoters.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const total = allPromoters.reduce(
     (sum, p) => ({ amount: sum.amount + p.amount, commission: sum.commission + p.commission, toSettle: sum.toSettle + p.toSettle }),
     { amount: 0, commission: 0, toSettle: 0 },
   );
@@ -116,6 +119,8 @@ export default async function PromotersPage() {
           </table>
         </div>
       )}
+
+      <Pager path="/promotores" params={{}} page={page} total={allPromoters.length} />
 
       {staff.canAdminister && (
         <section id="nuevo" className="card scroll-mt-6 p-6">

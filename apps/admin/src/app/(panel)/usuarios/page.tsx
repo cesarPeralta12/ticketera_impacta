@@ -6,7 +6,7 @@ import { AccountFields } from "@/components/account-fields";
 import { ActionForm } from "@/components/action-form";
 import { FilterForm } from "@/components/filter-form";
 import { ModalButton } from "@/components/modal";
-import { Pager, pageFrom } from "@/components/pager";
+import { PAGE_SIZE, Pager, pageFrom } from "@/components/pager";
 import { STAFF_ROLES } from "@/lib/account-scope";
 import { createStaffAction, toggleStaffActiveAction } from "@/lib/actions/users";
 import { ROLE_LABEL } from "@/lib/labels";
@@ -65,8 +65,12 @@ export default async function UsersPage({ searchParams }: Props) {
   const byOrganization = new Map<string, typeof matching>();
   for (const m of matching) byOrganization.set(m.organizationId, [...(byOrganization.get(m.organizationId) ?? []), m]);
   const groups = [...byOrganization.values()];
-  const page = pageFrom(sp.pagina, Math.ceil(groups.length / GROUPS_PER_PAGE));
-  const shown = groups.slice((page - 1) * GROUPS_PER_PAGE, page * GROUPS_PER_PAGE);
+  // Una sola organización: sus cuentas van de a 50, con páginas. Varias: grupos de a 8, con hasta 50 cuentas cada uno.
+  const single = Boolean(scopeOrgId);
+  const pageSize = single ? PAGE_SIZE : GROUPS_PER_PAGE;
+  const pagedTotal = single ? matching.length : groups.length;
+  const page = pageFrom(sp.pagina, Math.ceil(pagedTotal / pageSize));
+  const shown = single ? (groups[0] ? [groups[0].slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)] : []) : groups.slice((page - 1) * GROUPS_PER_PAGE, page * GROUPS_PER_PAGE).map((g) => g.slice(0, PAGE_SIZE));
   const filtered = Boolean(q || role || estado || sp.org);
   const manageable = (r: string) => staff.platform || (STAFF_ROLES as string[]).includes(r);
 
@@ -127,7 +131,7 @@ export default async function UsersPage({ searchParams }: Props) {
         </div>
       </div>
 
-      <FilterForm>
+      <FilterForm key={JSON.stringify(sp)}>
         <label className="label grow basis-56">
           Buscar
           <input type="search" name="q" defaultValue={q} placeholder="Nombre, correo u organización" className="field" autoComplete="off" />
@@ -175,6 +179,7 @@ export default async function UsersPage({ searchParams }: Props) {
       <div className="space-y-3">
         {shown.map((members) => {
           const org = members[0]!.organization;
+          const groupTotal = byOrganization.get(org.id)?.length ?? members.length;
           return (
             <details key={org.id} open={shown.length === 1 || filtered || undefined} className="card group overflow-hidden">
               <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 hover:bg-[var(--surface-2)]">
@@ -186,7 +191,7 @@ export default async function UsersPage({ searchParams }: Props) {
                     {org.selfManaged ? "Edita (con aprobación)" : "Solo ver"}
                   </span>
                 )}
-                <span className="ml-auto text-xs text-[var(--ink-dim)]">{members.length} cuenta(s)</span>
+                <span className="ml-auto text-xs text-[var(--ink-dim)]">{groupTotal} cuenta(s)</span>
               </summary>
               <table className="w-full border-t border-[var(--border)] text-left text-sm">
                 <tbody className="divide-y divide-[var(--border)]">
@@ -240,12 +245,20 @@ export default async function UsersPage({ searchParams }: Props) {
                   ))}
                 </tbody>
               </table>
+              {!single && groupTotal > members.length && (
+                <p className="border-t border-[var(--border)] px-5 py-3 text-xs text-[var(--ink-dim)]">
+                  Mostrando {members.length} de {groupTotal}.{" "}
+                  <Link href={`/usuarios?org=${org.id}`} className="font-medium text-[var(--accent)] hover:underline">
+                    Ver todas las cuentas de {org.isPlatform ? "iPass" : org.name} →
+                  </Link>
+                </p>
+              )}
             </details>
           );
         })}
       </div>
 
-      <Pager path="/usuarios" params={{ q, org: sp.org, rol: role, estado }} page={page} total={groups.length} size={GROUPS_PER_PAGE} />
+      <Pager path="/usuarios" params={{ q, org: sp.org, rol: role, estado }} page={page} total={pagedTotal} size={pageSize} />
     </div>
   );
 }

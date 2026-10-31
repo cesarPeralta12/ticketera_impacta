@@ -2,23 +2,24 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { DEFAULT_TIMEZONE, formatDateTime } from "@ticketera/core";
-import { clientAccessOpen, prisma } from "@ticketera/db";
+import { clientAccessOpen, prisma, type Prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { FilterForm } from "@/components/filter-form";
+import { PAGE_SIZE, Pager, pageFrom } from "@/components/pager";
 import { createClientAction } from "@/lib/actions/clients";
 import { redirect } from "next/navigation";
 import { requirePlatform } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Clientes" };
 
-export default async function ClientsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+export default async function ClientsPage({ searchParams }: { searchParams: Promise<{ q?: string; pagina?: string }> }) {
   await connection();
   const staff = await requirePlatform();
-  const q = ((await searchParams).q ?? "").trim();
+  const sp = await searchParams;
+  const q = (sp.q ?? "").trim();
   // Los clientes son de Impacta (eventos que Impacta opera para otros), no de un organizador.
   if (staff.viewingAs) redirect("/");
-  const clients = await prisma.client.findMany({
-    where: {
+  const clientsWhere: Prisma.ClientWhereInput = {
       organizationId: staff.organization.id,
       ...(q
         ? {
@@ -30,8 +31,14 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
             ],
           }
         : {}),
-    },
+  };
+  const total = await prisma.client.count({ where: clientsWhere });
+  const page = pageFrom(sp.pagina, Math.ceil(total / PAGE_SIZE));
+  const clients = await prisma.client.findMany({
+    where: clientsWhere,
     orderBy: { name: "asc" },
+    take: PAGE_SIZE,
+    skip: (page - 1) * PAGE_SIZE,
     include: {
       events: { orderBy: { createdAt: "desc" }, select: { id: true, title: true, clientAccessEnabled: true, clientAccessUntil: true } },
       memberships: { include: { user: { select: { name: true, email: true, active: true } } } },
@@ -42,7 +49,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
   return (
     <div className="space-y-6">
       <div>
-        <p className="eyebrow">{clients.length} cliente(s)</p>
+        <p className="eyebrow">{total} cliente(s)</p>
         <h1 className="text-2xl font-semibold tracking-tight">Clientes</h1>
         <p className="text-sm text-[var(--ink-muted)]">
           Productoras u organizadores para los que iPass gestiona eventos. Cada evento se asigna a un cliente; sus
@@ -50,7 +57,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
         </p>
       </div>
 
-      <FilterForm>
+      <FilterForm key={JSON.stringify(sp)}>
         <label className="label grow basis-64">
           Buscar
           <input type="search" name="q" defaultValue={q} placeholder="Cliente, NIT, evento o correo" className="field" autoComplete="off" />
@@ -104,6 +111,8 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
           </li>
         ))}
       </ul>
+
+      <Pager path="/clientes" params={{ q }} page={page} total={total} />
 
       <section data-tour="nuevo-cliente" className="card p-6">
         <h2 className="eyebrow mb-4">Nuevo cliente</h2>

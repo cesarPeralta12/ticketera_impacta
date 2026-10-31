@@ -140,11 +140,17 @@ export function salesWhere(staff: Staff, filters: SalesFilters): Prisma.OrderWhe
   };
 }
 
-export function listSales(staff: Staff, filters: SalesFilters, take: number) {
+/** Cuántas ventas hay con esos filtros (para las páginas). */
+export function countSales(staff: Staff, filters: SalesFilters) {
+  return prisma.order.count({ where: salesWhere(staff, filters) });
+}
+
+export function listSales(staff: Staff, filters: SalesFilters, take: number, skip = 0) {
   return prisma.order.findMany({
     where: salesWhere(staff, filters),
     orderBy: { createdAt: "desc" },
     take,
+    skip,
     include: {
       items: {
         include: {

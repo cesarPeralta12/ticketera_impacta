@@ -8,11 +8,12 @@ import { ActionForm } from "@/components/action-form";
 import { PageTour, type TourStep } from "@/components/guided-tour";
 import { movePrintedAction, setPrintBatchArtAction, settleSellerAction } from "@/lib/actions/printed";
 import { PAPER_FORMATS, PAPER_LABEL } from "@/lib/print/tickets-pdf";
+import { PAGE_SIZE, Pager, pageFrom } from "@/components/pager";
 import { ROLES, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Lote de entradas impresas" };
 
-type Props = { params: Promise<{ id: string; sessionId: string; batchId: string }> };
+type Props = { params: Promise<{ id: string; sessionId: string; batchId: string }>; searchParams: Promise<{ pagina?: string }> };
 
 const STATE_CLASS: Record<PrintStateName, string> = {
   STOCK: "bg-[var(--surface-2)] text-[var(--ink-muted)]",
@@ -23,7 +24,7 @@ const STATE_CLASS: Record<PrintStateName, string> = {
 };
 
 /** Un lote de entradas impresas: imprimir, entregar a vendedores, vender, devolver, anular y rendir. */
-export default async function PrintBatchPage({ params }: Props) {
+export default async function PrintBatchPage({ params, searchParams }: Props) {
   await connection();
   const staff = await requireStaff(ROLES.manage);
   const { id, sessionId, batchId } = await params;
@@ -32,6 +33,9 @@ export default async function PrintBatchPage({ params }: Props) {
     notFound();
   }
   const { batch, counts, used, revenue, sellers } = report;
+  // Un lote puede tener cientos de entradas: la lista va de a 50.
+  const page = pageFrom((await searchParams).pagina, Math.ceil(batch.tickets.length / PAGE_SIZE));
+  const pageTickets = batch.tickets.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const arts = await prisma.ticketArt.findMany({ where: { organizationId: staff.organization.id }, orderBy: { createdAt: "desc" }, select: { id: true, name: true } });
   const tz = batch.session.venue.timezone;
   const money = (v: number) => formatMoney(v, batch.currency);
@@ -417,7 +421,7 @@ export default async function PrintBatchPage({ params }: Props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border)]">
-              {batch.tickets.map((t) => {
+              {pageTickets.map((t) => {
                 const state = (t.printState ?? "STOCK") as PrintStateName;
                 return (
                   <tr key={t.id}>
@@ -435,6 +439,7 @@ export default async function PrintBatchPage({ params }: Props) {
               })}
             </tbody>
           </table>
+          <Pager path={`/eventos/${id}/funciones/${sessionId}/impresas/${batchId}`} params={{}} page={page} total={batch.tickets.length} />
         </div>
       </section>
     </div>

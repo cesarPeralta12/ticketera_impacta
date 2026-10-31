@@ -5,7 +5,8 @@ import { DEFAULT_TIMEZONE, formatCode, formatDateTime, formatMoney } from "@tick
 import { BOX_OFFICE_BUYER, expireStaleOrders, prisma, type OrderStatus } from "@ticketera/db";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { CHANNEL_LABEL, ROLE_LABEL } from "@/lib/labels";
-import { METHOD_LABEL, ORDER_CHANNELS, SALES_FILTER_KEYS, listSales, paymentMethodLabel, readSalesFilters, salesFilterOptions, salesSummary, sellerOf } from "@/lib/sales";
+import { PAGE_SIZE, Pager, pageFrom } from "@/components/pager";
+import { METHOD_LABEL, ORDER_CHANNELS, SALES_FILTER_KEYS, countSales, listSales, paymentMethodLabel, readSalesFilters, salesFilterOptions, salesSummary, sellerOf } from "@/lib/sales";
 import { ROLES, isGlobalView, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Ventas" };
@@ -31,11 +32,14 @@ export default async function SalesPage({ searchParams }: Props) {
   await expireStaleOrders();
   const staff = await requireStaff(ROLES.manage);
   const global = isGlobalView(staff);
-  const filters = readSalesFilters(await searchParams);
+  const sp = await searchParams;
+  const filters = readSalesFilters(sp);
   const filtered = SALES_FILTER_KEYS.some((k) => filters[k]);
 
+  const total = await countSales(staff, filters);
+  const page = pageFrom(typeof sp.pagina === "string" ? sp.pagina : undefined, Math.ceil(total / PAGE_SIZE));
   const [orders, organizers, summary, options] = await Promise.all([
-    listSales(staff, filters, 200),
+    listSales(staff, filters, PAGE_SIZE, (page - 1) * PAGE_SIZE),
     global ? prisma.organization.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }) : [],
     salesSummary(staff, filters),
     salesFilterOptions(staff, filters),
@@ -288,12 +292,8 @@ export default async function SalesPage({ searchParams }: Props) {
             })}
           </tbody>
         </table>
-        {orders.length === 200 && (
-          <p className="border-t border-[var(--border)] px-4 py-3 text-xs text-[var(--ink-dim)]">
-            Se muestran las 200 más recientes. Usa los filtros para encontrar una venta, o exporta a Excel para verlas todas.
-          </p>
-        )}
       </div>
+      <Pager path="/ordenes" params={Object.fromEntries(Object.entries(filters).filter(([, v]) => v))} page={page} total={total} />
     </div>
   );
 }
