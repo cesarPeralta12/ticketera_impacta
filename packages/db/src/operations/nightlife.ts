@@ -5,6 +5,7 @@
 import { parseVoucherPayload, peopleIn, tableLabel, utcToZonedInput, weeklyNights, zonedDateTimeToUtc } from "@ticketera/core";
 import { prisma } from "../client";
 import { assertCanSell } from "./sales-scope";
+import type { Prisma } from "../generated/prisma/client";
 import { DomainError, TX_OPTIONS, audit, requireEnv } from "./shared";
 
 /** Código del vale a partir de lo que llega a la barra: el QR de consumo (con su firma) o el código escrito. */
@@ -143,6 +144,40 @@ export async function nightVouchers(sessionId: string): Promise<Voucher[]> {
     include: voucherInclude,
   });
   return rows.map(toVoucher);
+}
+
+/**
+ * Los vales de una noche como tabla para la barra: se busca por código, comprador, orden, mesa, tipo, quién lo leyó o su
+ * detalle, y se filtra por estado (leídos o sin leer) y por tipo. Paginado en la base de datos.
+ */
+export async function searchNightVouchers(input: { sessionId: string; q?: string; estado?: string; ticketTypeId?: string }, skip: number, take: number) {
+  const q = input.q?.trim();
+  const code = q?.replace(/[\s-]/g, "").toUpperCase();
+  const where: Prisma.ConsumptionCreditWhereInput = {
+    sessionId: input.sessionId,
+    amount: { gt: 0 },
+    ...(input.estado === "leidos" ? { redeemedAt: { not: null } } : input.estado === "sin-leer" ? { redeemedAt: null } : {}),
+    ...(input.ticketTypeId ? { ticketTypeId: input.ticketTypeId } : {}),
+    ...(q
+      ? {
+          OR: [
+            { code: { contains: code ?? q } },
+            { order: { code: { contains: code ?? q } } },
+            { order: { buyerName: { contains: q, mode: "insensitive" } } },
+            { order: { buyerEmail: { contains: q, mode: "insensitive" } } },
+            { ticketType: { name: { contains: q, mode: "insensitive" } } },
+            { redemptions: { some: { OR: [{ note: { contains: q, mode: "insensitive" } }, { staff: { name: { contains: q, mode: "insensitive" } } }] } } },
+            ...(/^\d{1,4}$/.test(q) ? [{ tableNumber: Number(q) }] : []),
+          ],
+        }
+      : {}),
+  };
+  const [total, sums, rows] = await Promise.all([
+    prisma.consumptionCredit.count({ where }),
+    prisma.consumptionCredit.aggregate({ where, _sum: { amount: true } }),
+    prisma.consumptionCredit.findMany({ where, orderBy: [{ ticketType: { name: "asc" } }, { tableNumber: "asc" }, { createdAt: "asc" }], skip, take, include: voucherInclude }),
+  ]);
+  return { total, amount: sums._sum.amount ?? 0, rows: rows.map(toVoucher) };
 }
 
 /** Totales de consumo de una noche para la Barra: incluido, consumido y lo último cobrado. */

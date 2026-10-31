@@ -3,7 +3,7 @@
  * (pagos sin entradas, cobros dobles, ventas pagadas sin pago, cobros QR abandonados). Con el reporte de la pasarela
  * (referencia y monto de cada cobro) se marcan también las diferencias contra lo que dice el banco.
  */
-import { DEFAULT_TIMEZONE, utcToZonedInput } from "@ticketera/core";
+import { DEFAULT_TIMEZONE, utcToZonedInput, zonedDateTimeToUtc } from "@ticketera/core";
 import { prisma } from "../client";
 import type { Prisma } from "../generated/prisma/client";
 
@@ -116,4 +116,100 @@ export async function paymentReconciliation(input: { organizationId: string | nu
     },
     comparison,
   };
+}
+
+export type PaymentDetailFilters = {
+  organizationId: string | null;
+  from: Date;
+  to: Date;
+  provider?: string;
+  /** "aprobado" o "devuelto"; sin valor, los dos. */
+  status?: string;
+  /** Un solo día (YYYY-MM-DD, hora de Bolivia) dentro del período. */
+  day?: string;
+  /** Texto: código de la orden, comprador (nombre, correo, carnet), referencia del cobro, quién cobró o evento. */
+  q?: string;
+};
+
+/**
+ * Cada cobro del período con lo que hace falta para entenderlo: quién compró, qué compró, por qué medio y referencia, quién
+ * lo cobró (el cajero, el promotor o el cliente en la web) y por cuánto. Filtrable y paginado en la base de datos.
+ */
+export async function paymentDetails(filters: PaymentDetailFilters, skip: number, take: number) {
+  const inOrg: Prisma.OrderWhereInput = filters.organizationId ? { items: { some: { ticketType: { session: { event: { organizationId: filters.organizationId } } } } } } : {};
+  let period: Prisma.DateTimeFilter = { gte: filters.from, lt: filters.to };
+  if (filters.day && /^\d{4}-\d{2}-\d{2}$/.test(filters.day)) {
+    const start = zonedDateTimeToUtc(`${filters.day}T00:00`, DEFAULT_TIMEZONE);
+    const end = new Date(start.getTime() + 24 * 3_600_000);
+    period = { gte: start > filters.from ? start : filters.from, lt: end < filters.to ? end : filters.to };
+  }
+  const q = filters.q?.trim();
+  const code = q?.replace(/[\s-]/g, "").toUpperCase();
+  // Coincidencias de la orden con lo escrito: código, comprador, quién cobró, evento o tipo de entrada.
+  const orderMatch: Prisma.OrderWhereInput = q
+    ? {
+        OR: [
+          { code: { contains: code ?? q } },
+          { buyerName: { contains: q, mode: "insensitive" } },
+          { buyerEmail: { contains: q, mode: "insensitive" } },
+          { buyerDocument: { contains: q.replace(/\s/g, ""), mode: "insensitive" } },
+          { issuedBy: { name: { contains: q, mode: "insensitive" } } },
+          { promoter: { name: { contains: q, mode: "insensitive" } } },
+          { items: { some: { ticketType: { OR: [{ name: { contains: q, mode: "insensitive" } }, { session: { event: { title: { contains: q, mode: "insensitive" } } } }] } } } },
+        ],
+      }
+    : {};
+  const where: Prisma.PaymentWhereInput = {
+    status: filters.status === "aprobado" ? "APPROVED" : filters.status === "devuelto" ? "REFUNDED" : { in: ["APPROVED", "REFUNDED"] },
+    approvedAt: period,
+    ...(filters.provider ? { provider: filters.provider } : {}),
+    order: inOrg,
+    // La referencia del cobro también cuenta en la búsqueda.
+    ...(q ? { AND: [{ OR: [{ providerPaymentId: { contains: q, mode: "insensitive" } }, { order: orderMatch }] }] } : {}),
+  };
+  const [total, sum, rows] = await Promise.all([
+    prisma.payment.count({ where }),
+    prisma.payment.aggregate({ where, _sum: { amount: true } }),
+    prisma.payment.findMany({
+      where,
+      orderBy: [{ approvedAt: "desc" }, { id: "desc" }],
+      skip,
+      take,
+      select: {
+        id: true,
+        provider: true,
+        providerPaymentId: true,
+        status: true,
+        amount: true,
+        currency: true,
+        approvedAt: true,
+        order: {
+          select: {
+            code: true,
+            status: true,
+            channel: true,
+            buyerName: true,
+            buyerEmail: true,
+            buyerDocument: true,
+            totalAmount: true,
+            discountAmount: true,
+            issuedBy: { select: { name: true } },
+            promoter: { select: { name: true } },
+            promoRedemption: { select: { promoCode: { select: { code: true } } } },
+            items: {
+              select: { quantity: true, unitAmount: true, ticketType: { select: { name: true, session: { select: { startsAt: true, event: { select: { title: true, organization: { select: { name: true } } } } } } } } },
+            },
+          },
+        },
+      },
+    }),
+  ]);
+  return { total, amount: sum._sum.amount ?? 0, rows };
+}
+
+/** Medios de cobro que hubo en el período (para el filtro). */
+export async function reconciliationProviders(input: { organizationId: string | null; from: Date; to: Date }) {
+  const inOrg: Prisma.OrderWhereInput = input.organizationId ? { items: { some: { ticketType: { session: { event: { organizationId: input.organizationId } } } } } } : {};
+  const rows = await prisma.payment.groupBy({ by: ["provider"], where: { status: { in: ["APPROVED", "REFUNDED"] }, approvedAt: { gte: input.from, lt: input.to }, order: inOrg } });
+  return rows.map((r) => r.provider).toSorted();
 }

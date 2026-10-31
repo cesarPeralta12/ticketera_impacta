@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { formatDateTime, formatMoney } from "@ticketera/core";
-import { prisma, salesAccess, sellableSessionsWhere } from "@ticketera/db";
+import { type Prisma, prisma, salesAccess, sellableSessionsWhere } from "@ticketera/db";
+import { FilterForm } from "@/components/filter-form";
+import { PAGE_SIZE, Pager, pageFrom } from "@/components/pager";
 import { ROLES, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Barra" };
@@ -10,20 +12,34 @@ export const metadata: Metadata = { title: "Barra" };
 /** Una noche sigue en la Barra hasta 12 h después de empezar (se consume durante la noche). */
 const NIGHT_HOURS = 12;
 
-export default async function BarPage() {
+export default async function BarPage({ searchParams }: { searchParams: Promise<{ q?: string; desde?: string; hasta?: string; pagina?: string }> }) {
   await connection();
   const staff = await requireStaff(ROLES.bar);
   const now = new Date();
   const access = await salesAccess(prisma, staff.id, staff.organization.id, now);
+  const sp = await searchParams;
+  const q = (sp.q ?? "").trim();
+  const isDay = (v?: string) => Boolean(v && /^\d{4}-\d{2}-\d{2}$/.test(v));
+  // Fechas escritas en la hora de Bolivia (UTC-4), dentro de la ventana de la barra (desde 12 h atrás hasta 14 días).
+  const windowStart = new Date(now.getTime() - NIGHT_HOURS * 60 * 60_000);
+  const windowEnd = new Date(now.getTime() + 14 * 24 * 60 * 60_000);
+  const fromDay = isDay(sp.desde) ? new Date(`${sp.desde}T00:00:00-04:00`) : null;
+  const toDay = isDay(sp.hasta) ? new Date(`${sp.hasta}T23:59:59-04:00`) : null;
+  const where: Prisma.EventSessionWhereInput = {
+    ...sellableSessionsWhere(access),
+    cancelledAt: null,
+    startsAt: { gt: fromDay && fromDay > windowStart ? fromDay : windowStart, lt: toDay && toDay < windowEnd ? toDay : windowEnd },
+    event: { organizationId: staff.organization.id, status: "PUBLISHED" },
+    // Solo noches con mesas o entradas con consumo incluido.
+    ticketTypes: { some: { OR: [{ kind: "TABLE" }, { consumptionAmount: { gt: 0 } }] } },
+    ...(q ? { OR: [{ event: { title: { contains: q, mode: "insensitive" } } }, { venue: { name: { contains: q, mode: "insensitive" } } }] } : {}),
+  };
+  const total = await prisma.eventSession.count({ where });
+  const page = pageFrom(sp.pagina, Math.ceil(total / PAGE_SIZE));
   const nights = await prisma.eventSession.findMany({
-    where: {
-      ...sellableSessionsWhere(access),
-      cancelledAt: null,
-      startsAt: { gt: new Date(now.getTime() - NIGHT_HOURS * 60 * 60_000), lt: new Date(now.getTime() + 14 * 24 * 60 * 60_000) },
-      event: { organizationId: staff.organization.id, status: "PUBLISHED" },
-      // Solo noches con mesas o entradas con consumo incluido.
-      ticketTypes: { some: { OR: [{ kind: "TABLE" }, { consumptionAmount: { gt: 0 } }] } },
-    },
+    where,
+    take: PAGE_SIZE,
+    skip: (page - 1) * PAGE_SIZE,
     orderBy: { startsAt: "asc" },
     include: { event: { select: { title: true } }, venue: { select: { name: true, timezone: true } } },
   });
@@ -44,7 +60,24 @@ export default async function BarPage() {
           cualquier persona de la mesa y descuenta lo que pidan: el saldo es compartido y nunca queda negativo.
         </p>
       </div>
-      {nights.length === 0 ? (
+      <FilterForm key={JSON.stringify(sp)}>
+        <label className="label grow basis-56">
+          Buscar una noche
+          <input type="search" name="q" defaultValue={q} placeholder="Evento o recinto" className="field" autoComplete="off" />
+        </label>
+        <label className="label">
+          Desde
+          <input type="date" name="desde" defaultValue={sp.desde ?? ""} className="field" />
+        </label>
+        <label className="label">
+          Hasta
+          <input type="date" name="hasta" defaultValue={sp.hasta ?? ""} className="field" />
+        </label>
+      </FilterForm>
+
+      {nights.length === 0 && (q || sp.desde || sp.hasta) ? (
+        <p className="card p-6 text-center text-[var(--ink-muted)]">Ninguna noche coincide con la búsqueda.</p>
+      ) : nights.length === 0 ? (
         <p className="card p-5 text-sm text-[var(--ink-muted)]">
           {access.all
             ? "No hay noches con consumo incluido en estos días. Se activan al cargar una mesa o una entrada con consumo en los precios de una noche."
@@ -79,6 +112,7 @@ export default async function BarPage() {
           })}
         </ul>
       )}
+      <Pager path="/barra" params={{ q, desde: sp.desde, hasta: sp.hasta }} page={page} total={total} />
     </div>
   );
 }
