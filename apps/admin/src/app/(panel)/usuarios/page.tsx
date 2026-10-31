@@ -2,47 +2,74 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { MIN_PASSWORD_LENGTH, prisma } from "@ticketera/db";
+import { AccountFields } from "@/components/account-fields";
 import { ActionForm } from "@/components/action-form";
+import { STAFF_ROLES } from "@/lib/account-scope";
 import { createStaffAction, toggleStaffActiveAction } from "@/lib/actions/users";
 import { ROLE_LABEL } from "@/lib/labels";
-import { requirePlatform } from "@/lib/session";
+import { isGlobalView, requireAccountAdmin } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Usuarios" };
 
-export default async function UsersPage() {
+type Props = { searchParams: Promise<{ org?: string }> };
+
+/**
+ * Cuentas del panel. iPass ve y crea las de todos los organizadores y boliches desde aquí, sin "entrar" en ellos (puede
+ * filtrar por organizador). Un organizador con administración propia ve y crea solo las de su personal.
+ */
+export default async function UsersPage({ searchParams }: Props) {
   await connection();
-  const staff = await requirePlatform();
-  // En un organizador solo hay administradores, operadores de puerta y cajeros.
-  const organizer = !staff.organization.isPlatform;
+  const staff = await requireAccountAdmin();
+  const global = isGlobalView(staff);
+  const filter = (await searchParams).org ?? "";
+
+  const organizations = staff.platform
+    ? await prisma.organization.findMany({ orderBy: [{ isPlatform: "desc" }, { name: "asc" }], select: { id: true, name: true, isPlatform: true, kind: true, status: true } })
+    : [];
+  // iPass dentro de un organizador ("entró"): ve las de ese organizador. En su vista general: todas, o las del filtro.
+  const scopeOrgId = global ? (filter && organizations.some((o) => o.id === filter) ? filter : null) : staff.organization.id;
+
   const [members, clients] = await Promise.all([
     prisma.membership.findMany({
-      where: { organizationId: staff.organization.id },
-      orderBy: { createdAt: "asc" },
-      include: { user: true, client: { select: { name: true } } },
+      where: scopeOrgId ? { organizationId: scopeOrgId } : {},
+      orderBy: [{ organization: { isPlatform: "desc" } }, { organization: { name: "asc" } }, { createdAt: "asc" }],
+      include: { user: true, client: { select: { name: true } }, organization: { select: { name: true, isPlatform: true, kind: true } } },
     }),
-    prisma.client.findMany({ where: { organizationId: staff.organization.id }, orderBy: { name: "asc" } }),
+    prisma.client.findMany({ where: { organizationId: staff.organization.isPlatform ? staff.organization.id : "-" }, orderBy: { name: "asc" } }),
   ]);
+
+  const orgOptions = organizations.filter((o) => o.isPlatform || o.status === "ACTIVE").map((o) => ({ id: o.id, name: o.name, platform: o.isPlatform, nightlife: o.kind === "NIGHTLIFE" }));
+  const createOrgId = scopeOrgId ?? staff.organization.id;
+  const manageable = (role: string) => staff.platform || (STAFF_ROLES as string[]).includes(role);
+  const currentOrg = organizations.find((o) => o.id === scopeOrgId);
+  const title = !global ? (staff.platform ? "Cuentas del organizador" : "Mi personal") : "Usuarios";
 
   return (
     <div className="space-y-6">
       <div>
-        {organizer && <p className="eyebrow">{staff.organization.name}</p>}
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {organizer ? "Cuentas del organizador" : "Usuarios de iPass"}
-        </h1>
+        {!staff.organization.isPlatform && <p className="eyebrow">{staff.organization.name}</p>}
+        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         <p className="text-sm text-[var(--ink-muted)]">
-          {organizer
-            ? "Solo iPass crea cuentas. Cada una ve únicamente los eventos de este organizador: el administrador, todo lo suyo; el portero, la app móvil de puerta; el cajero, la boletería; el promotor, solo vender con QR los eventos que le asignes."
-            : "No hay registro público: las cuentas se crean aquí. Cada rol ve solo lo suyo: el portero, la app móvil de puerta; el cajero, la boletería; el cliente, sus eventos mientras su espacio esté abierto; el promotor, solo vender con QR los eventos que le asignes (en Promotores)."}{" "}
+          {staff.platform
+            ? "Crea y administra las cuentas de iPass y de todos los organizadores y boliches, sin entrar en cada uno: portero, cajero, barra, promotor y administrador. Cada una ve solo lo suyo."
+            : "Crea las cuentas de tu personal: portero (app de puerta), cajero (boletería), barra (QR de consumo) y promotor. Cada una ve solo lo suyo."}{" "}
           La contraseña es temporal: la persona la cambia al entrar por primera vez.
         </p>
       </div>
 
-      {!organizer && (
-        <p role="note" className="rounded-xl border border-[var(--warn)]/40 bg-[var(--warn-soft)] px-4 py-3 text-sm text-[var(--warn)]">
-          Estás creando cuentas de <strong>iPass</strong>: solo ven los eventos de iPass. Para el portero, el cajero o el administrador de un
-          organizador, entra primero en él: <Link href="/organizadores" className="font-semibold underline">Organizadores → Ver → Gestionar sus cuentas</Link>.
-        </p>
+      {global && organizations.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-[var(--ink-dim)]">Ver:</span>
+          {[{ id: "", name: "Todos" }, ...organizations.map((o) => ({ id: o.id, name: o.isPlatform ? "iPass" : o.name }))].map((o) => (
+            <Link
+              key={o.id || "todos"}
+              href={o.id ? `/usuarios?org=${o.id}` : "/usuarios"}
+              className={`rounded-full border px-3 py-1 ${(scopeOrgId ?? "") === o.id ? "border-[var(--accent)] bg-[var(--accent-soft)] font-medium text-[var(--accent)]" : "border-[var(--border)] text-[var(--ink-muted)] hover:text-[var(--ink)]"}`}
+            >
+              {o.name}
+            </Link>
+          ))}
+        </div>
       )}
 
       <div className="card overflow-x-auto">
@@ -50,6 +77,7 @@ export default async function UsersPage() {
           <thead className="eyebrow border-b border-[var(--border)]">
             <tr>
               <th className="px-5 py-3 font-normal">Nombre</th>
+              {global && !scopeOrgId && <th className="px-5 py-3 font-normal">Organización</th>}
               <th className="px-5 py-3 font-normal">Rol</th>
               <th className="px-5 py-3 font-normal">Estado</th>
               <th className="px-5 py-3" />
@@ -62,6 +90,12 @@ export default async function UsersPage() {
                   <p className="font-medium">{m.user.name}</p>
                   <p className="font-mono text-xs text-[var(--ink-dim)]">{m.user.email}</p>
                 </td>
+                {global && !scopeOrgId && (
+                  <td className="px-5 py-3 text-[var(--ink-muted)]">
+                    {m.organization.isPlatform ? "iPass" : m.organization.name}
+                    {m.organization.kind === "NIGHTLIFE" && !m.organization.isPlatform && <span className="badge ml-1.5 bg-[var(--surface-2)] text-[var(--ink-muted)]">boliche</span>}
+                  </td>
+                )}
                 <td className="px-5 py-3">
                   {ROLE_LABEL[m.role]}
                   {m.client && <p className="text-xs text-[var(--ink-dim)]">{m.client.name}</p>}
@@ -75,27 +109,27 @@ export default async function UsersPage() {
                   </span>
                 </td>
                 <td className="flex items-center justify-end gap-2 px-5 py-3 text-right">
-                  {m.role === "OPERATOR" && (
+                  {manageable(m.role) && m.role === "OPERATOR" && (
                     <Link href={`/usuarios/${m.userId}`} className="btn text-xs">
                       Funciones y teléfonos
                     </Link>
                   )}
-                  {m.role === "CASHIER" && (
+                  {manageable(m.role) && m.role === "CASHIER" && (
                     <Link href={`/usuarios/${m.userId}`} className="btn text-xs">
                       Qué puede vender
                     </Link>
                   )}
-                  {m.role === "BAR" && (
+                  {manageable(m.role) && m.role === "BAR" && (
                     <Link href={`/usuarios/${m.userId}`} className="btn text-xs">
                       Noches que atiende
                     </Link>
                   )}
-                  {m.role === "PROMOTER" && (
+                  {manageable(m.role) && m.role === "PROMOTER" && (
                     <Link href={`/promotores/${m.userId}`} className="btn text-xs">
                       Eventos y comisión
                     </Link>
                   )}
-                  {m.userId !== staff.id && (
+                  {m.userId !== staff.id && manageable(m.role) && (
                     <ActionForm action={toggleStaffActiveAction}>
                       <input type="hidden" name="userId" value={m.userId} />
                       <button type="submit" className="btn text-xs">
@@ -106,6 +140,13 @@ export default async function UsersPage() {
                 </td>
               </tr>
             ))}
+            {members.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-5 py-6 text-center text-[var(--ink-muted)]">
+                  Todavía no hay cuentas{currentOrg ? ` en ${currentOrg.name}` : ""}.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -121,31 +162,15 @@ export default async function UsersPage() {
             Email
             <input name="email" type="email" required className="field" />
           </label>
-          <label className="label">
-            Rol
-            <select name="role" defaultValue="OPERATOR" className="field">
-              <option value="OPERATOR">{ROLE_LABEL.OPERATOR}</option>
-              <option value="CASHIER">{organizer ? "Cajero (boletería y barra)" : ROLE_LABEL.CASHIER}</option>
-              <option value="PROMOTER">{ROLE_LABEL.PROMOTER}</option>
-              <option value="BAR">{ROLE_LABEL.BAR}</option>
-              {!organizer && <option value="CLIENT">{ROLE_LABEL.CLIENT}</option>}
-              <option value="ADMIN">{organizer ? "Organizador (solo lectura)" : ROLE_LABEL.ADMIN}</option>
-              {!organizer && staff.role === "OWNER" && <option value="OWNER">{ROLE_LABEL.OWNER}</option>}
-            </select>
-          </label>
-          {!organizer && (
-            <label className="label">
-              Cliente (solo para el rol cliente)
-              <select name="clientId" defaultValue="" className="field">
-                <option value="">—</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          <AccountFields
+            key={createOrgId}
+            orgs={staff.platform ? orgOptions : [{ id: staff.organization.id, name: staff.organization.name, platform: false, nightlife: staff.organization.kind === "NIGHTLIFE" }]}
+            defaultOrgId={createOrgId}
+            chooseOrg={staff.platform}
+            canMakeAdmins={staff.platform}
+            canMakeOwners={staff.platform && staff.role === "OWNER"}
+            clients={clients}
+          />
           <label className="label">
             Contraseña temporal
             <input name="password" type="text" required minLength={MIN_PASSWORD_LENGTH} autoComplete="off" className="field" />

@@ -120,6 +120,9 @@ export default async function OrganizersPage({ searchParams }: Props) {
                   <p className="text-xs text-[var(--ink-dim)]">
                     {o._count.members} cuenta(s) · {o._count.venues} recinto(s)
                   </p>
+                  <span className={`badge mt-1 ${o.selfManaged ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--surface-2)] text-[var(--ink-muted)]"}`}>
+                    {o.selfManaged ? "administra por sí mismo" : "solo lectura"}
+                  </span>
                 </td>
                 <td className="px-5 py-3 text-xs">
                   <p>{o.published} publicado(s)</p>

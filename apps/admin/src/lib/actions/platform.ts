@@ -12,6 +12,7 @@ import {
   prisma,
   rejectEvent,
   setMaxActiveEvents,
+  setSelfManaged,
   setOrganizationStatus,
 } from "@ticketera/db";
 import { formObject, zodErrors, type FormState } from "@/lib/forms";
@@ -140,6 +141,20 @@ export async function rejectEventAction(_prev: FormState, formData: FormData): P
   }
   revalidatePath("/aprobaciones");
   return { ok: true };
+}
+
+/** Da o quita la administración propia de un organizador o boliche (puede crear y editar lo suyo, con aprobación). */
+export async function setSelfManagedAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requirePlatform();
+  const on = formData.get("selfManaged") === "true";
+  try {
+    await setSelfManaged(String(formData.get("organizationId")), on, staff.id);
+  } catch (error) {
+    if (error instanceof DomainError) return { error: error.message };
+    throw error;
+  }
+  revalidatePath("/organizadores", "layout");
+  return { ok: true, message: on ? "Ahora administra por sí mismo: lo que publique pasa por tu aprobación." : "Vuelve a solo lectura." };
 }
 
 /** Fija el máximo de eventos activos de un organizador (vacío = sin límite). */

@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { canAdministerOrganization, isReadOnlyAccount } from "@ticketera/core";
 import { EventCategory, clientAccessOpen, prisma, type StaffRole } from "@ticketera/db";
 import { auth } from "./auth";
 
@@ -84,6 +85,8 @@ export async function currentStaff() {
     }
   }
 
+  const access = { platform: platform && !preview, preview: preview !== null, role: membership.role, selfManaged: home.selfManaged };
+
   return {
     id: session.user.id,
     name: membership.user.name,
@@ -103,10 +106,21 @@ export async function currentStaff() {
     client: viewingAs ? null : membership.client,
     /**
      * Solo lectura: las cuentas de los organizadores y de los clientes ven todo lo suyo (eventos, ventas,
-     * ingresos, reportes) pero no cambian nada; crear y modificar es solo de IMPACTA (también cuando entra en
-     * un organizador). El personal de operación (cajero y portero) sigue vendiendo, cobrando y leyendo QR.
+     * ingresos, reportes) pero no cambian nada; crear y modificar es de IMPACTA (también cuando entra en un
+     * organizador) o del organizador al que IMPACTA le dio «administración propia». El personal de operación
+     * (cajero, portero, barra) sigue vendiendo, cobrando y leyendo QR.
      */
-    readOnly: preview !== null || (!platform && (membership.role === "OWNER" || membership.role === "ADMIN" || membership.role === "CLIENT")),
+    readOnly: isReadOnlyAccount(access),
+    /**
+     * Administra: IMPACTA, o el dueño/administrador de un organizador con administración propia. Puede crear las cuentas
+     * de su personal y las dadas de alta (promotores, códigos). Lo que publica un organizador pasa por aprobación.
+     */
+    canAdminister: canAdministerOrganization(access),
+    /**
+     * Vista reducida: el dueño o administrador de un organizador sin administración propia ve solo lo esencial (resumen,
+     * eventos o noches, ventas, ingresos en puerta): no el detalle de compradores, recintos, promotores ni la caja.
+     */
+    limitedView: isReadOnlyAccount(access) && (membership.role === "OWNER" || membership.role === "ADMIN" || preview !== null) && preview !== "CASHIER",
   };
 }
 
@@ -156,7 +170,24 @@ export function allowedCategories(staff: Staff): EventCategory[] {
   return isNightlife(staff) ? ["BOLICHE"] : all.filter((c) => c !== "BOLICHE");
 }
 
-/** Solo administradores de IMPACTA: organizadores, aprobaciones, cuentas. */
+/**
+ * Quien administra las cuentas del personal: IMPACTA (las de cualquier organizador, sin "entrar" en él) o el dueño /
+ * administrador de un organizador con administración propia (las de su personal).
+ */
+export async function requireAccountAdmin(): Promise<Staff> {
+  const staff = await requireStaff(ROLES.users);
+  if (!staff.canAdminister) redirect("/");
+  return staff;
+}
+
+/** Pantallas de detalle (compradores, recintos, promotores, caja…): no son de la vista reducida del dueño de solo lectura. */
+export async function requireFullView(): Promise<Staff> {
+  const staff = await requireStaff([...ROLES.manage, ...ROLES.pos, ...ROLES.bar]);
+  if (staff.limitedView) redirect("/");
+  return staff;
+}
+
+/** Solo administradores de IMPACTA: organizadores, aprobaciones, clientes. */
 export async function requirePlatform(): Promise<Staff> {
   const staff = await requireStaff(ROLES.manage);
   if (!staff.platform) redirect("/");

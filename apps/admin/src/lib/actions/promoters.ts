@@ -20,7 +20,7 @@ import { type FormState } from "@/lib/forms";
 import { sendOrderTicketsEmail } from "@/lib/mail";
 import { promoterPaymentProvider, simulatedPaymentsAllowed } from "@/lib/promoter-payments";
 import { readSessionPick } from "@/lib/session-pick";
-import { ROLES, requireEditor, requirePlatform } from "@/lib/session";
+import { ROLES, requireAccountAdmin, requireEditor } from "@/lib/session";
 import type { PosState } from "./pos";
 
 /** "10" o "10,50" bolivianos -> centavos; null si no es un monto. */
@@ -84,10 +84,10 @@ export async function assignPromoterAction(_prev: FormState, formData: FormData)
 
 /**
  * Alta de un promotor en un solo paso: la cuenta (contraseña temporal), su teléfono, su código y su primer evento con
- * funciones, comisión y cupo. Solo iPass crea cuentas.
+ * funciones, comisión y cupo. Lo hace iPass, o el organizador con administración propia.
  */
 export async function createPromoterAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requirePlatform();
+  const staff = await requireAccountAdmin();
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");

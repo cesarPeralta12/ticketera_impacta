@@ -13,6 +13,7 @@ import {
   setOrganizationStatus,
   submitEventForReview,
 } from "../src/operations/organizations";
+import { setSelfManaged } from "../src/operations/event-limit";
 import { buyer, createPendingOrder, createGeneralAdmissionEvent } from "./fixtures";
 
 afterAll(() => prisma.$disconnect());
@@ -156,5 +157,26 @@ describe("organizador suspendido", () => {
     });
     const actor = await impactaAdmin();
     await expect(setOrganizationStatus(platform.id, "SUSPENDED", actor.id)).rejects.toMatchObject({ code: "INVALID_STATE" });
+  });
+});
+
+describe("administración propia", () => {
+  it("un organizador nuevo es de solo lectura; iPass se la da y se la quita", async () => {
+    const { organization } = await newOrganizer();
+    const actor = await impactaAdmin();
+    expect(organization.selfManaged).toBe(false);
+
+    await setSelfManaged(organization.id, true, actor.id);
+    expect((await prisma.organization.findUniqueOrThrow({ where: { id: organization.id } })).selfManaged).toBe(true);
+    await setSelfManaged(organization.id, false, actor.id);
+    expect((await prisma.organization.findUniqueOrThrow({ where: { id: organization.id } })).selfManaged).toBe(false);
+    expect(await prisma.auditLog.count({ where: { entityId: organization.id, action: { in: ["organizer.self_managed_on", "organizer.self_managed_off"] } } })).toBe(2);
+  });
+
+  it("no se aplica a iPass ni a un organizador que no existe", async () => {
+    const actor = await impactaAdmin();
+    const platform = await prisma.organization.findFirst({ where: { isPlatform: true } });
+    if (platform) await expect(setSelfManaged(platform.id, true, actor.id)).rejects.toMatchObject({ code: "INVALID_STATE" });
+    await expect(setSelfManaged("no-existe", true, actor.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });

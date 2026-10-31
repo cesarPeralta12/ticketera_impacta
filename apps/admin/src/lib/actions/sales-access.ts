@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { DomainError, POS_METHODS, addSessionSeller, prisma, removeSalesAssignment, setSalesAssignment, toggleSalesAssignment, updateSalesSettings } from "@ticketera/db";
+import { accountOrganizationId, organizationScope } from "@/lib/account-scope";
 import { logAudit } from "@/lib/audit";
 import type { FormState } from "@/lib/forms";
 import { readSessionPick } from "@/lib/session-pick";
@@ -25,11 +26,12 @@ async function assignable(organizationId: string, userId: string) {
 export async function updateSalesSettingsAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireEditor(ROLES.users);
   const userId = String(formData.get("userId") ?? "");
-  if (!(await cashier(staff.organization.id, userId))) return { error: "Cajero no encontrado." };
+  const organizationId = await accountOrganizationId(staff, userId);
+  if (!organizationId || !(await cashier(organizationId, userId))) return { error: "Cajero no encontrado." };
   const salesScope = formData.get("salesScope") === "ASSIGNED" ? "ASSIGNED" : "ALL";
   const posMethods = formData.getAll("posMethods").map(String).filter((m) => (POS_METHODS as readonly string[]).includes(m));
   if (posMethods.length === 0) return { fieldErrors: { posMethods: "Deja al menos un medio de cobro." } };
-  await updateSalesSettings({ organizationId: staff.organization.id, userId, salesScope, posMethods });
+  await updateSalesSettings({ organizationId, userId, salesScope, posMethods });
   await audit(staff.id, "sales.settings", userId, { salesScope, posMethods });
   revalidatePath(`/usuarios/${userId}`);
   return { ok: true, message: "Guardado." };
@@ -39,11 +41,12 @@ export async function updateSalesSettingsAction(_prev: FormState, formData: Form
 export async function assignCashierAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireEditor(ROLES.users);
   const userId = String(formData.get("userId") ?? "");
-  if (!(await assignable(staff.organization.id, userId))) return { error: "Cuenta no encontrada." };
+  const organizationId = await accountOrganizationId(staff, userId);
+  if (!organizationId || !(await assignable(organizationId, userId))) return { error: "Cuenta no encontrada." };
   const pick = readSessionPick(formData);
   if (!pick.ok) return { fieldErrors: { [pick.field]: "message" in pick && pick.message ? pick.message : "Fecha inválida." } };
   try {
-    const result = await setSalesAssignment(prisma, { organizationId: staff.organization.id, userId, ...pick });
+    const result = await setSalesAssignment(prisma, { organizationId, userId, ...pick });
     await audit(staff.id, "sales.assign", userId, { eventId: pick.eventId, sessionIds: pick.sessionIds ?? "todas", startsAt: pick.startsAt, endsAt: pick.endsAt });
     revalidatePath(`/usuarios/${userId}`);
     return { ok: true, message: result.whole ? "Asignado el evento completo." : `Asignadas ${result.sessions} función(es).` };
@@ -56,8 +59,8 @@ export async function assignCashierAction(_prev: FormState, formData: FormData):
 export async function removeSalesAssignmentAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireEditor(ROLES.users);
   const id = String(formData.get("assignmentId") ?? "");
-  const assignment = await prisma.salesAssignment.findFirst({ where: { id, event: { organizationId: staff.organization.id } } });
-  if (!assignment || !(await removeSalesAssignment(staff.organization.id, id))) return { error: "Asignación no encontrada." };
+  const assignment = await prisma.salesAssignment.findFirst({ where: { id, event: organizationScope(staff) }, include: { event: { select: { organizationId: true } } } });
+  if (!assignment || !(await removeSalesAssignment(assignment.event.organizationId, id))) return { error: "Asignación no encontrada." };
   await audit(staff.id, "sales.unassign", assignment.userId, { eventId: assignment.eventId, sessionId: assignment.sessionId });
   revalidatePath(`/usuarios/${assignment.userId}`);
   revalidatePath("/eventos", "layout");
@@ -66,7 +69,8 @@ export async function removeSalesAssignmentAction(_prev: FormState, formData: Fo
 
 export async function toggleSalesAssignmentAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireEditor(ROLES.users);
-  const updated = await toggleSalesAssignment(staff.organization.id, String(formData.get("assignmentId") ?? ""));
+  const target = await prisma.salesAssignment.findFirst({ where: { id: String(formData.get("assignmentId") ?? ""), event: organizationScope(staff) }, include: { event: { select: { organizationId: true } } } });
+  const updated = target ? await toggleSalesAssignment(target.event.organizationId, target.id) : null;
   if (!updated) return { error: "Asignación no encontrada." };
   await audit(staff.id, updated.active ? "sales.assignment_on" : "sales.assignment_off", updated.userId, { assignmentId: updated.id });
   revalidatePath(`/usuarios/${updated.userId}`);

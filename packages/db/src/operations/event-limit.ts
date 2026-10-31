@@ -64,6 +64,24 @@ export async function createEventWithinLimit(data: Prisma.EventUncheckedCreateIn
   });
 }
 
+/**
+ * IMPACTA le da (o quita) la administración propia a un organizador o boliche: su dueño y su administrador pasan a
+ * crear y editar lo suyo; lo que publican pasa por aprobación. Quitarla no borra nada: vuelven a solo lectura.
+ */
+export async function setSelfManaged(organizationId: string, selfManaged: boolean, actorId: string) {
+  const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
+  if (!organization) throw new DomainError("NOT_FOUND", "Organizador no encontrado.");
+  if (organization.isPlatform) throw new DomainError("INVALID_STATE", "iPass administra todo: no necesita este permiso.");
+  await prisma.organization.update({ where: { id: organizationId }, data: { selfManaged } });
+  await audit(prisma, {
+    actorType: "staff",
+    actorId,
+    action: selfManaged ? "organizer.self_managed_on" : "organizer.self_managed_off",
+    entity: "Organization",
+    entityId: organizationId,
+  });
+}
+
 /** IMPACTA fija el límite de un organizador (null = sin límite). Bajarlo por debajo de lo que ya tiene no borra nada. */
 export async function setMaxActiveEvents(organizationId: string, limit: number | null, actorId: string) {
   if (limit !== null && (!Number.isInteger(limit) || limit < 0 || limit > 10_000)) {

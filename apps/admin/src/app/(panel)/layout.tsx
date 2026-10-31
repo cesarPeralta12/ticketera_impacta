@@ -37,8 +37,8 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
           { href: "/", label: "Resumen general", icon: "home" },
           { href: "/organizadores", label: "Organizadores", icon: "briefcase" },
           { href: "/organizadores?tipo=boliche", label: "Boliches", icon: "glass" },
-          // Los eventos los arma iPass y se publican directo: Aprobaciones aparece solo si un organizador envió uno.
-          ...(pending > 0 ? [{ href: "/aprobaciones", label: "Aprobaciones", icon: "check" as const, badge: pending }] : []),
+          // Lo que publican los organizadores con administración propia espera aquí (con la cantidad pendiente).
+          { href: "/aprobaciones", label: "Aprobaciones", icon: "check", ...(pending > 0 ? { badge: pending } : {}) },
           { href: "/ordenes", label: "Ventas", icon: "receipt" },
           { href: "/conciliacion", label: "Conciliación de cobros", icon: "check" },
           { href: "/compradores", label: "Compradores", icon: "user" },
@@ -66,6 +66,20 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
     ];
   }
 
+  // Dueño o administrador de un organizador de solo lectura: solo lo esencial.
+  if (can(staff, ROLES.manage) && staff.limitedView) {
+    return [
+      {
+        items: [
+          { href: "/", label: "Resumen", icon: "home" },
+          { href: "/eventos", label: nightlife ? "Noches" : "Eventos", icon: "calendar" },
+          { href: "/ordenes", label: "Ventas", icon: "receipt" },
+          { href: "/ingresos", label: "Ingresos en puerta", icon: "door" },
+        ],
+      },
+    ];
+  }
+
   if (can(staff, ROLES.manage)) {
     return [
       {
@@ -81,8 +95,10 @@ async function navigation(staff: Staff): Promise<NavGroup[]> {
           { href: "/promotores", label: "Promotores", icon: "users" },
           ...operate,
           { href: "/seguridad", label: "Seguridad", icon: "shield" },
-          // Las cuentas de un organizador las crea IMPACTA (al entrar en él).
-          ...(staff.platform ? [{ href: "/usuarios", label: "Usuarios y porteros", icon: "users" as const }] : []),
+          // Las cuentas del personal: iPass las crea (de cualquier organizador); un organizador con administración propia, las suyas.
+          ...(staff.canAdminister ? [{ href: "/usuarios", label: staff.platform ? "Usuarios y porteros" : "Mi personal", icon: "users" as const }] : []),
+          // Lo que publican los organizadores con administración propia espera aquí.
+          ...(staff.platform ? [{ href: "/aprobaciones", label: "Aprobaciones", icon: "check" as const }] : []),
         ],
       },
     ];

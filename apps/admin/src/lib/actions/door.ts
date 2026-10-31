@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma, revokeDevice } from "@ticketera/db";
+import { accountOrganizationId, organizationScope } from "@/lib/account-scope";
 import { logAudit } from "@/lib/audit";
 import type { FormState } from "@/lib/forms";
 import { ROLES, requireEditor } from "@/lib/session";
@@ -17,11 +18,13 @@ async function findOperator(userId: string, organizationId: string) {
 /** Asigna una función (y opcionalmente una puerta) a un portero: es lo que verá y podrá descargar en la app. */
 export async function assignDoorAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireEditor(ROLES.users);
-  const operator = await findOperator(String(formData.get("userId")), staff.organization.id);
-  if (!operator) return { error: "Portero no encontrado." };
+  // La organización del portero (iPass asigna a los porteros de cualquier boliche u organizador sin "entrar" en él).
+  const organizationId = await accountOrganizationId(staff, String(formData.get("userId")));
+  const operator = organizationId ? await findOperator(String(formData.get("userId")), organizationId) : null;
+  if (!operator || !organizationId) return { error: "Portero no encontrado." };
 
   const session = await prisma.eventSession.findFirst({
-    where: { id: String(formData.get("sessionId")), event: { organizationId: staff.organization.id } },
+    where: { id: String(formData.get("sessionId")), event: { organizationId } },
     select: { id: true, venueId: true },
   });
   if (!session) return { error: "Elige una función." };
@@ -53,7 +56,7 @@ export async function assignDoorAction(_prev: FormState, formData: FormData): Pr
 export async function unassignDoorAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireEditor(ROLES.users);
   const assignment = await prisma.doorAssignment.findFirst({
-    where: { id: String(formData.get("assignmentId")), session: { event: { organizationId: staff.organization.id } } },
+    where: { id: String(formData.get("assignmentId")), session: { event: organizationScope(staff) } },
   });
   if (!assignment) return { error: "Asignación no encontrada." };
   await prisma.doorAssignment.delete({ where: { id: assignment.id } });
@@ -66,15 +69,16 @@ export async function revokeDeviceAction(_prev: FormState, formData: FormData): 
   const staff = await requireEditor(ROLES.users);
   const deviceTokenId = String(formData.get("deviceTokenId"));
   const device = await prisma.deviceToken.findFirst({
-    where: { id: deviceTokenId, revokedAt: null, user: { memberships: { some: { organizationId: staff.organization.id } } } },
+    where: { id: deviceTokenId, revokedAt: null, user: { memberships: { some: organizationScope(staff) } } },
     select: { userId: true, deviceName: true },
   });
-  await revokeDevice(deviceTokenId, staff.organization.id);
-  if (device) {
+  const deviceOrganizationId = device ? await accountOrganizationId(staff, device.userId) : null;
+  if (deviceOrganizationId) await revokeDevice(deviceTokenId, deviceOrganizationId);
+  if (device && deviceOrganizationId) {
     await logAudit({
       actorType: "staff",
       actorId: staff.id,
-      organizationId: staff.organization.id,
+      organizationId: deviceOrganizationId,
       action: "device.revoked",
       entity: "StaffUser",
       entityId: device.userId,

@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { MIN_PASSWORD_LENGTH, StaffRole, createStaffUser, prisma, revokeAllSessions } from "@ticketera/db";
 import { formObject, zodErrors, type FormState } from "@/lib/forms";
-import { ROLES, requireEditor, requirePlatform } from "@/lib/session";
+import { STAFF_ROLES, accountOrganizationId, canManageRole } from "@/lib/account-scope";
+import { ROLES, requireAccountAdmin, requireEditor } from "@/lib/session";
 import { logAudit } from "@/lib/audit";
 
 const staffSchema = z.object({
@@ -15,23 +16,32 @@ const staffSchema = z.object({
     .string({ error: "Ingresa una contraseña temporal." })
     .min(MIN_PASSWORD_LENGTH, `Mínimo ${MIN_PASSWORD_LENGTH} caracteres.`),
   clientId: z.string().optional(),
+  /** Organización de la cuenta: solo iPass elige; un organizador crea siempre en la suya. */
+  organizationId: z.string().optional(),
 });
 
 /** Roles que se pueden dar en la cuenta de un organizador: ahí no hay dueños ni clientes. */
 const ORGANIZER_ROLES: StaffRole[] = ["ADMIN", "OPERATOR", "CASHIER", "PROMOTER", "BAR"];
 
 /**
- * Solo IMPACTA crea cuentas: las suyas, o las de un organizador cuando entró en él. La
- * contraseña es temporal: la persona la cambia al entrar por primera vez.
+ * iPass crea cuentas para sí o para cualquier organizador (sin "entrar" en él); un organizador con administración
+ * propia crea las de su personal. La contraseña es temporal: la persona la cambia al entrar por primera vez.
  */
 export async function createStaffAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requirePlatform();
+  const staff = await requireAccountAdmin();
   const parsed = staffSchema.safeParse(formObject(formData));
   if (!parsed.success) return zodErrors(parsed.error);
-  const organization = staff.organization;
+  const requested = parsed.data.organizationId;
+  const organization = staff.platform && requested && requested !== staff.organization.id ? await prisma.organization.findUnique({ where: { id: requested } }) : staff.organization;
+  if (!organization) return { fieldErrors: { organizationId: "Organizador no encontrado." } };
+  if (!organization.isPlatform && organization.status !== "ACTIVE") return { fieldErrors: { organizationId: "Ese organizador está suspendido." } };
 
   if (!organization.isPlatform && !ORGANIZER_ROLES.includes(parsed.data.role)) {
-    return { fieldErrors: { role: "Para un organizador: administrador, operador de puerta, cajero o promotor." } };
+    return { fieldErrors: { role: "Para un organizador: administrador, operador de puerta, cajero, barra o promotor." } };
+  }
+  // Un organizador con administración propia solo crea a su personal: los administradores de su cuenta los da iPass.
+  if (!staff.platform && !STAFF_ROLES.includes(parsed.data.role)) {
+    return { fieldErrors: { role: "Puedes crear portero, cajero, barra o promotor. Los administradores los crea iPass." } };
   }
   if (parsed.data.role === "OWNER" && staff.role !== "OWNER") {
     return { fieldErrors: { role: "Solo un dueño puede crear otro dueño." } };
@@ -64,7 +74,7 @@ export async function createStaffAction(_prev: FormState, formData: FormData): P
       entityId: created.id,
       data: { role: parsed.data.role, organizationId: organization.id },
     });
-  revalidatePath("/usuarios");
+  revalidatePath("/usuarios", "layout");
   if (parsed.data.role === "CASHIER") return { ok: true, message: "Cuenta creada. Ahora toca «Qué puede vender» en su fila para asignarle eventos y funciones." };
   if (parsed.data.role === "BAR") return { ok: true, message: "Cuenta creada. Ahora toca «Noches que atiende» en su fila para asignarle las noches." };
   if (parsed.data.role === "PROMOTER") return { ok: true, message: "Cuenta creada. Asígnale eventos y comisión en Promotores." };
@@ -73,16 +83,18 @@ export async function createStaffAction(_prev: FormState, formData: FormData): P
 
 /** Desactivar corta el acceso de inmediato: requireStaff() lo verifica en cada request. */
 export async function toggleStaffActiveAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const staff = await requirePlatform();
+  const staff = await requireAccountAdmin();
   const userId = String(formData.get("userId"));
   if (userId === staff.id) return { error: "No puedes desactivar tu propia cuenta." };
 
-  const target = await prisma.staffUser.findFirst({
-    where: { id: userId, memberships: { some: { organizationId: staff.organization.id } } },
-    include: { memberships: { where: { organizationId: staff.organization.id } } },
-  });
+  const organizationId = await accountOrganizationId(staff, userId);
+  const target = organizationId
+    ? await prisma.staffUser.findFirst({ where: { id: userId, memberships: { some: { organizationId } } }, include: { memberships: { where: { organizationId } } } })
+    : null;
   if (!target) return { error: "Usuario no encontrado." };
-  if (target.memberships[0]?.role === "OWNER" && staff.role !== "OWNER") {
+  const role = target.memberships[0]?.role;
+  if (role && !canManageRole(staff, role)) return { error: "Esa cuenta la maneja iPass." };
+  if (role === "OWNER" && staff.role !== "OWNER") {
     return { error: "Solo un dueño puede desactivar a otro dueño." };
   }
 
@@ -94,7 +106,7 @@ export async function toggleStaffActiveAction(_prev: FormState, formData: FormDa
       entity: "StaffUser",
       entityId: target.id,
     });
-  revalidatePath("/usuarios");
+  revalidatePath("/usuarios", "layout");
   return { ok: true };
 }
 
@@ -104,12 +116,15 @@ export async function toggleStaffActiveAction(_prev: FormState, formData: FormDa
  */
 export async function revokeUserSessionsAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireEditor(ROLES.users);
-  const target = await prisma.staffUser.findFirst({
-    where: { id: String(formData.get("userId")), memberships: { some: { organizationId: staff.organization.id } } },
-    include: { memberships: { where: { organizationId: staff.organization.id } } },
-  });
+  const userId = String(formData.get("userId"));
+  const organizationId = await accountOrganizationId(staff, userId);
+  const target = organizationId
+    ? await prisma.staffUser.findFirst({ where: { id: userId, memberships: { some: { organizationId } } }, include: { memberships: { where: { organizationId } } } })
+    : null;
   if (!target) return { error: "Usuario no encontrado." };
-  if (target.memberships[0]?.role === "OWNER" && staff.role !== "OWNER") return { error: "Solo un dueño puede cerrar las sesiones de otro dueño." };
+  const targetRole = target.memberships[0]?.role;
+  if (targetRole && !canManageRole(staff, targetRole)) return { error: "Esa cuenta la maneja iPass." };
+  if (targetRole === "OWNER" && staff.role !== "OWNER") return { error: "Solo un dueño puede cerrar las sesiones de otro dueño." };
   const { devices } = await revokeAllSessions("staff", target.id);
   await logAudit({ actorType: "staff", actorId: staff.id, action: "auth.sessions_revoked", entity: "StaffUser", entityId: target.id, data: { by: "admin", devices } });
   revalidatePath("/usuarios", "layout");

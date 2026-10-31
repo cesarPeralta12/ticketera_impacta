@@ -20,7 +20,7 @@ export const metadata: Metadata = { title: "Promotores" };
 export default async function PromotersPage() {
   await connection();
   const staff = await requireStaff(ROLES.manage);
-  const [promoters, events] = await Promise.all([promotersReport(staff.organization.id), staff.platform ? pickerEvents(staff.organization.id) : []]);
+  const [promoters, events] = await Promise.all([promotersReport(staff.organization.id), staff.canAdminister ? pickerEvents(staff.organization.id) : []]);
   const money = (c: number) => formatMoney(c, staff.organization.currency);
   const total = promoters.reduce(
     (sum, p) => ({ amount: sum.amount + p.amount, commission: sum.commission + p.commission, toSettle: sum.toSettle + p.toSettle }),
@@ -43,7 +43,7 @@ export default async function PromotersPage() {
           </h1>
           <p className="text-sm text-[var(--ink-muted)]">Ventas pagadas, comisión y lo que falta pagarle a cada uno, en vivo.</p>
         </div>
-        {staff.platform && !staff.readOnly && (
+        {staff.canAdminister && (
           <a href="#nuevo" className="btn btn-primary">
             + Nuevo promotor
           </a>
@@ -51,7 +51,7 @@ export default async function PromotersPage() {
       </div>
 
       {promoters.length === 0 ? (
-        <p className="card p-5 text-sm text-[var(--ink-muted)]">Todavía no hay promotores. {staff.platform ? "Dalo de alta abajo, en un solo paso." : "Los crea iPass."}</p>
+        <p className="card p-5 text-sm text-[var(--ink-muted)]">Todavía no hay promotores. {staff.canAdminister ? "Dalo de alta abajo, en un solo paso." : "Los crea iPass."}</p>
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -117,7 +117,7 @@ export default async function PromotersPage() {
         </div>
       )}
 
-      {staff.platform && !staff.readOnly && (
+      {staff.canAdminister && (
         <section id="nuevo" className="card scroll-mt-6 p-6">
           <h2 className="eyebrow mb-1">Nuevo promotor</h2>
           <p className="mb-4 text-sm text-[var(--ink-muted)]">

@@ -9,6 +9,7 @@ export * from "./entrance";
 export * from "./event-info";
 export * from "./guests";
 export * from "./images";
+export * from "./permissions";
 export * from "./promo-assets";
 export * from "./import-tickets";
 export * from "./inventory";

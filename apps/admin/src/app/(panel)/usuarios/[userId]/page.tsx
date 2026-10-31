@@ -6,12 +6,12 @@ import { formatDateTime, utcToZonedInput } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { assignDoorAction, revokeDeviceAction, unassignDoorAction } from "@/lib/actions/door";
-import { enterOrganizationAction } from "@/lib/actions/platform";
 import { revokeUserSessionsAction } from "@/lib/actions/users";
 import { DoorSessionPicker, type DoorPickSession } from "@/components/door-session-picker";
 import { SalesAccessCard } from "@/components/sales-access-card";
 import { ROLE_LABEL } from "@/lib/labels";
-import { ROLES, requireStaff } from "@/lib/session";
+import { accountOrganizationId, canManageRole } from "@/lib/account-scope";
+import { requireAccountAdmin } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Cuenta" };
 
@@ -23,19 +23,22 @@ const sessionOpen = (d: { revokedAt: Date | null; expiresAt: Date; refreshExpire
 /** Un portero: qué funciones puede controlar con la app y qué teléfonos tienen su sesión abierta. */
 export default async function OperatorPage({ params }: { params: Promise<{ userId: string }> }) {
   await connection();
-  const staff = await requireStaff(ROLES.users);
+  const staff = await requireAccountAdmin();
   const { userId } = await params;
+  // iPass abre la cuenta de cualquier organizador sin "entrar" en él: se trabaja con la organización de la cuenta.
+  const organizationId = await accountOrganizationId(staff, userId);
+  if (!organizationId) notFound();
 
   const member = await prisma.membership.findFirst({
-    where: { userId, organizationId: staff.organization.id },
-    include: { user: true },
+    where: { userId, organizationId },
+    include: { user: true, organization: { select: { name: true, isPlatform: true } } },
   });
-  if (!member) notFound();
+  if (!member || !canManageRole(staff, member.role)) notFound();
   const isOperator = member.role === "OPERATOR";
 
-  const [assignments, sessions, devices, nightlifeOrgs] = await Promise.all([
+  const [assignments, sessions, devices] = await Promise.all([
     prisma.doorAssignment.findMany({
-      where: { userId, session: { event: { organizationId: staff.organization.id } } },
+      where: { userId, session: { event: { organizationId } } },
       orderBy: { session: { startsAt: "asc" } },
       include: { accessPoint: true, session: { include: { event: { select: { title: true } }, venue: { select: { name: true, timezone: true } } } } },
     }),
@@ -43,7 +46,7 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
       where: {
         cancelledAt: null,
         startsAt: { gte: dayAgo() },
-        event: { organizationId: staff.organization.id, status: { not: "CANCELLED" } },
+        event: { organizationId, status: { not: "CANCELLED" } },
       },
       orderBy: { startsAt: "asc" },
       // Un boliche repite sus noches cada semana: con un tope chico las noches más lejanas no se podían elegir.
@@ -54,8 +57,6 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
       },
     }),
     prisma.deviceToken.findMany({ where: { userId }, orderBy: { lastSeenAt: "desc" }, take: 20 }),
-    // iPass ve los boliches como organizadores aparte: su portero se asigna dentro de cada uno.
-    staff.organization.isPlatform ? prisma.organization.findMany({ where: { kind: "NIGHTLIFE", status: "ACTIVE" }, orderBy: { name: "asc" }, select: { id: true, name: true } }) : Promise.resolve([]),
   ]);
 
   const assignedGate = new Map(assignments.map((a) => [a.sessionId, a.accessPoint?.name ?? null]));
@@ -83,6 +84,7 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">{member.user.name}</h1>
         <p className="text-sm text-[var(--ink-muted)]">
           {member.user.email} · {ROLE_LABEL[member.role]}
+          {!member.organization.isPlatform && <> · {member.organization.name}</>}
         </p>
       </div>
 
@@ -122,9 +124,8 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
 
           {sessions.length === 0 ? (
             <p className="text-sm text-[var(--ink-muted)]">
-              No hay funciones próximas en <strong>{staff.organization.name}</strong> para asignar. La cuenta de un portero solo ve las funciones de su propia
-              organización: si el evento es de otro organizador, esta cuenta debe crearse dentro de él (Organizadores → Ver → Gestionar sus cuentas).
-              También hace falta que el evento tenga al menos una función con fecha futura.
+              No hay funciones próximas en <strong>{member.organization.isPlatform ? "iPass" : member.organization.name}</strong> para asignar. La cuenta de un portero solo ve las
+              funciones de su propia organización. Hace falta que el evento (o la noche) tenga al menos una función con fecha futura.
             </p>
           ) : (
             <ActionForm action={assignDoorAction} successMessage="Asignado." className="space-y-3">
@@ -132,28 +133,9 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
               <DoorSessionPicker sessions={options} />
             </ActionForm>
           )}
-          {nightlifeOrgs.length > 0 && (
-            <div className="mt-4 rounded-md bg-[var(--surface-2)] px-4 py-3 text-sm text-[var(--ink-muted)]">
-              <p>
-                Los <strong>boliches</strong> son organizadores aparte: sus noches no aparecen en esta lista, y sus porteros se asignan dentro de cada uno. Entra
-                al boliche y abre la cuenta del portero:
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {nightlifeOrgs.map((o) => (
-                  <form key={o.id} action={enterOrganizationAction}>
-                    <input type="hidden" name="organizationId" value={o.id} />
-                    <input type="hidden" name="next" value="/usuarios" />
-                    <button type="submit" className="btn px-3 py-1.5 text-xs">
-                      Entrar a {o.name} → Cuentas
-                    </button>
-                  </form>
-                ))}
-              </div>
-            </div>
-          )}
         </section>
       ) : member.role === "CASHIER" || member.role === "BAR" ? (
-        <SalesAccessCard userId={userId} organizationId={staff.organization.id} bar={member.role === "BAR"} />
+        <SalesAccessCard userId={userId} organizationId={organizationId} bar={member.role === "BAR"} />
       ) : (
         <p className="card p-5 text-sm text-[var(--ink-muted)]">
           Solo las cuentas de <strong>{ROLE_LABEL.OPERATOR}</strong> usan asignaciones. Los dueños y administradores ven

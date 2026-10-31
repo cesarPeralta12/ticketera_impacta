@@ -716,7 +716,7 @@ export default async function SessionPage({ params, searchParams }: Props) {
 
       {tab === "mas" && (
         <div className="grid items-start gap-6 lg:grid-cols-2">
-          {!guestList && <SessionSellersCard session={session} organizationId={staff.organization.id} canEdit={staff.platform && !staff.readOnly} />}
+          {!guestList && <SessionSellersCard session={session} organizationId={staff.organization.id} canEdit={staff.canAdminister} />}
           {!guestList && (
             <section className="card p-6">
               <h2 className="eyebrow mb-4 flex items-center gap-2">

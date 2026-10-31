@@ -5,7 +5,7 @@ import { connection } from "next/server";
 import { DEFAULT_TIMEZONE, formatDateTime } from "@ticketera/core";
 import { getEventQuota, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
-import { enterOrganizationAction, setEventLimitAction, setOrganizerStatusAction } from "@/lib/actions/platform";
+import { enterOrganizationAction, setEventLimitAction, setOrganizerStatusAction, setSelfManagedAction } from "@/lib/actions/platform";
 import { EVENT_STATUS, ROLE_LABEL } from "@/lib/labels";
 import { requirePlatform } from "@/lib/session";
 
@@ -82,6 +82,40 @@ export default async function OrganizerPage({ params }: Props) {
             {active ? "Suspender" : "Reactivar"}
           </button>
         </ActionForm>
+      </section>
+
+      <section className="card p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="max-w-2xl">
+            <h2 className="eyebrow mb-1">Administración propia</h2>
+            <p className="text-sm">
+              {organizer.selfManaged ? (
+                <>
+                  <span className="badge mr-2 bg-[var(--success-soft)] text-[var(--success)]">activada</span>
+                  Su dueño y su administrador <strong>crean y editan</strong> {organizer.kind === "NIGHTLIFE" ? "sus noches, recintos, promociones" : "sus eventos, recintos, promociones"} y
+                  las cuentas de su personal (portero, cajero, barra, promotores). <strong>Lo que publican pasa por tu aprobación</strong>
+                  (Aprobaciones).
+                </>
+              ) : (
+                <>
+                  <span className="badge mr-2 bg-[var(--surface-2)] text-[var(--ink-muted)]">solo lectura</span>
+                  Su dueño y su administrador <strong>solo ven</strong> la información de {organizer.kind === "NIGHTLIFE" ? "su boliche" : "sus eventos"}: todo lo
+                  crea y cambia iPass.
+                </>
+              )}
+            </p>
+            <p className="mt-1 text-xs text-[var(--ink-dim)]">
+              Quitarla no borra nada: sus cuentas vuelven a solo lectura. El personal de operación (portero, cajero, barra) no cambia.
+            </p>
+          </div>
+          <ActionForm action={setSelfManagedAction} className="flex items-end gap-2" confirm={organizer.selfManaged ? "¿Volver a solo lectura? Dejará de poder crear y editar." : undefined}>
+            <input type="hidden" name="organizationId" value={organizer.id} />
+            <input type="hidden" name="selfManaged" value={organizer.selfManaged ? "false" : "true"} />
+            <button type="submit" className={`btn ${organizer.selfManaged ? "" : "btn-primary"}`}>
+              {organizer.selfManaged ? "Quitar administración propia" : "Dar administración propia"}
+            </button>
+          </ActionForm>
+        </div>
       </section>
 
       <section className="card p-5">

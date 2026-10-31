@@ -47,7 +47,7 @@ export default async function PromosPage({ searchParams }: { searchParams: Promi
           <Link href="/promotores" className="btn text-sm">
             Ver promotores
           </Link>
-          {staff.platform && !staff.readOnly && (
+          {staff.canAdminister && (
             <Link href="/promotores#nuevo" className="btn btn-primary text-sm">
               + Nuevo promotor
             </Link>

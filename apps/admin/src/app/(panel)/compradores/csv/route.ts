@@ -7,7 +7,7 @@ import { ROLES, can, currentStaff, isGlobalView } from "@/lib/session";
 /** Directorio de compradores para abrir en Excel: una fila por persona. */
 export async function GET(req: Request) {
   const staff = await currentStaff();
-  if (!staff || !can(staff, ROLES.manage)) return Response.json({ error: "Sin permiso." }, { status: 403 });
+  if (!staff || !can(staff, ROLES.manage) || staff.limitedView) return Response.json({ error: "Sin permiso." }, { status: 403 });
   const params = new URL(req.url).searchParams;
   const { buyers } = await buyersDirectory(staff, { q: params.get("q") ?? "", org: params.get("org") ?? "" });
   const global = isGlobalView(staff);
