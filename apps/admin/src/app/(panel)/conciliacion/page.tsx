@@ -6,13 +6,19 @@ import { paymentDetails, paymentReconciliation, prisma, reconciliationProviders 
 import { FilterForm } from "@/components/filter-form";
 import { Help } from "@/components/help";
 import { PAGE_SIZE, Pager, pageFrom } from "@/components/pager";
+import { PaymentTable } from "./payment-table";
 import { methodName } from "@/lib/sales";
 import { ROLES, isGlobalView, requireStaff } from "@/lib/session";
 import { CompareForm } from "./compare-form";
 
 export const metadata: Metadata = { title: "Conciliación" };
 
-type Props = { searchParams: Promise<{ desde?: string; hasta?: string; q?: string; medio?: string; estado?: string; org?: string; dia?: string; pagina?: string }> };
+type Props = { searchParams: Promise<{ desde?: string; hasta?: string; q?: string; medio?: string; estado?: string; org?: string; dia?: string; pagina?: string; vista?: string }> };
+
+const VIEWS = ["resumen", "cobros", "revisar", "comparar"] as const;
+type View = (typeof VIEWS)[number];
+/** Cuántos cobros se muestran al abrir un día y medio; el resto está en la pestaña de detalle. */
+const PREVIEW_ROWS = 25;
 
 const isDay = (v: string | undefined): v is string => Boolean(v && /^\d{4}-\d{2}-\d{2}$/.test(v));
 const shift = (d: string, days: number) => {
@@ -43,19 +49,21 @@ export default async function ReconciliationPage({ searchParams }: Props) {
   const range = { from: zonedDateTimeToUtc(`${from}T00:00`, DEFAULT_TIMEZONE), to: zonedDateTimeToUtc(`${shift(to, 1)}T00:00`, DEFAULT_TIMEZONE) };
   const data = await paymentReconciliation({ organizationId: orgId, ...range });
   const providers = await reconciliationProviders({ organizationId: orgId, ...range });
-  const detailFilters = { organizationId: orgId, ...range, provider: medio || undefined, status: estado || undefined, day: dia || undefined, q: q || undefined };
-  const firstPage = await paymentDetails(detailFilters, 0, 0);
-  const page = pageFrom(params.pagina, Math.ceil(firstPage.total / PAGE_SIZE));
-  const detail = await paymentDetails(detailFilters, (page - 1) * PAGE_SIZE, PAGE_SIZE);
-  const detailParams = { desde: params.desde, hasta: params.hasta, q, medio, estado, org: params.org, dia };
+  const vista: View = VIEWS.find((v) => v === params.vista) ?? "resumen";
+  const detailParams = { desde: params.desde, hasta: params.hasta, q, medio, estado, org: params.org, dia, vista };
   const filtered = Boolean(q || medio || estado || dia || (global && params.org));
-  const dayHref = (day: string, provider: string) => {
-    const next = new URLSearchParams(Object.entries({ ...detailParams, dia: day, medio: provider }).filter(([, v]) => v) as [string, string][]);
-    return `/conciliacion?${next.toString()}#detalle`;
+  const link = (extra: Record<string, string | undefined>) => {
+    const next = new URLSearchParams(Object.entries({ ...detailParams, ...extra }).filter(([, v]) => v) as [string, string][]);
+    return `/conciliacion?${next.toString()}`;
   };
-  /** Quién cobró: el cajero, el promotor o el cliente mismo en la web. */
-  const seller = (o: { channel: string; issuedBy: { name: string } | null; promoter: { name: string } | null }) =>
-    o.issuedBy?.name ?? (o.promoter ? `${o.promoter.name} (promotor)` : o.channel === "ONLINE" ? "El cliente, en la web" : o.channel);
+  // Solo se consulta lo de la pestaña abierta.
+  const detailFilters = { organizationId: orgId, ...range, provider: medio || undefined, status: estado || undefined, day: dia || undefined, q: q || undefined };
+  const detailTotal = vista === "cobros" ? (await paymentDetails(detailFilters, 0, 0)).total : 0;
+  const page = pageFrom(params.pagina, Math.ceil(detailTotal / PAGE_SIZE));
+  const detail = vista === "cobros" ? await paymentDetails(detailFilters, (page - 1) * PAGE_SIZE, PAGE_SIZE) : null;
+  // Cada día y medio trae sus cobros para abrirlos ahí mismo (respeta la búsqueda y el estado).
+  const byDay = vista === "resumen" ? data.byDay.filter((r) => (!medio || r.provider === medio) && (!dia || r.day === dia)) : [];
+  const dayPayments = await Promise.all(byDay.slice(0, 40).map((r) => paymentDetails({ ...detailFilters, provider: r.provider, day: r.day }, 0, PREVIEW_ROWS)));
   const currency = staff.organization.currency;
   const money = (c: number) => formatMoney(c, currency);
   const issues = data.issues;
@@ -75,6 +83,7 @@ export default async function ReconciliationPage({ searchParams }: Props) {
       </div>
 
       <FilterForm key={JSON.stringify(params)}>
+        <input type="hidden" name="vista" value={vista} />
         <label className="label grow basis-56">
           Buscar un cobro
           <input type="search" name="q" defaultValue={q} placeholder="Orden, comprador, CI, referencia, quién cobró o evento" className="field" autoComplete="off" />
@@ -121,115 +130,103 @@ export default async function ReconciliationPage({ searchParams }: Props) {
         )}
       </FilterForm>
 
-      <section className="card overflow-x-auto">
-        <h2 className="eyebrow border-b border-[var(--border)] px-5 py-3">
-          Cobrado por día y medio · total {money(data.totals.amount)} ({data.totals.count} pago(s))
-        </h2>
-        {data.byDay.length === 0 ? (
-          <p className="px-5 py-4 text-sm text-[var(--ink-muted)]">Sin cobros en el período.</p>
-        ) : (
-          <table className="w-full text-left text-sm">
-            <tbody className="divide-y divide-[var(--border)]">
-              {data.byDay.map((r) => (
-                <tr key={`${r.day}-${r.provider}`} className={dia === r.day && medio === r.provider ? "bg-[var(--accent-soft)]" : ""}>
-                  <td className="px-5 py-2 font-mono">{r.day}</td>
-                  <td className="px-5 py-2">{methodName(r.provider)}</td>
-                  <td className="px-5 py-2 text-right">{r.count}</td>
-                  <td className="px-5 py-2 text-right font-mono">{formatMoney(r.amount, r.currency)}</td>
-                  <td className="px-5 py-2 text-right">
-                    <Link href={dayHref(r.day, r.provider)} className="text-xs font-medium text-[var(--accent)] hover:underline">
-                      Ver los {r.count} cobro(s) →
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {data.byDay.some((r) => r.provider === "directo") && (
-          <p className="border-t border-[var(--border)] px-5 py-3 text-xs text-[var(--ink-dim)]">
-            «Pase directo» son las compras de la web mientras no haya una pasarela de pago conectada: el sistema las da por cobradas sin que pase dinero por un banco.
-            Toca «Ver los cobros» para ver quién compró, qué y por cuánto.
-          </p>
-        )}
-      </section>
+      <nav aria-label="Secciones" className="flex flex-wrap gap-1 border-b border-[var(--border)]">
+        {[
+          { id: "resumen", label: "Cobrado por día y medio", note: `${data.totals.count}` },
+          { id: "cobros", label: "Detalle de los cobros", note: "" },
+          { id: "revisar", label: "Para revisar", note: problems > 0 ? `${problems}` : "" },
+          { id: "comparar", label: "Comparar con la pasarela", note: "" },
+        ].map((tab) => (
+          <Link
+            key={tab.id}
+            href={link({ vista: tab.id, pagina: undefined })}
+            aria-current={vista === tab.id ? "page" : undefined}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm ${vista === tab.id ? "border-[var(--accent)] font-semibold text-[var(--ink)]" : "border-transparent text-[var(--ink-muted)] hover:text-[var(--ink)]"}`}
+          >
+            {tab.label}
+            {tab.note && <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-xs ${tab.id === "revisar" ? "bg-[var(--warn-soft)] text-[var(--danger)]" : "bg-[var(--border)] text-[var(--ink-muted)]"}`}>{tab.note}</span>}
+          </Link>
+        ))}
+      </nav>
 
-      <section id="detalle" className="card overflow-x-auto scroll-mt-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-3">
-          <h2 className="eyebrow">
-            Detalle de los cobros · {detail.total} cobro(s) · {money(detail.amount)}
-            {dia && <span className="ml-2 normal-case text-[var(--ink-muted)]">del {dia}</span>}
+      {vista === "resumen" && (
+        <section className="card overflow-x-auto">
+          <h2 className="eyebrow border-b border-[var(--border)] px-5 py-3">
+            Cobrado por día y medio · total {money(data.totals.amount)} ({data.totals.count} pago(s))
           </h2>
-          {(dia || medio) && filtered && (
-            <Link href={`/conciliacion?${new URLSearchParams(Object.entries({ ...detailParams, dia: "", medio: "" }).filter(([, v]) => v) as [string, string][]).toString()}`} className="text-xs text-[var(--accent)] hover:underline">
-              Quitar el filtro de día y medio
-            </Link>
+          {byDay.length === 0 ? (
+            <p className="px-5 py-4 text-sm text-[var(--ink-muted)]">Sin cobros en el período.</p>
+          ) : (
+            <div className="divide-y divide-[var(--border)]">
+              {byDay.map((r, idx) => {
+                const rows = dayPayments[idx];
+                return (
+                  <details key={`${r.day}-${r.provider}`} className="group" open={dia === r.day && medio === r.provider}>
+                    <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-6 gap-y-1 px-5 py-2.5 text-sm hover:bg-[var(--accent-soft)]">
+                      <span className="w-28 font-mono">{r.day}</span>
+                      <span className="min-w-36 grow">{methodName(r.provider)}</span>
+                      <span className="w-24 text-right">{r.count} cobro(s)</span>
+                      <span className="w-32 text-right font-mono">{formatMoney(r.amount, r.currency)}</span>
+                      <span className="text-xs font-medium text-[var(--accent)] group-open:hidden">Ver cobros ▾</span>
+                      <span className="hidden text-xs font-medium text-[var(--accent)] group-open:inline">Ocultar ▴</span>
+                    </summary>
+                    <div className="overflow-x-auto border-t border-[var(--border)]">
+                      {!rows ? (
+                        <Link href={link({ vista: "cobros", dia: r.day, medio: r.provider, pagina: undefined })} className="block px-5 py-3 text-sm text-[var(--accent)] hover:underline">
+                          Ver los cobros en el detalle →
+                        </Link>
+                      ) : rows.rows.length === 0 ? (
+                        <p className="px-5 py-3 text-sm text-[var(--ink-muted)]">Ningún cobro coincide con la búsqueda.</p>
+                      ) : (
+                        <>
+                          <PaymentTable rows={rows.rows} global={global} showMedium={false} />
+                          {rows.total > rows.rows.length && (
+                            <Link href={link({ vista: "cobros", dia: r.day, medio: r.provider, pagina: undefined })} className="block px-5 py-3 text-sm text-[var(--accent)] hover:underline">
+                              Se muestran {rows.rows.length} de {rows.total} · ver todos en el detalle →
+                            </Link>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </details>
+                );
+              })}
+            </div>
           )}
-        </div>
-        {detail.rows.length === 0 ? (
-          <p className="px-5 py-4 text-sm text-[var(--ink-muted)]">{filtered ? "Ningún cobro coincide con la búsqueda." : "Sin cobros en el período."}</p>
-        ) : (
-          <table className="w-full text-left text-sm">
-            <thead className="eyebrow border-b border-[var(--border)]">
-              <tr>
-                <th className="px-5 py-2 font-normal">Cobrado</th>
-                <th className="px-3 py-2 font-normal">Orden</th>
-                <th className="px-3 py-2 font-normal">Comprador</th>
-                <th className="px-3 py-2 font-normal">Qué compró</th>
-                <th className="px-3 py-2 font-normal">Medio · referencia</th>
-                <th className="px-3 py-2 font-normal">Lo cobró</th>
-                <th className="px-3 py-2 text-right font-normal">Monto</th>
-                <th className="px-5 py-2 font-normal">Estado</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--border)]">
-              {detail.rows.map((p) => (
-                <tr key={p.id} className="align-top">
-                  <td className="px-5 py-2.5 font-mono text-xs">{p.approvedAt ? formatDateTime(p.approvedAt, DEFAULT_TIMEZONE) : "—"}</td>
-                  <td className="px-3 py-2.5">
-                    <Link href={`/ordenes/${p.order.code}`} className="font-mono underline">
-                      {formatCode(p.order.code)}
-                    </Link>
-                    <span className="block text-xs text-[var(--ink-dim)]">{p.order.channel === "ONLINE" ? "web" : p.order.channel === "POS" ? "boletería" : p.order.channel.toLowerCase()}</span>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <span className="block font-medium">{p.order.buyerName}</span>
-                    <span className="block text-xs text-[var(--ink-dim)]">{[p.order.buyerDocument, p.order.buyerEmail].filter(Boolean).join(" · ")}</span>
-                  </td>
-                  <td className="px-3 py-2.5 text-xs">
-                    {p.order.items.map((i, n) => (
-                      <span key={n} className="block">
-                        {i.quantity} × {i.ticketType.name} <span className="text-[var(--ink-dim)]">({money(i.unitAmount)} c/u)</span>
-                        <span className="block text-[var(--ink-dim)]">
-                          {i.ticketType.session.event.title}
-                          {global ? ` · ${i.ticketType.session.event.organization.name}` : ""}
-                        </span>
-                      </span>
-                    ))}
-                    {p.order.promoRedemption && <span className="block text-[var(--success)]">código {p.order.promoRedemption.promoCode.code}{p.order.discountAmount > 0 ? ` · −${money(p.order.discountAmount)}` : ""}</span>}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    {methodName(p.provider)}
-                    <span className="block font-mono text-xs text-[var(--ink-dim)]">{p.providerPaymentId ?? "sin referencia"}</span>
-                  </td>
-                  <td className="px-3 py-2.5">{seller(p.order)}</td>
-                  <td className="px-3 py-2.5 text-right font-mono font-semibold">
-                    {formatMoney(p.amount, p.currency)}
-                    {p.order.totalAmount !== p.amount && <span className="block text-xs font-normal text-[var(--warn)]">la orden es de {formatMoney(p.order.totalAmount, p.currency)}</span>}
-                  </td>
-                  <td className="px-5 py-2.5">
-                    <span className={`badge ${p.status === "REFUNDED" ? "bg-[var(--warn-soft)] text-[var(--warn)]" : "bg-[var(--success-soft)] text-[var(--success)]"}`}>{p.status === "REFUNDED" ? "Devuelto" : "Cobrado"}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <div className="px-5 py-3">
-          <Pager path="/conciliacion" params={detailParams} page={page} total={detail.total} />
-        </div>
-      </section>
+          {data.byDay.some((r) => r.provider === "directo") && (
+            <p className="border-t border-[var(--border)] px-5 py-3 text-xs text-[var(--ink-dim)]">
+              «Pase directo» son las compras de la web mientras no haya una pasarela de pago conectada: el sistema las da por cobradas sin que pase dinero por un banco.
+              Abre la fila para ver quién compró, qué y por cuánto.
+            </p>
+          )}
+        </section>
+      )}
 
+      {vista === "cobros" && detail && (
+        <section className="card overflow-x-auto">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-3">
+            <h2 className="eyebrow">
+              Detalle de los cobros · {detail.total} cobro(s) · {money(detail.amount)}
+              {dia && <span className="ml-2 normal-case text-[var(--ink-muted)]">del {dia}</span>}
+            </h2>
+            {(dia || medio) && (
+              <Link href={link({ dia: "", medio: "", pagina: undefined })} className="text-xs text-[var(--accent)] hover:underline">
+                Quitar el filtro de día y medio
+              </Link>
+            )}
+          </div>
+          {detail.rows.length === 0 ? (
+            <p className="px-5 py-4 text-sm text-[var(--ink-muted)]">{filtered ? "Ningún cobro coincide con la búsqueda." : "Sin cobros en el período."}</p>
+          ) : (
+            <PaymentTable rows={detail.rows} global={global} />
+          )}
+          <div className="px-5 py-3">
+            <Pager path="/conciliacion" params={detailParams} page={page} total={detail.total} />
+          </div>
+        </section>
+      )}
+
+      {vista === "revisar" && (
       <section className="card space-y-4 p-5">
         <h2 className="eyebrow">Para revisar {problems > 0 ? <span className="text-[var(--danger)]">· {problems}</span> : <span className="text-[var(--success)]">· todo en orden</span>}</h2>
         {[
@@ -280,11 +277,14 @@ export default async function ReconciliationPage({ searchParams }: Props) {
           </div>
         ))}
       </section>
+      )}
 
-      <section className="card p-5">
-        <h2 className="eyebrow mb-3">Comparar con el reporte de la pasarela</h2>
-        <CompareForm from={from} to={to} currency={currency} />
-      </section>
+      {vista === "comparar" && (
+        <section className="card p-5">
+          <h2 className="eyebrow mb-3">Comparar con el reporte de la pasarela</h2>
+          <CompareForm from={from} to={to} currency={currency} />
+        </section>
+      )}
     </div>
   );
 }
