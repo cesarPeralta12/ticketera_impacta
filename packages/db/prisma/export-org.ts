@@ -124,6 +124,7 @@ async function main() {
           kind: t.kind,
           peoplePerUnit: t.peoplePerUnit,
           consumptionAmount: t.consumptionAmount,
+          extraConsumptionOptions: t.extraConsumptionOptions,
           entryUntil: t.entryUntil,
           maxEntries: t.maxEntries,
           zones: t.zones.map((z) => z.name),

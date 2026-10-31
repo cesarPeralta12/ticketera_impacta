@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import QRCode from "qrcode";
-import { code128Svg, entranceText, formatCode, formatDateTime, formatMoney, formatClock, gateInfo, reentryText, signTicketPayload, signVoucherPayload, tableLabel, usedTicketText, whenWhere, zonesText, type GateInfo } from "@ticketera/core";
+import { canDownloadTicketImage, canDownloadVoucherImage, code128Svg, entranceText, formatCode, formatDateTime, formatMoney, formatClock, gateInfo, reentryText, signTicketPayload, signVoucherPayload, tableLabel, usedTicketText, whenWhere, zonesText, type GateInfo } from "@ticketera/core";
 import { BOX_OFFICE_BUYER, expireStaleOrders, getOrderByCode, requireEnv } from "@ticketera/db";
 import { payOrderAction } from "./actions";
 import { auth } from "@/lib/auth";
@@ -153,8 +153,13 @@ export default async function OrderPage({ params }: Props) {
                 <span>
                   {item.quantity} × {item.name}
                   {item.seat && <span className="text-[var(--ink-dim)]"> · {item.seat.label}</span>}
+                  {item.extraConsumption > 0 && (
+                    <span className="block text-xs text-[#F5B700]">
+                      + {formatMoney(item.extraConsumption, order.currency)} de consumo extra{item.quantity > 1 ? " c/u" : ""}
+                    </span>
+                  )}
                 </span>
-                <span className="tabular-nums">{formatMoney(item.unitAmount * item.quantity, order.currency)}</span>
+                <span className="tabular-nums">{formatMoney((item.unitAmount + item.extraConsumption) * item.quantity, order.currency)}</span>
               </li>
             ))}
             {order.discountAmount > 0 && (
@@ -197,7 +202,7 @@ type TicketForList = {
   seat: { label: string; section: { name: string } } | null;
   /** Boliche: mesa y saldo de consumo. */
   creditId: string | null;
-  credit: { code: string; tableNumber: number | null; amount: number; currency: string; redeemedAt: Date | null; seat: { label: string } | null } | null;
+  credit: { code: string; tableNumber: number | null; amount: number; extraAmount: number; currency: string; redeemedAt: Date | null; seat: { label: string } | null } | null;
   expiredAt: Date | null;
 };
 
@@ -252,8 +257,12 @@ async function TicketList({
       id: t.creditId!,
       code: t.credit!.code,
       amount: t.credit!.amount,
+      extra: t.credit!.extraAmount,
       currency: t.credit!.currency,
       redeemedAt: t.credit!.redeemedAt,
+      cancelled: t.status === "CANCELLED",
+      shared: t.ticketType.kind === "TABLE",
+      holder: t.holderName,
       label: tableLabel(t.ticketType.name, t.credit!.tableNumber, t.credit!.seat?.label) ?? t.ticketType.name,
       qr: await QRCode.toString(await signVoucherPayload(t.credit!.code, secret), { type: "svg", margin: 1, errorCorrectionLevel: "M" }),
     })),
@@ -330,7 +339,7 @@ async function TicketList({
           )}
           <p className="font-mono text-sm tracking-wider">{formatCode(ticket.code)}</p>
           {ticket.status === "USED" && <p className="mt-1 text-xs font-semibold text-[#60718B]">{usedTicketText(ticket.ticketType.maxEntries)}</p>}
-          {event && (ticket.qr || ticket.barcode) && ticket.status !== "CANCELLED" && (
+          {event && (ticket.qr || ticket.barcode) && canDownloadTicketImage({ status: ticket.status, qrMode: ticket.ticketType.qrMode, accessMethods: ticket.ticketType.accessMethods, maxEntries: ticket.ticketType.maxEntries, transferredAway: ticket.transferred }) && (
             <DownloadTicketButton
               ticket={{
                 code: formatCode(ticket.code),
@@ -349,6 +358,10 @@ async function TicketList({
                 ].filter((l): l is string => Boolean(l)),
                 qrSvg: ticket.qr,
                 barcodeSvg: ticket.barcode,
+                consumptionNote:
+                  ticket.credit && ticket.credit.amount > 0
+                    ? `Consumo ${ticket.ticketType.kind === "TABLE" ? "de la mesa" : "incluido"} ${formatMoney(ticket.credit.amount, ticket.credit.currency)} · el QR de consumo va aparte`
+                    : null,
               }}
             />
           )}
@@ -374,11 +387,28 @@ async function TicketList({
               <p className="text-xs uppercase tracking-wide text-[#60718B]">QR de consumo</p>
               <p className="font-display text-xl">{v.label}</p>
               <p className="mt-1 text-lg font-bold text-[#16846C]">{formatMoney(v.amount, v.currency)}</p>
+              {v.extra > 0 && <p className="text-xs text-[#60718B]">Incluido {formatMoney(v.amount - v.extra, v.currency)} + extra {formatMoney(v.extra, v.currency)}</p>}
               <div className={`mx-auto my-3 w-48 ${v.redeemedAt ? "opacity-30" : ""}`} dangerouslySetInnerHTML={{ __html: v.qr }} />
               <p className="font-mono text-sm tracking-wider">{formatCode(v.code)}</p>
               <p className={`mt-1 text-xs font-semibold ${v.redeemedAt ? "text-[#C62842]" : "text-[#60718B]"}`}>
                 {v.redeemedAt ? `Ya fue leído a las ${formatClock(v.redeemedAt, timeZone)}` : "Sin usar"}
               </p>
+              {event && canDownloadVoucherImage(v) && (
+                <DownloadTicketButton
+                  ticket={{
+                    kind: "consumo",
+                    code: formatCode(v.code),
+                    eventTitle: event.title,
+                    when: event.when,
+                    venue: event.venue,
+                    holder: v.holder,
+                    typeName: v.label,
+                    lines: [v.shared ? "Consumo compartido por toda la mesa" : null, v.extra > 0 ? `Incluido ${formatMoney(v.amount - v.extra, v.currency)} + extra ${formatMoney(v.extra, v.currency)}` : null].filter((l): l is string => Boolean(l)),
+                    qrSvg: v.qr,
+                    amount: formatMoney(v.amount, v.currency),
+                  }}
+                />
+              )}
             </li>
           ))}
         </ul>

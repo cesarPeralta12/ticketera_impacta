@@ -44,6 +44,8 @@ export async function posOffer(session: PosSession, options: { promoter?: boolea
       discountLabel: discountLabel(t, now, session.venue.timezone),
       currency: t.currency,
       max: Math.min(remaining.get(t.id) ?? 0, t.maxPerOrder, MAX_TICKETS_PER_ORDER),
+      // El cajero también vende el consumo extra (solo en mesas o entradas con consumo).
+      extraOptions: t.kind === "TABLE" || (t.consumptionAmount ?? 0) > 0 ? t.extraConsumptionOptions : [],
     }));
 
   const seated: PosSeatedType[] = openTypes

@@ -7,6 +7,7 @@ import {
   effectiveSaleWindow,
   formatClock,
   formatDateTime,
+  extraOptionsText,
   formatMoney,
   inheritsSaleWindow,
   isSeatedTablesLayout,
@@ -41,6 +42,7 @@ import {
   duplicateSessionAction,
   setQrModeAction,
   updateEntryRulesAction,
+  updateExtraConsumptionAction,
   updateAccessMethodsAction,
   updateProgramAction,
   updateQueueSettingsAction,
@@ -396,6 +398,25 @@ export default async function SessionPage({ params, searchParams }: Props) {
                               </button>
                             </ActionForm>
                           </div>
+
+                          {(t.kind === "TABLE" || (t.consumptionAmount ?? 0) > 0) && (
+                            <div className="space-y-2">
+                              <p className="eyebrow">Consumo extra</p>
+                              <p className="text-xs text-[var(--ink-muted)]">
+                                Paquetes que el comprador puede sumar al comprar (en Bs, separados por coma). El QR de consumo lleva el total. Vacío: no se vende extra.
+                              </p>
+                              <ActionForm action={updateExtraConsumptionAction} successMessage="Guardado." className="flex flex-wrap items-end gap-2 text-xs">
+                                <input type="hidden" name="ticketTypeId" value={t.id} />
+                                <label className="label">
+                                  Paquetes (Bs)
+                                  <input name="extra" inputMode="decimal" defaultValue={extraOptionsText(t.extraConsumptionOptions)} placeholder="ej. 100, 200, 500" className="field w-44 text-xs" />
+                                </label>
+                                <button type="submit" className="btn w-fit px-2.5 py-1 text-xs">
+                                  Guardar
+                                </button>
+                              </ActionForm>
+                            </div>
+                          )}
 
                           {/* La primera fase usa sus fechas de venta; las siguientes empiezan según «Fases de venta». */}
                           {t.phase && t.phase.position > 1 ? (

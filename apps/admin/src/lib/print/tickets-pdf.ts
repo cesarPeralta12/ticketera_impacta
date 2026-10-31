@@ -12,8 +12,7 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import QRCode from "qrcode";
-import { code128Widths } from "@ticketera/core";
-import { IPASS_LOGO } from "./ipass-logo";
+import { IPASS_LOGO, code128Widths } from "@ticketera/core";
 
 /**
  * Entradas impresas en PDF (vectorial: el QR y el código de barras no se pixelan). Formatos:

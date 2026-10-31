@@ -95,8 +95,10 @@ export type VoucherMail = {
   code: string;
   /** "Mesa VIP N° 4", o el tipo de entrada. */
   label: string;
-  /** Consumo ya formateado ("Bs 1.000,00"). */
+  /** Consumo ya formateado ("Bs 1.000,00"): el total, con el extra comprado. */
   amount: string;
+  /** De ese total, el consumo extra que se compró ("Bs 300,00"), si hubo. */
+  extra?: string | null;
   qrPng: Buffer;
 };
 
@@ -183,6 +185,7 @@ export function ticketsMessage(input: {
         <div style="font-size:12px;color:${MUTED};text-transform:uppercase;letter-spacing:1px">QR de consumo</div>
         <div style="font-size:18px;font-weight:700;margin-top:4px">${esc(v.label)}</div>
         <div style="font-size:18px;font-weight:700;margin-top:2px;color:${LINK}">${esc(v.amount)} de consumo</div>
+        ${v.extra ? `<div style="font-size:12px;color:${MUTED}">Incluye ${esc(v.extra)} de consumo extra</div>` : ""}
         <img src="cid:${cid}" width="200" height="200" alt="QR de consumo ${esc(formatCode(v.code))}" style="display:block;margin:12px auto;border:0">
         <div style="font-family:Consolas,monospace;font-size:16px;letter-spacing:2px">${esc(formatCode(v.code))}</div>
         <div style="font-size:12px;color:${MUTED};margin-top:6px;line-height:1.5;max-width:340px">Preséntalo en la barra. Se lee <strong>una sola vez</strong>: no lo compartas.</div>

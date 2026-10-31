@@ -116,6 +116,8 @@ export default async function BuyPage({ params, searchParams }: Props) {
       opensAt: saleState(t) === "scheduled" && t.salesStartAt ? formatDateTime(t.salesStartAt, tz) : null,
       table: t.kind === "TABLE" ? { people: peopleIn(t) } : null,
       consumption: t.consumptionAmount && t.consumptionAmount > 0 ? formatMoney(t.consumptionAmount, t.currency) : null,
+      // El extra solo se ofrece en mesas o entradas con consumo.
+      extraOptions: t.kind === "TABLE" || (t.consumptionAmount ?? 0) > 0 ? t.extraConsumptionOptions : [],
       entryUntil: t.entryUntil ? formatClock(t.entryUntil, tz) : null,
     }))
     // Primero lo que se puede comprar ahora (la preventa), después lo que empieza más adelante.
@@ -139,6 +141,7 @@ export default async function BuyPage({ params, searchParams }: Props) {
         ? (({ mode, min, max, chairs, prefix, shape, size, tables }) => ({ mode, min, max, chairs, prefix, shape, size, tables }))(t.section!.layout)
         : null,
       consumption: t.consumptionAmount && t.consumptionAmount > 0 ? formatMoney(t.consumptionAmount, t.currency) : null,
+      extraOptions: t.kind === "TABLE" || (t.consumptionAmount ?? 0) > 0 ? t.extraConsumptionOptions : [],
       seats: t.section!.seats
         // Orden de lectura natural (fila A: 1, 2, … 10), no alfabético ("1", "10", "2").
         .toSorted((a, b) => a.row.localeCompare(b.row) || Number(a.number) - Number(b.number) || a.number.localeCompare(b.number))

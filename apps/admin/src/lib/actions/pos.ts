@@ -23,9 +23,14 @@ export async function sellAction(_prev: PosState, formData: FormData): Promise<P
   });
   if (!session) return { error: "Función no encontrada." };
 
+  // Consumo extra elegido por tipo ("extra:<tipo>", centavos por unidad): el servidor lo valida contra los paquetes del tipo.
+  const extraOf = (typeId: string) => {
+    const n = Number(formData.get(`extra:${typeId}`) ?? 0);
+    return Number.isInteger(n) && n > 0 ? { extraConsumption: n } : {};
+  };
   const items = [...formData.entries()].flatMap(([key, value]) => {
     if (typeof value !== "string") return [];
-    if (key.startsWith("qty:") && Number(value) > 0) return [{ ticketTypeId: key.slice(4), quantity: Number(value) }];
+    if (key.startsWith("qty:") && Number(value) > 0) return [{ ticketTypeId: key.slice(4), quantity: Number(value), ...extraOf(key.slice(4)) }];
     if (key.startsWith("seats:") && value) {
       const seatIds = value.split(",").filter(Boolean);
       return [{ ticketTypeId: key.slice(6), quantity: seatIds.length, seatIds }];

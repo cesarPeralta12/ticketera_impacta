@@ -253,6 +253,11 @@ export async function createPendingOrder(
       if (item.quantity > type.maxPerOrder) {
         throw new DomainError("INVALID_ITEMS", `Máximo ${type.maxPerOrder} entradas "${type.name}" por compra.`);
       }
+      // Consumo extra: solo un paquete que el organizador definió para este tipo, y solo en mesas o entradas con consumo.
+      const extra = item.extraConsumption ?? 0;
+      if (extra > 0 && (!type.extraConsumptionOptions.includes(extra) || !(type.kind === "TABLE" || (type.consumptionAmount ?? 0) > 0))) {
+        throw new DomainError("INVALID_ITEMS", `El consumo extra elegido no está disponible para "${type.name}".`);
+      }
     }
 
     const currencies = new Set(types.map((t) => t.currency));
@@ -348,7 +353,7 @@ export async function createPendingOrder(
     const priced = data.items.flatMap((item) => {
       const type = byId.get(item.ticketTypeId)!;
       // El precio lo decide el servidor al crear la orden (descuento de preventa vigente, si hay).
-      const line = { ticketTypeId: type.id, unitAmount: currentPrice(type, now).unitAmount, name: type.name };
+      const line = { ticketTypeId: type.id, unitAmount: currentPrice(type, now).unitAmount, name: type.name, extraConsumption: item.extraConsumption ?? 0 };
       return item.seatIds
         ? item.seatIds.map((seatId) => ({ ...line, quantity: 1, seatId }))
         : [{ ...line, quantity: item.quantity }];
@@ -412,7 +417,9 @@ export async function createPendingOrder(
           }
         }
       }
-      if (rule) commissionAmount = commissionFor(rule, { totalAmount: totals.totalAmount, units });
+      // La comisión se calcula sobre lo vendido (entradas y mesas): el consumo extra es dinero que el cliente deja en la barra.
+      const extraTotal = priced.reduce((sum, l) => sum + l.extraConsumption * l.quantity, 0);
+      if (rule) commissionAmount = commissionFor(rule, { totalAmount: totals.totalAmount - extraTotal, units });
     }
 
     if (options.queueToken) await completeTurn(tx, data.sessionId, options.queueToken, now);
@@ -476,7 +483,7 @@ export async function getOrderByCode(code: string) {
         include: {
           ticketType: { include: { zones: { select: { id: true, name: true } } } },
           seat: { include: { section: true } },
-          credit: { select: { code: true, redeemedAt: true, tableNumber: true, amount: true, spent: true, currency: true, seat: { select: { label: true } } } },
+          credit: { select: { code: true, redeemedAt: true, tableNumber: true, amount: true, extraAmount: true, spent: true, currency: true, seat: { select: { label: true } } } },
         },
         orderBy: { issuedAt: "asc" },
       },

@@ -1,4 +1,4 @@
-// Generado desde public/ipass-logo.svg (logo iPass vectorizado): mismo dibujo, para el PDF de las entradas impresas.
+// Logo iPass vectorizado (public/ipass-logo.svg), compartido por el PDF de las entradas impresas y la imagen descargable.
 
 /** Logo iPass en trazos SVG (lienzo de 2154 × 884): la "i" en magenta y "Pass" en azul. */
 export const IPASS_LOGO = {

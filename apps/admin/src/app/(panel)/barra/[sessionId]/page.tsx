@@ -66,6 +66,11 @@ export default async function BarNightPage({ params, searchParams }: Props) {
           <div>
             <p className="text-sm text-[var(--ink-muted)]">Consumo vendido (mesas y entradas con trago)</p>
             <p className="font-mono text-xl">{formatMoney(summary.amount, currency)}</p>
+            {summary.extra > 0 && (
+              <p className="text-xs text-[var(--ink-dim)]">
+                Incluido {formatMoney(summary.amount - summary.extra, currency)} + extra {formatMoney(summary.extra, currency)}
+              </p>
+            )}
           </div>
           <div>
             <p className="text-sm text-[var(--ink-muted)]">Ya leído en barra</p>
@@ -93,7 +98,10 @@ export default async function BarNightPage({ params, searchParams }: Props) {
                   <td className="py-2 pr-4 text-right font-mono">
                     {t.count} {t.kind === "TABLE" ? "mesa(s)" : "entrada(s)"}
                   </td>
-                  <td className="py-2 pr-4 text-right font-mono">{formatMoney(t.amount, currency)}</td>
+                  <td className="py-2 pr-4 text-right font-mono">
+                    {formatMoney(t.amount, currency)}
+                    {t.extra > 0 && <span className="block text-xs text-[var(--ink-dim)]">con extra {formatMoney(t.extra, currency)}</span>}
+                  </td>
                   <td className="py-2 text-right font-mono">{formatMoney(t.spent, currency)}</td>
                 </tr>
               ))}
@@ -163,7 +171,10 @@ export default async function BarNightPage({ params, searchParams }: Props) {
                     {v.buyer}
                     <span className="block font-mono text-xs text-[var(--ink-dim)]">{formatCode(v.orderCode)}</span>
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono">{formatMoney(v.amount, v.currency)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono">
+                    {formatMoney(v.amount, v.currency)}
+                    {v.extra > 0 && <span className="block text-xs text-[var(--ink-dim)]">incl. extra {formatMoney(v.extra, v.currency)}</span>}
+                  </td>
                   <td className="px-3 py-2.5">
                     <span
                       className={`badge ${v.cancelled ? "bg-[var(--danger-soft)] text-[var(--danger)]" : v.redeemedAt ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--surface-2)] text-[var(--ink-muted)]"}`}

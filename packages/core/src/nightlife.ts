@@ -82,3 +82,40 @@ export function tableLabel(typeName: string, tableNumber: number | null | undefi
   if (seatLabel) return `${typeName} · ${seatLabel}`;
   return tableNumber ? `${typeName} N° ${tableNumber}` : null;
 }
+
+/** Máximo de paquetes de consumo extra por tipo de entrada. */
+export const MAX_EXTRA_OPTIONS = 6;
+
+/**
+ * Los paquetes de consumo extra que escribe el organizador («100, 200, 500», en la moneda) como centavos, de menor a
+ * mayor y sin repetir. Devuelve el motivo si algo no es un monto válido.
+ */
+export function parseExtraOptions(text: string): { ok: true; options: number[] } | { ok: false; error: string } {
+  const parts = text
+    .split(/[;\s]+|,(?=\s|$)/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const options: number[] = [];
+  for (const part of parts) {
+    if (!/^\d{1,6}([.,]\d{1,2})?$/.test(part)) return { ok: false, error: `«${part}» no es un monto válido (ej. 100 o 150,50).` };
+    const cents = Math.round(Number(part.replace(",", ".")) * 100);
+    if (cents <= 0) return { ok: false, error: "Los paquetes de consumo extra tienen que ser mayores a cero." };
+    options.push(cents);
+  }
+  const unique = [...new Set(options)].toSorted((a, b) => a - b);
+  if (unique.length > MAX_EXTRA_OPTIONS) return { ok: false, error: `Como máximo ${MAX_EXTRA_OPTIONS} paquetes de consumo extra.` };
+  return { ok: true, options: unique };
+}
+
+/** Un monto en centavos como lo escribe el organizador en el formulario: «100» o «150,5». */
+export const extraOptionsText = (options: readonly number[]): string =>
+  options.map((c) => (c % 100 === 0 ? String(c / 100) : String(c / 100).replace(".", ","))).join(", ");
+
+/**
+ * Consumo del QR de una mesa o entrada: lo incluido en el tipo más el extra comprado, con el desglose para mostrar.
+ * `amount` es lo que lee la barra (siempre el total).
+ */
+export function consumptionBreakdown(included: number, extra: number): { amount: number; included: number; extra: number } {
+  const safeExtra = Math.max(0, extra);
+  return { amount: included + safeExtra, included, extra: safeExtra };
+}

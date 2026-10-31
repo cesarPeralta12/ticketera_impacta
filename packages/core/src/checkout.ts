@@ -22,6 +22,11 @@ export const checkoutSchema = z.object({
         .object({
           ticketTypeId: z.string().min(1),
           quantity: z.number().int().min(1).max(MAX_TICKETS_PER_ORDER),
+          /**
+           * Consumo extra que se compra (centavos por unidad): tiene que ser uno de los paquetes del tipo de entrada.
+           * El servidor lo valida; el comprador solo elige entre los paquetes.
+           */
+          extraConsumption: z.number().int().min(0).max(100_000_000).optional(),
           /** Solo para secciones numeradas: las butacas elegidas en el mapa. */
           seatIds: z.array(z.string().min(1)).max(MAX_TICKETS_PER_ORDER).optional(),
         })
@@ -55,7 +60,7 @@ export const checkoutSchema = z.object({
 /** Datos del checkout tal como llegan (antes de normalizar). */
 export type CheckoutInput = z.input<typeof checkoutSchema>;
 
-export type PricedItem = { unitAmount: number; quantity: number };
+export type PricedItem = { unitAmount: number; quantity: number; /** Consumo extra por unidad (centavos). */ extraConsumption?: number };
 
 /**
  * Cargo por servicio. Pendiente de definir con el cliente (monto fijo, porcentaje,
@@ -67,7 +72,8 @@ export function serviceFee(_subtotal: number): number {
 
 /** Totales de la orden. `discountAmount` es el descuento de un código promocional (nunca deja el total en negativo). */
 export function orderTotals(items: PricedItem[], discountAmount = 0) {
-  const subtotalAmount = items.reduce((sum, i) => sum + lineTotal(i.unitAmount, i.quantity), 0);
+  // El consumo extra se cobra junto con la entrada (por unidad), y los descuentos de un código aplican al precio, no al extra.
+  const subtotalAmount = items.reduce((sum, i) => sum + lineTotal(i.unitAmount + (i.extraConsumption ?? 0), i.quantity), 0);
   const discount = Math.min(Math.max(0, discountAmount), subtotalAmount);
   const feeAmount = serviceFee(subtotalAmount - discount);
   return { subtotalAmount, discountAmount: discount, feeAmount, totalAmount: subtotalAmount - discount + feeAmount };

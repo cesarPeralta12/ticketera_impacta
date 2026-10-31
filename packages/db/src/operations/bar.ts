@@ -61,6 +61,8 @@ export type BarVoucherJson = {
   buyer: string;
   orderCode: string;
   amount: number;
+  /** De ese total, lo que se compró como consumo extra (opcional para las apps anteriores). */
+  extra?: number;
   currency: string;
   cancelled: boolean;
   /** Ya se leyó (ISO), con quién y la nota. */
@@ -76,6 +78,7 @@ const toJson = (v: Voucher): BarVoucherJson => ({
   buyer: v.buyer,
   orderCode: v.orderCode,
   amount: v.amount,
+  extra: v.extra,
   currency: v.currency,
   cancelled: v.cancelled,
   redeemedAt: v.redeemedAt?.toISOString() ?? null,

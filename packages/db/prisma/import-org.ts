@@ -244,6 +244,7 @@ async function main() {
                   kind: t.kind as never,
                   peoplePerUnit: t.peoplePerUnit as number,
                   consumptionAmount: (t.consumptionAmount as number | null) ?? null,
+                  extraConsumptionOptions: (t.extraConsumptionOptions as number[] | undefined) ?? [],
                   entryUntil: date(t.entryUntil),
                   maxEntries: (t.maxEntries as number | undefined) ?? 1,
                   zones: {

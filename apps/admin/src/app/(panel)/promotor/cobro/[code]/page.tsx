@@ -67,8 +67,9 @@ export default async function PromoterChargePage({ params }: { params: Promise<{
             <span className="text-[var(--ink-muted)]">
               {item.quantity} × {item.name}
               {item.seat ? ` · ${item.seat.label}` : ""}
+              {item.extraConsumption > 0 ? ` · + ${formatMoney(item.extraConsumption, order.currency)} de consumo extra` : ""}
             </span>
-            <span className="font-mono">{formatMoney(item.unitAmount * item.quantity, order.currency)}</span>
+            <span className="font-mono">{formatMoney((item.unitAmount + item.extraConsumption) * item.quantity, order.currency)}</span>
           </p>
         ))}
         <p className="flex justify-between gap-3 border-t border-[var(--border)] pt-2 text-base">

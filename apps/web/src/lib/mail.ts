@@ -97,6 +97,7 @@ export async function sendTicketsEmail(orderCode: string): Promise<boolean> {
       code: c.code,
       label: tableLabel(c.typeName, c.tableNumber, c.seat?.label) ?? c.typeName,
       amount: formatMoney(c.amount, c.currency),
+      extra: c.extraAmount > 0 ? formatMoney(c.extraAmount, c.currency) : null,
       qrPng: await QRCode.toBuffer(await signVoucherPayload(c.code, secret), { type: "png", margin: 1, width: 400, errorCorrectionLevel: "M" }),
     })),
   );

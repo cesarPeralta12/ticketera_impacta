@@ -122,8 +122,9 @@ export default async function OrderPage({ params }: { params: Promise<{ code: st
               <span>
                 {i.quantity} × {i.name}
                 {i.seat ? ` · ${i.seat.label}` : ""}
+                {i.extraConsumption > 0 && <span className="block text-xs text-[var(--warn)]">+ {money(i.extraConsumption)} de consumo extra{i.quantity > 1 ? " c/u" : ""}</span>}
               </span>
-              <span className="font-mono">{money(i.unitAmount * i.quantity)}</span>
+              <span className="font-mono">{money((i.unitAmount + i.extraConsumption) * i.quantity)}</span>
             </li>
           ))}
         </ul>

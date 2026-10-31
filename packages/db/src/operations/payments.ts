@@ -181,6 +181,8 @@ export type PaidOrder = {
     ticketTypeId: string;
     seatId: string | null;
     quantity: number;
+    /** Consumo extra comprado (centavos por unidad): se suma al consumo del QR. */
+    extraConsumption?: number;
     ticketType: { sessionId: string; kind: "ENTRY" | "TABLE"; peoplePerUnit: number; consumptionAmount: number | null; currency: string };
   }[];
 };
@@ -198,6 +200,7 @@ export async function issueTickets(tx: Tx, order: PaidOrder, tableNumbers?: Map<
   const rows: Prisma.TicketCreateManyInput[] = [];
   for (const item of order.items) {
     const type = item.ticketType;
+    const extra = item.extraConsumption ?? 0;
     const ticket = (creditId: string | null = null) => ({
       code: randomCode(),
       orderId: order.id,
@@ -217,7 +220,8 @@ export async function issueTickets(tx: Tx, order: PaidOrder, tableNumbers?: Map<
           ticketTypeId: item.ticketTypeId,
           tableNumber,
           code: randomCode(),
-          amount: type.consumptionAmount ?? 0,
+          amount: (type.consumptionAmount ?? 0) + extra,
+          extraAmount: extra,
           currency: type.currency,
         },
       });
@@ -232,7 +236,8 @@ export async function issueTickets(tx: Tx, order: PaidOrder, tableNumbers?: Map<
           ticketTypeId: item.ticketTypeId,
           seatId: item.seatId,
           code: randomCode(),
-          amount: type.consumptionAmount ?? 0,
+          amount: (type.consumptionAmount ?? 0) + extra,
+          extraAmount: extra,
           currency: type.currency,
         },
       });
@@ -249,7 +254,7 @@ export async function issueTickets(tx: Tx, order: PaidOrder, tableNumbers?: Map<
         const table = await credit(next++);
         for (let person = 0; person < peopleIn(type); person++) rows.push(ticket(table.id));
       }
-    } else if (type.consumptionAmount) {
+    } else if (type.consumptionAmount || extra > 0) {
       for (let unit = 0; unit < item.quantity; unit++) rows.push(ticket((await credit(null)).id));
     } else {
       for (let unit = 0; unit < item.quantity; unit++) rows.push(ticket());

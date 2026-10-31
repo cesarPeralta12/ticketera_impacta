@@ -36,6 +36,8 @@ export type GeneralType = {
   table: { people: number } | null;
   /** Consumo incluido en barra (texto ya formateado), por mesa o por entrada. */
   consumption: string | null;
+  /** Paquetes de consumo extra que se pueden sumar (centavos por unidad); vacío: no se vende extra. */
+  extraOptions: number[];
   /** Válida para entrar solo hasta esta hora ("01:00"). */
   entryUntil: string | null;
 };
@@ -46,6 +48,8 @@ export type SeatedType = PickerSection & {
   table?: { people: number } | null;
   /** Consumo incluido por mesa (texto ya formateado). */
   consumption?: string | null;
+  /** Paquetes de consumo extra que se pueden sumar (centavos por unidad); vacío: no se vende extra. */
+  extraOptions?: number[];
   /** "Incluye: Zona VIP" si abre zonas propias. */
   includes?: string | null;
 };
@@ -74,6 +78,8 @@ export function CheckoutForm({
   const [state, formAction] = useActionState<CheckoutState, FormData>(createOrderAction, {});
   const [pending, startTransition] = useTransition();
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  /** Consumo extra elegido por tipo de entrada (centavos por unidad; 0 = sin extra). */
+  const [extras, setExtras] = useState<Record<string, number>>({});
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [promoInput, setPromoInput] = useState("");
@@ -116,18 +122,28 @@ export function CheckoutForm({
   const tableQrs =
     general.reduce((sum, t) => sum + (t.table ? t.table.people * (quantities[t.id] ?? 0) : 0), 0) +
     seated.reduce((sum, t) => sum + (t.table ? t.table.people * (seats[t.ticketTypeId]?.length ?? 0) : 0), 0);
+  // El extra de un tipo solo cuenta si ese tipo está elegido y sigue ofreciéndolo.
+  const extraFor = (typeId: string, options: number[] | undefined, count: number) => (count > 0 && options?.includes(extras[typeId] ?? 0) ? (extras[typeId] ?? 0) : 0);
   const total =
-    general.reduce((sum, t) => sum + t.unitAmount * (quantities[t.id] ?? 0), 0) +
-    seated.reduce((sum, t) => sum + t.unitAmount * (seats[t.ticketTypeId]?.length ?? 0), 0);
+    general.reduce((sum, t) => sum + (t.unitAmount + extraFor(t.id, t.extraOptions, quantities[t.id] ?? 0)) * (quantities[t.id] ?? 0), 0) +
+    seated.reduce((sum, t) => sum + (t.unitAmount + extraFor(t.ticketTypeId, t.extraOptions, seats[t.ticketTypeId]?.length ?? 0)) * (seats[t.ticketTypeId]?.length ?? 0), 0);
+  const extraTotal =
+    general.reduce((sum, t) => sum + extraFor(t.id, t.extraOptions, quantities[t.id] ?? 0) * (quantities[t.id] ?? 0), 0) +
+    seated.reduce((sum, t) => sum + extraFor(t.ticketTypeId, t.extraOptions, seats[t.ticketTypeId]?.length ?? 0) * (seats[t.ticketTypeId]?.length ?? 0), 0);
   const currency = general[0]?.currency ?? seated[0]?.currency ?? "BOB";
 
   // Lo elegido, para calcular el descuento de un código (una línea por tipo de entrada).
   const chosen = useMemo(
     () => [
-      ...general.flatMap((t) => ((quantities[t.id] ?? 0) > 0 ? [{ ticketTypeId: t.id, quantity: quantities[t.id]! }] : [])),
-      ...seated.flatMap((t) => ((seats[t.ticketTypeId]?.length ?? 0) > 0 ? [{ ticketTypeId: t.ticketTypeId, quantity: seats[t.ticketTypeId]!.length }] : [])),
+      ...general.flatMap((t) => ((quantities[t.id] ?? 0) > 0 ? [{ ticketTypeId: t.id, quantity: quantities[t.id]!, extraConsumption: extraFor(t.id, t.extraOptions, quantities[t.id]!) }] : [])),
+      ...seated.flatMap((t) =>
+        (seats[t.ticketTypeId]?.length ?? 0) > 0
+          ? [{ ticketTypeId: t.ticketTypeId, quantity: seats[t.ticketTypeId]!.length, extraConsumption: extraFor(t.ticketTypeId, t.extraOptions, seats[t.ticketTypeId]!.length) }]
+          : [],
+      ),
     ],
-    [general, seated, quantities, seats],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- extraFor solo depende de extras y de lo elegido
+    [general, seated, quantities, seats, extras],
   );
   const chosenKey = JSON.stringify(chosen);
 
@@ -226,6 +242,8 @@ export function CheckoutForm({
       {Object.entries(seats).map(([type, ids]) =>
         ids.length ? <input key={type} type="hidden" name={`seats:${type}`} value={ids.join(",")} /> : null,
       )}
+      {/* Consumo extra elegido (el servidor lo valida contra los paquetes de cada tipo). */}
+      {chosen.map((c) => (c.extraConsumption > 0 ? <input key={`extra:${c.ticketTypeId}`} type="hidden" name={`extra:${c.ticketTypeId}`} value={c.extraConsumption} /> : null))}
 
       {/* El mapa: para elegir butaca o zona, o al menos para ver por qué puerta se entra. */}
       {(seated.length > 0 || zones.length > 0 || items.some((i) => i.kind === "ENTRANCE")) && (
@@ -277,6 +295,15 @@ export function CheckoutForm({
                 <span className="text-[var(--ink)]">{formatMoney(t.unitAmount, t.currency)}</span>
                 {(seats[t.ticketTypeId]?.length ?? 0) > 0 && (
                   <span className="text-[var(--accent-text)]">× {seats[t.ticketTypeId]!.length}</span>
+                )}
+                {(seats[t.ticketTypeId]?.length ?? 0) > 0 && (t.extraOptions?.length ?? 0) > 0 && (
+                  <ExtraPicker
+                    options={t.extraOptions!}
+                    value={extras[t.ticketTypeId] ?? 0}
+                    currency={t.currency}
+                    onChange={(v) => setExtras((e) => ({ ...e, [t.ticketTypeId]: v }))}
+                    label={t.table ? "Consumo extra para la mesa" : "Consumo extra"}
+                  />
                 )}
               </li>
             ))}
@@ -358,6 +385,15 @@ export function CheckoutForm({
                     {formatMoney(type.unitAmount, type.currency)}
                   </p>
                   {type.discountLabel && <p className="text-xs font-semibold text-[var(--accent-2)]">Preventa: {type.discountLabel}</p>}
+                  {type.extraOptions.length > 0 && (quantities[type.id] ?? 0) > 0 && (
+                    <ExtraPicker
+                      options={type.extraOptions}
+                      value={extras[type.id] ?? 0}
+                      currency={type.currency}
+                      onChange={(v) => setExtras((e) => ({ ...e, [type.id]: v }))}
+                      label={type.table ? "Consumo extra para la mesa" : "Consumo extra"}
+                    />
+                  )}
                   {!type.opensAt && type.left > 0 && (
                     <p className={`text-xs ${type.left <= (type.table ? 3 : 20) ? "font-bold text-[var(--accent-2)]" : "text-[var(--ink-dim)]"}`}>
                       {type.table
@@ -486,6 +522,7 @@ export function CheckoutForm({
               Descuento {promo.code}: −{formatMoney(promo.discountAmount, currency)}
             </p>
           )}
+          {extraTotal > 0 && <p className="text-xs text-[#F5B700]">Incluye {formatMoney(extraTotal, currency)} de consumo extra</p>}
           <p className="font-display text-2xl tabular-nums">{formatMoney(promo ? Math.max(0, total - promo.discountAmount) : total, currency)}</p>
         </div>
         <button type="submit" disabled={pending || totalTickets === 0} className="btn-accent">
@@ -496,5 +533,28 @@ export function CheckoutForm({
         Al continuar, tus entradas quedan reservadas por {RESERVATION_MINUTES} minutos mientras pagas.
       </p>
     </form>
+  );
+}
+
+/** Paquetes de consumo extra: «Sin extra» o «+ Bs 100»… El QR de consumo de la mesa lleva el total. */
+function ExtraPicker({ options, value, currency, onChange, label }: { options: number[]; value: number; currency: string; onChange: (value: number) => void; label: string }) {
+  return (
+    <div className="mt-2 w-full basis-full">
+      <p className="text-xs font-semibold text-[#F5B700]">{label}</p>
+      <div role="radiogroup" aria-label={label} className="mt-1 flex flex-wrap gap-2">
+        {[0, ...options].map((option) => (
+          <button
+            key={option}
+            type="button"
+            role="radio"
+            aria-checked={value === option}
+            onClick={() => onChange(option)}
+            className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${value === option ? "border-[#F5B700] bg-[#F5B700] text-[#192438]" : "border-[var(--border-light)] text-[var(--ink-muted)] hover:border-[#F5B700]"}`}
+          >
+            {option === 0 ? "Sin extra" : `+ ${formatMoney(option, currency)}`}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

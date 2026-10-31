@@ -1,5 +1,6 @@
 export * from "./accounts";
 export * from "./barcode";
+export * from "./brand";
 export * from "./categories";
 export * from "./checkout";
 export * from "./club-map";
@@ -30,6 +31,7 @@ export * from "./seat-picking";
 export * from "./seated-tables";
 export * from "./session-times";
 export * from "./status";
+export * from "./ticket-image";
 export * from "./ticket-models";
 export * from "./transfers";
 export * from "./venue-templates";

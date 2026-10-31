@@ -82,6 +82,10 @@ export function TicketTypeForm({
             <input name="consumption" inputMode="decimal" placeholder="ej. 1000" className="field w-32" />
           </label>
           <label className="label">
+            Consumo extra a la venta (Bs)
+            <input name="extra" inputMode="decimal" placeholder="ej. 100, 200, 500" className="field w-44" />
+          </label>
+          <label className="label">
             Válida para entrar hasta
             <input name="entryUntil" type="time" className="field w-32" />
           </label>
@@ -89,6 +93,10 @@ export function TicketTypeForm({
             <li>
               <strong>Mesa o lounge</strong>: marca la casilla, personas, consumo y el precio de la mesa. Con los
               lounges del plano, el comprador elige el suyo; en una zona sin mapa, pon en Cupo cuántas mesas hay.
+            </li>
+            <li>
+              <strong>Consumo extra</strong>: paquetes que el comprador puede sumar (ej. 100, 200, 500). El QR de consumo
+              lleva el total. Déjalo vacío si no vendes extra.
             </li>
             <li>
               <strong>Entrada + trago</strong>: solo el consumo (ej. 25). <strong>Free hasta la 01:00</strong>: precio

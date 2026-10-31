@@ -39,6 +39,8 @@ export type Voucher = {
   buyer: string;
   orderCode: string;
   amount: number;
+  /** De ese total, lo que se compró como consumo extra (el resto es lo incluido en el tipo de entrada). */
+  extra: number;
   currency: string;
   /** La compra se anuló: el vale no vale. */
   cancelled: boolean;
@@ -57,6 +59,7 @@ function toVoucher(row: VoucherRow): Voucher {
     buyer: row.order.buyerName,
     orderCode: row.order.code,
     amount: row.amount,
+    extra: row.extraAmount,
     currency: row.currency,
     cancelled: row.tickets.length > 0 && row.tickets.every((t) => t.status === "CANCELLED"),
     redeemedAt: row.redeemedAt,
@@ -65,7 +68,46 @@ function toVoucher(row: VoucherRow): Voucher {
   };
 }
 
-export type VoucherLookup = { ok: true; voucher: Voucher } | { ok: false; reason: string; code: "NOT_FOUND" | "WRONG_NIGHT" | "NO_CONSUMPTION" };
+/** Un QR de consumo de un cliente, con la función a la que pertenece (para «Mis entradas»). */
+export type CustomerVoucher = Voucher & {
+  id: string;
+  sessionId: string;
+  eventTitle: string;
+  startsAt: Date;
+  endsAt: Date | null;
+  venueName: string;
+  timezone: string;
+  /** Mesa o lounge: el consumo se comparte entre sus personas. */
+  shared: boolean;
+};
+
+/**
+ * Los QR de consumo de las compras pagadas de este cliente (de la cuenta que compró). Una mesa tiene uno solo para
+ * todas sus personas, aunque sus entradas se hayan transferido a otras cuentas: el consumo sigue siendo de quien compró.
+ */
+export async function listCustomerVouchers(customerId: string): Promise<CustomerVoucher[]> {
+  const rows = await prisma.consumptionCredit.findMany({
+    where: { amount: { gt: 0 }, order: { customerId, status: "PAID" } },
+    include: {
+      ...voucherInclude,
+      session: { select: { startsAt: true, endsAt: true, event: { select: { title: true } }, venue: { select: { name: true, timezone: true } } } },
+    },
+    orderBy: [{ session: { startsAt: "asc" } }, { tableNumber: "asc" }, { createdAt: "asc" }],
+  });
+  return rows.map((row) => ({
+    ...toVoucher(row),
+    id: row.id,
+    sessionId: row.sessionId,
+    eventTitle: row.session.event.title,
+    startsAt: row.session.startsAt,
+    endsAt: row.session.endsAt,
+    venueName: row.session.venue.name,
+    timezone: row.session.venue.timezone,
+    shared: row.ticketType.kind === "TABLE",
+  }));
+}
+
+export type VoucherLookup ={ ok: true; voucher: Voucher } | { ok: false; reason: string; code: "NOT_FOUND" | "WRONG_NIGHT" | "NO_CONSUMPTION" };
 
 /**
  * Datos del vale de consumo de una noche. Un vale ya leído sí se devuelve (con quién y cuándo): la barra muestra
@@ -183,8 +225,8 @@ export async function searchNightVouchers(input: { sessionId: string; q?: string
 /** Totales de consumo de una noche para la Barra: incluido, consumido y lo último cobrado. */
 export async function nightConsumption(sessionId: string) {
   const [totals, byType, recent] = await Promise.all([
-    prisma.consumptionCredit.aggregate({ where: { sessionId }, _sum: { amount: true, spent: true }, _count: true }),
-    prisma.consumptionCredit.groupBy({ by: ["ticketTypeId"], where: { sessionId }, _count: true, _sum: { amount: true, spent: true } }),
+    prisma.consumptionCredit.aggregate({ where: { sessionId }, _sum: { amount: true, extraAmount: true, spent: true }, _count: true }),
+    prisma.consumptionCredit.groupBy({ by: ["ticketTypeId"], where: { sessionId }, _count: true, _sum: { amount: true, extraAmount: true, spent: true } }),
     prisma.consumptionRedemption.findMany({
       where: { credit: { sessionId } },
       orderBy: { createdAt: "desc" },
@@ -200,12 +242,15 @@ export async function nightConsumption(sessionId: string) {
   return {
     credits: totals._count,
     amount: totals._sum.amount ?? 0,
+    /** De ese total, lo que se vendió como consumo extra. */
+    extra: totals._sum.extraAmount ?? 0,
     spent: totals._sum.spent ?? 0,
     byType: byType.map((t) => ({
       name: names.get(t.ticketTypeId)?.name ?? "?",
       kind: names.get(t.ticketTypeId)?.kind ?? "ENTRY",
       count: t._count,
       amount: t._sum.amount ?? 0,
+      extra: t._sum.extraAmount ?? 0,
       spent: t._sum.spent ?? 0,
     })),
     recent,

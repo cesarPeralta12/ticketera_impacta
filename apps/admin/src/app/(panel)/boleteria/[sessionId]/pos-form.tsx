@@ -17,6 +17,8 @@ export type PosGeneralType = {
   discountLabel: string | null;
   currency: string;
   max: number;
+  /** Paquetes de consumo extra que se pueden sumar (centavos por unidad); vacío o ausente: no se vende extra. */
+  extraOptions?: number[];
 };
 export type PosSeatedType = PickerSection & { maxPerOrder: number };
 
@@ -54,6 +56,8 @@ export function PosForm({
   const [state, formAction] = useActionState<PosState, FormData>(promoter ? promoterSellAction : sellAction, {});
   const [pending, startTransition] = useTransition();
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  /** Consumo extra elegido por tipo (centavos por unidad; 0 = sin extra). */
+  const [extras, setExtras] = useState<Record<string, number>>({});
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -72,8 +76,9 @@ export function PosForm({
 
   const seatCount = Object.values(seats).reduce((sum, ids) => sum + ids.length, 0);
   const totalTickets = seatCount + Object.values(quantities).reduce((a, b) => a + b, 0);
+  const extraFor = (t: PosGeneralType) => ((quantities[t.id] ?? 0) > 0 && t.extraOptions?.includes(extras[t.id] ?? 0) ? (extras[t.id] ?? 0) : 0);
   const total =
-    general.reduce((sum, t) => sum + t.unitAmount * (quantities[t.id] ?? 0), 0) +
+    general.reduce((sum, t) => sum + (t.unitAmount + extraFor(t)) * (quantities[t.id] ?? 0), 0) +
     seated.reduce((sum, t) => sum + t.unitAmount * (seats[t.ticketTypeId]?.length ?? 0), 0);
   const currency = general[0]?.currency ?? seated[0]?.currency ?? "BOB";
   const selected = new Set(Object.values(seats).flat());
@@ -119,6 +124,7 @@ export function PosForm({
       {Object.entries(seats).map(([type, ids]) =>
         ids.length ? <input key={type} type="hidden" name={`seats:${type}`} value={ids.join(",")} /> : null,
       )}
+      {general.map((t) => (extraFor(t) > 0 ? <input key={`extra:${t.id}`} type="hidden" name={`extra:${t.id}`} value={extraFor(t)} /> : null))}
 
       {general.length > 0 && (
         <section className="card">
@@ -136,6 +142,19 @@ export function PosForm({
                     {formatMoney(type.unitAmount, type.currency)}
                   </p>
                   {type.discountLabel && <p className="text-xs font-semibold text-[var(--warn)]">Preventa: {type.discountLabel}</p>}
+                  {(type.extraOptions?.length ?? 0) > 0 && (quantities[type.id] ?? 0) > 0 && (
+                    <label className="mt-1 flex items-center gap-2 text-xs text-[var(--ink-muted)]">
+                      Consumo extra
+                      <select value={extras[type.id] ?? 0} onChange={(e) => setExtras((x) => ({ ...x, [type.id]: Number(e.target.value) }))} className="field w-36 text-xs">
+                        <option value={0}>Sin extra</option>
+                        {type.extraOptions!.map((o) => (
+                          <option key={o} value={o}>
+                            + {formatMoney(o, type.currency)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                 </div>
                 {type.max === 0 ? (
                   <span className="badge bg-[var(--surface-2)] text-[var(--ink-dim)]">Agotado</span>

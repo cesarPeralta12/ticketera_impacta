@@ -47,14 +47,14 @@ model Organization {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
-  members    Membership[]
-  promoCodes PromoCode[]
-  payouts    CommissionPayout[]
-  ticketArts TicketArt[]
+  members     Membership[]
+  promoCodes  PromoCode[]
+  payouts     CommissionPayout[]
+  ticketArts  TicketArt[]
   eventImages EventImage[]
-  venues     Venue[]
-  events     Event[]
-  clients    Client[]
+  venues      Venue[]
+  events      Event[]
+  clients     Client[]
 }
 
 /// Cliente u organizador de IMPACTA: dueño de uno o varios eventos. Sus usuarios (rol CLIENT)
@@ -568,48 +568,51 @@ model EventSession {
 /// no expiradas. La reserva debe ser atómica (UPDATE condicional o lock de fila):
 /// se diseña en Sprint 0 y se implementa en Sprint 2, antes de vender nada.
 model TicketType {
-  id                String         @id @default(cuid())
-  sessionId         String
+  id                      String         @id @default(cuid())
+  sessionId               String
   /// Sección física asociada. Obligatoria si la sección es RESERVED.
-  sectionId         String?
-  name              String
-  description       String?
-  unitAmount        Int
-  currency          String         @db.Char(3)
-  capacity          Int
-  maxPerOrder       Int            @default(10)
-  salesStartAt      DateTime?
-  salesEndAt        DateTime?
+  sectionId               String?
+  name                    String
+  description             String?
+  unitAmount              Int
+  currency                String         @db.Char(3)
+  capacity                Int
+  maxPerOrder             Int            @default(10)
+  salesStartAt            DateTime?
+  salesEndAt              DateTime?
   /// Preventa: se muestra como tal y solo vende hasta salesEndAt.
-  presale           Boolean        @default(false)
+  presale                 Boolean        @default(false)
   /// Descuento de preventa sobre el mismo tipo de entrada: durante la ventana se cobra
   /// unitAmount menos este porcentaje; fuera de ella, el precio normal.
-  discountPercent   Int?
-  discountStartsAt  DateTime?
-  discountEndsAt    DateTime?
-  sortOrder         Int            @default(0)
+  discountPercent         Int?
+  discountStartsAt        DateTime?
+  discountEndsAt          DateTime?
+  sortOrder               Int            @default(0)
   /// Cómo se lee esta entrada en puerta: solo QR, solo código de barras, NFC o varias.
-  accessMethods     AccessMethod[] @default([QR])
+  accessMethods           AccessMethod[] @default([QR])
   /// DYNAMIC: solo QR que cambia cada 30 s, solo venta online. No se puede cambiar una vez que hay ventas.
-  qrMode            QrMode         @default(STATIC)
+  qrMode                  QrMode         @default(STATIC)
   /// ENTRY: una persona. TABLE: mesa o lounge para varias personas (cada una recibe su QR); el cupo se cuenta en mesas.
-  kind              TicketKind     @default(ENTRY)
+  kind                    TicketKind     @default(ENTRY)
   /// Personas que entran con cada unidad: 1 en una entrada; en una mesa, las que incluye.
-  peoplePerUnit     Int            @default(1)
+  peoplePerUnit           Int            @default(1)
   /// Consumo incluido en barra por unidad (centavos): el "consumo mínimo" de una mesa o el trago de una entrada.
-  consumptionAmount Int?
+  consumptionAmount       Int?
+  /// Consumo extra que el comprador puede agregar al comprar (centavos por unidad): cada monto es un paquete a elegir
+  /// (por ejemplo 10000, 20000, 50000). Vacío: este tipo no vende extra. Solo para mesas o entradas con consumo.
+  extraConsumptionOptions Int[]          @default([])
   /// Válida para entrar solo hasta esta hora (ej. "free hasta la 01:00"): después se rechaza en puerta.
-  entryUntil        DateTime?
+  entryUntil              DateTime?
   /// Cuántas veces puede entrar: 1 = sin reingreso (lo de siempre); 0 = sin límite.
-  maxEntries        Int            @default(1)
+  maxEntries              Int            @default(1)
   /// Fase de venta (Fase Hot, Fase 1…): su lugar en las fases de su sección (1, 2, 3…). Vacío: precio común.
   /// En una sección se vende una sola fase a la vez; la siguiente toma el lugar al agotarse la anterior o al llegar
   /// su fecha (lo primero que pase).
-  phaseOrder        Int?
+  phaseOrder              Int?
   /// Desde cuándo vende esta fase aunque la anterior no se haya agotado. Vacío: recién cuando se agota la anterior.
-  phaseStartsAt     DateTime?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  phaseStartsAt           DateTime?
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
 
   session      EventSession        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   section      Section?            @relation(fields: [sectionId], references: [id])
@@ -709,15 +712,17 @@ model Order {
 }
 
 model OrderItem {
-  id           String  @id @default(cuid())
-  orderId      String
-  ticketTypeId String
-  seatId       String?
-  quantity     Int
+  id               String  @id @default(cuid())
+  orderId          String
+  ticketTypeId     String
+  seatId           String?
+  quantity         Int
   /// Precio congelado al crear la orden: un cambio de precio posterior no la afecta.
-  unitAmount   Int
+  unitAmount       Int
   /// Nombre del tipo de entrada congelado al crear la orden.
-  name         String
+  name             String
+  /// Consumo extra elegido al comprar (centavos por unidad). Se suma al precio de la línea y al consumo de su QR.
+  extraConsumption Int     @default(0)
 
   order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
   ticketType TicketType @relation(fields: [ticketTypeId], references: [id])
@@ -1128,7 +1133,7 @@ enum TicketKind {
 /// Saldo de consumo en barra de una mesa (compartido por sus personas) o de una entrada con consumo
 /// incluido. Se descuenta en la Barra con cualquiera de los QR de la mesa.
 model ConsumptionCredit {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   sessionId    String
   orderId      String
   ticketTypeId String
@@ -1137,15 +1142,17 @@ model ConsumptionCredit {
   tableNumber  Int?
   /// Mesa elegida en el mapa: la "butaca" de una sección numerada que es una mesa.
   seatId       String?
-  /// Consumo incluido (centavos) y lo ya consumido.
+  /// Consumo total del QR (centavos): el incluido en el tipo de entrada más el extra que se compró.
   amount       Int
-  spent        Int      @default(0)
-  currency     String   @db.Char(3)
+  /// De ese total, lo que se compró como consumo extra (para mostrar el desglose y los reportes).
+  extraAmount  Int       @default(0)
+  spent        Int       @default(0)
+  currency     String    @db.Char(3)
   /// Código del QR de consumo (vale de un solo uso): se lee una vez en la barra y queda marcado.
-  code         String   @unique
+  code         String    @unique
   /// Cuándo se leyó en la barra (con la hora del teléfono si fue sin conexión). Vacío: todavía no se usó.
   redeemedAt   DateTime?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
   session     EventSession            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   order       Order                   @relation(fields: [orderId], references: [id])

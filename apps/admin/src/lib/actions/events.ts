@@ -12,6 +12,7 @@ import {
   isTablesLayout,
   isTimeOfDay,
   normalizeImageUrl,
+  parseExtraOptions,
   parseProgram,
   parseSalesWindow,
   parseSessionTimes,
@@ -428,6 +429,8 @@ const ticketTypeSchema = z.object({
   peoplePerUnit: intField(2, 50, "Las personas por mesa").optional(),
   /** Consumo incluido en barra (Bs), por mesa o por entrada. */
   consumption: moneyField.optional(),
+  /** Consumo extra que se puede comprar (Bs, paquetes separados por coma: «100, 200, 500»). */
+  extra: z.string().max(120).optional(),
   /** Válida para entrar hasta esta hora (HH:MM, hora del recinto). */
   entryUntil: z.string().refine(isTimeOfDay, "Hora inválida (ej. 01:00).").optional(),
 });
@@ -525,6 +528,11 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
   if (!table && isTablesLayout(section.layout)) {
     return { fieldErrors: { table: `"${section.name}" son lounges: marca "Es una mesa o lounge" y cuántas personas entran en cada uno.` } };
   }
+  const extra = parseExtraOptions(data.extra ?? "");
+  if (!extra.ok) return { fieldErrors: { extra: extra.error } };
+  if (extra.options.length > 0 && !table && !data.consumption) {
+    return { fieldErrors: { extra: "El consumo extra es para mesas o entradas con consumo incluido." } };
+  }
   const entryUntil = data.entryUntil ? entryDeadline(session.startsAt, data.entryUntil, session.venue.timezone) : null;
   const qrMode = data.qrDynamic ? ("DYNAMIC" as const) : ("STATIC" as const);
   if (qrMode === "DYNAMIC" && session.event.mode !== "TICKETING") {
@@ -594,6 +602,7 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
         kind: table ? ("TABLE" as const) : ("ENTRY" as const),
         peoplePerUnit: peoplePerUnit ?? 1,
         consumptionAmount: data.consumption || null,
+        extraConsumptionOptions: extra.options,
         entryUntil,
         // El QR dinámico solo se lee con QR: el código de barras y el NFC son fijos.
         accessMethods: qrMode === "DYNAMIC" ? ["QR" as const] : [...readAccessMethods(formData)],
@@ -611,11 +620,34 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
     presale,
     ...(table ? { table: true, peoplePerUnit } : {}),
     ...(data.consumption ? { consumption: data.consumption } : {}),
+    ...(extra.options.length > 0 ? { extraConsumptionOptions: extra.options } : {}),
     ...(entryUntil ? { entryUntil: entryUntil.toISOString() } : {}),
     shifted: adjusted.filter((a) => a.changed).map((a) => a.type.id),
   });
   revalidatePath(`/eventos/${session.eventId}/funciones/${session.id}`);
   revalidatePath(`/eventos/${session.eventId}/asistente/entradas`);
+  return { ok: true };
+}
+
+/**
+ * Paquetes de consumo extra de una mesa o entrada con consumo («100, 200, 500»): el comprador elige uno al comprar y el
+ * QR de consumo lleva el total. Vacío = no se vende extra. No cambia lo ya vendido.
+ */
+export async function updateExtraConsumptionAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const type = await prisma.ticketType.findFirst({
+    where: { id: String(formData.get("ticketTypeId")), session: { event: { organizationId: staff.organization.id } } },
+    include: { session: true },
+  });
+  if (!type) return { error: "Tipo de entrada no encontrado." };
+  const extra = parseExtraOptions(String(formData.get("extra") ?? ""));
+  if (!extra.ok) return { fieldErrors: { extra: extra.error } };
+  if (extra.options.length > 0 && type.kind !== "TABLE" && !(type.consumptionAmount ?? 0)) {
+    return { fieldErrors: { extra: "El consumo extra es para mesas o entradas con consumo incluido." } };
+  }
+  await prisma.ticketType.update({ where: { id: type.id }, data: { extraConsumptionOptions: extra.options } });
+  await audit(staff.id, "ticket_type.extra_consumption", "TicketType", type.id, { options: extra.options });
+  revalidatePath(`/eventos/${type.session.eventId}/funciones/${type.sessionId}`);
   return { ok: true };
 }
 

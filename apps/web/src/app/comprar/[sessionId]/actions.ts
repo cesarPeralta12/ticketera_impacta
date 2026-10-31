@@ -38,14 +38,20 @@ export async function createOrderAction(_prev: CheckoutState, formData: FormData
     return { error: "Hiciste muchas reservas seguidas. Espera unos minutos o paga las que ya tienes." };
   }
 
+  // Consumo extra elegido por tipo de entrada (campo "extra:<tipo>", centavos por unidad). El servidor lo valida contra los
+  // paquetes del tipo: aquí solo se lee.
+  const extraOf = (typeId: string) => {
+    const n = Number(formData.get(`extra:${typeId}`) ?? 0);
+    return Number.isInteger(n) && n > 0 ? { extraConsumption: n } : {};
+  };
   const items = [...formData.entries()].flatMap(([key, value]) => {
     if (typeof value !== "string") return [];
     if (key.startsWith("qty:") && Number(value) > 0) {
-      return [{ ticketTypeId: key.slice(4), quantity: Number(value) }];
+      return [{ ticketTypeId: key.slice(4), quantity: Number(value), ...extraOf(key.slice(4)) }];
     }
     if (key.startsWith("seats:") && value) {
       const seatIds = value.split(",").filter(Boolean);
-      return [{ ticketTypeId: key.slice(6), quantity: seatIds.length, seatIds }];
+      return [{ ticketTypeId: key.slice(6), quantity: seatIds.length, seatIds, ...extraOf(key.slice(6)) }];
     }
     return [];
   });
@@ -95,7 +101,7 @@ export type PromoPreview =
 /** Vista previa del descuento de un código con lo que la persona eligió (no reserva nada). */
 export async function previewPromoAction(
   sessionId: string,
-  items: { ticketTypeId: string; quantity: number }[],
+  items: { ticketTypeId: string; quantity: number; extraConsumption?: number }[],
   code: string,
 ): Promise<PromoPreview> {
   const session = await auth();

@@ -309,6 +309,9 @@ export async function listCustomerTickets(customerId: string, now = new Date()) 
   });
   return tickets.map((t) => ({
     id: t.id,
+    sessionId: t.sessionId,
+    creditId: t.creditId,
+    endsAt: t.session.endsAt,
     status: t.status,
     holderName: t.holderName,
     receivedByTransfer: t.transferCount > 0,

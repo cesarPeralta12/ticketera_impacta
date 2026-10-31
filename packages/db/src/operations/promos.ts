@@ -88,7 +88,7 @@ export async function resolvePromo(
  */
 export async function previewPromo(input: {
   sessionId: string;
-  items: { ticketTypeId: string; quantity: number }[];
+  items: { ticketTypeId: string; quantity: number; extraConsumption?: number }[];
   code: string;
   customerId?: string | null;
   now?: Date;
@@ -115,7 +115,9 @@ export async function previewPromo(input: {
     lines,
     now,
   });
-  const totals = orderTotals(lines, discount);
+  // El total de la vista previa incluye el consumo extra elegido (el descuento no lo toca).
+  const extras = new Map(input.items.map((i) => [i.ticketTypeId, byId.get(i.ticketTypeId)?.extraConsumptionOptions.includes(i.extraConsumption ?? 0) ? (i.extraConsumption ?? 0) : 0]));
+  const totals = orderTotals(lines.map((l) => ({ ...l, extraConsumption: extras.get(l.ticketTypeId) ?? 0 })), discount);
   return { code: promo.code, description: promo.description, discountType: promo.discountType, discountValue: promo.discountValue, ...totals };
 }
 
