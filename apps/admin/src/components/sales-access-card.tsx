@@ -9,7 +9,18 @@ import { pickerEvents } from "@/lib/picker-events";
  * "Qué puede vender" un cajero: todo lo de la organización o solo lo asignado (eventos completos o funciones sueltas,
  * con vigencia), y con qué medios cobra. Lo controla el servidor en la boletería y en la barra.
  */
-export async function SalesAccessCard({ userId, organizationId, bar = false }: { userId: string; organizationId: string; bar?: boolean }) {
+export async function SalesAccessCard({
+  userId,
+  organizationId,
+  organizationName,
+  bar = false,
+}: {
+  userId: string;
+  organizationId: string;
+  /** A quién pertenece la cuenta: solo se le asigna lo de esa organización. */
+  organizationName?: string;
+  bar?: boolean;
+}) {
   const now = new Date();
   const [membership, assignments, events] = await Promise.all([
     prisma.membership.findFirstOrThrow({ where: { userId, organizationId }, select: { salesScope: true, posMethods: true } }),
@@ -103,7 +114,16 @@ export async function SalesAccessCard({ userId, organizationId, bar = false }: {
         )}
 
         {events.length === 0 ? (
-          <p className="text-sm text-[var(--ink-muted)]">No hay eventos con funciones por delante para asignar.</p>
+          <p className="text-sm text-[var(--ink-muted)]">
+            No hay {bar ? "noches" : "eventos con funciones"} por delante para asignar
+            {organizationName ? (
+              <>
+                {" "}
+                en <strong>{organizationName}</strong>, que es a quien pertenece esta cuenta
+              </>
+            ) : null}
+            .
+          </p>
         ) : (
           <ActionForm action={assignCashierAction} className="flex flex-wrap items-end gap-3 rounded-lg border border-dashed border-[var(--border)] p-4">
             <input type="hidden" name="userId" value={userId} />

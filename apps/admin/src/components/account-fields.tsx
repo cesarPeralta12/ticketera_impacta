@@ -17,6 +17,9 @@ const LABEL = {
 
 type Role = keyof typeof LABEL;
 
+/** Personal de operación: trabaja solo los eventos de la organización a la que pertenece su cuenta. */
+const OPERATION_ROLES: Role[] = ["OPERATOR", "CASHIER", "BAR", "PROMOTER"];
+
 /**
  * Organización y rol de una cuenta nueva. iPass elige a qué organizador (o a iPass) pertenece; los roles que se pueden
  * dar dependen de ahí: en un organizador hay administrador, personal y promotores; en iPass, además, dueños y clientes.
@@ -77,6 +80,12 @@ export function AccountFields({
           ))}
         </select>
       </label>
+      {chooseOrg && org.platform && OPERATION_ROLES.includes(effectiveRole) && (
+        <p role="note" className="basis-full rounded-md bg-[var(--warn-soft)] px-3 py-2 text-sm text-[var(--warn)]">
+          Esta cuenta solo verá los eventos de <strong>iPass</strong>. Para un boliche u organizador (por ejemplo, para la
+          puerta o la barra de Forum Club), elige ese boliche en <strong>«Para»</strong>.
+        </p>
+      )}
       {org.platform && effectiveRole === "CLIENT" && (
         <label className="label">
           Cliente

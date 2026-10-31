@@ -88,6 +88,14 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
         </p>
       </div>
 
+      {member.organization.isPlatform && ["OPERATOR", "CASHIER", "BAR", "PROMOTER"].includes(member.role) && (
+        <p role="note" className="rounded-md bg-[var(--surface-2)] px-4 py-3 text-sm text-[var(--ink-muted)]">
+          Esta cuenta es <strong>de iPass</strong>: solo se le pueden asignar eventos de iPass. Para que trabaje en un boliche u
+          organizador (Forum Club, Lounge 360…), créale una cuenta <strong>para ese boliche</strong>: Usuarios → Crear cuenta →
+          «Para».
+        </p>
+      )}
+
       {isOperator ? (
         <section className="card p-6">
           <h2 className="eyebrow mb-1">Funciones asignadas{assignments.length > 0 ? ` (${assignments.length})` : ""}</h2>
@@ -124,8 +132,9 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
 
           {sessions.length === 0 ? (
             <p className="text-sm text-[var(--ink-muted)]">
-              No hay funciones próximas en <strong>{member.organization.isPlatform ? "iPass" : member.organization.name}</strong> para asignar. La cuenta de un portero solo ve las
-              funciones de su propia organización. Hace falta que el evento (o la noche) tenga al menos una función con fecha futura.
+              No hay funciones próximas para asignar en <strong>{member.organization.isPlatform ? "iPass" : member.organization.name}</strong>, que es a quien
+              pertenece esta cuenta: un portero solo ve las funciones de su propia organización. Hace falta que{" "}
+              {member.organization.isPlatform ? "un evento de iPass" : "un evento o una noche de ese organizador"} tenga una función con fecha futura.
             </p>
           ) : (
             <ActionForm action={assignDoorAction} successMessage="Asignado." className="space-y-3">
@@ -135,7 +144,7 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
           )}
         </section>
       ) : member.role === "CASHIER" || member.role === "BAR" ? (
-        <SalesAccessCard userId={userId} organizationId={organizationId} bar={member.role === "BAR"} />
+        <SalesAccessCard userId={userId} organizationId={organizationId} organizationName={member.organization.isPlatform ? "iPass" : member.organization.name} bar={member.role === "BAR"} />
       ) : (
         <p className="card p-5 text-sm text-[var(--ink-muted)]">
           Solo las cuentas de <strong>{ROLE_LABEL.OPERATOR}</strong> usan asignaciones. Los dueños y administradores ven
