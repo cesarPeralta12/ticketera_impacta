@@ -65,7 +65,11 @@ export default async function OrganizerPage({ params }: Props) {
       </div>
 
       <section className="card flex flex-wrap items-center gap-3 p-5">
-        <EnterButton organizationId={organizer.id} next="/" label="Entrar a su panel" primary />
+        {/* Entra al organizador y abre el asistente ya dentro de él: lo creado queda a su nombre (iPass no tiene tope). */}
+        {active && (
+          <EnterButton organizationId={organizer.id} next="/eventos/nuevo" label={organizer.kind === "NIGHTLIFE" ? "+ Crear noche" : "+ Crear evento"} primary />
+        )}
+        <EnterButton organizationId={organizer.id} next="/" label="Entrar a su panel" primary={!active} />
         <EnterButton organizationId={organizer.id} next="/usuarios" label="Gestionar sus cuentas" />
         <ActionForm
           action={setOrganizerStatusAction}
