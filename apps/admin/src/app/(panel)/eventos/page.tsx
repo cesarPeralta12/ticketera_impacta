@@ -9,6 +9,7 @@ import { EVENT_STATUS } from "@/lib/labels";
 import { enterOrganizationAction } from "@/lib/actions/platform";
 import { ROLES, isGlobalView, isNightlife, requireStaff } from "@/lib/session";
 import { Help } from "@/components/help";
+import { CreateEventCta } from "@/components/create-event-cta";
 
 export const metadata: Metadata = { title: "Eventos" };
 
@@ -82,28 +83,33 @@ export default async function EventsPage({ searchParams }: Props) {
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <p className="eyebrow">{ownTotal} evento(s)</p>
+          <p className="eyebrow">
+            {ownTotal} {isNightlife(staff) ? "noche(s)" : "evento(s)"}
+          </p>
           <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
             {isGlobalView(staff) ? "Eventos de iPass" : isNightlife(staff) ? "Noches" : "Eventos"}
-            <Help title="Cómo se arma un evento">
-              «+ Nuevo evento» abre el asistente: datos, lugar y fecha, entradas (con modelos General, VIP, Mesa, Free y
-              Preventa), revisar con la vista previa del comprador y publicar. Para un evento chico, «+ Evento pequeño» es el acceso
-              rápido: una sola pantalla, y se vende en la web («Otros eventos») o con entradas impresas.
-            </Help>
+            {isNightlife(staff) ? (
+              <Help title="Cómo se arma una noche">
+                «+ Crear noche» abre el asistente: nombre, el día y la hora, las entradas y mesas (con modelos General, VIP, Mesa y
+                Free), revisar y publicar. Una vez armada, se repite cada semana con «Repetir noches» o «Nueva noche».
+              </Help>
+            ) : (
+              <Help title="Cómo se arma un evento">
+                «+ Nuevo evento» abre el asistente: datos, lugar y fecha, entradas (con modelos General, VIP, Mesa, Free y
+                Preventa), revisar con la vista previa del comprador y publicar. Para un evento chico, «+ Evento pequeño» es el acceso
+                rápido: una sola pantalla, y se vende en la web («Otros eventos») o con entradas impresas.
+              </Help>
+            )}
           </h1>
         </div>
-        {!staff.readOnly && (
-          <div className="flex flex-wrap justify-end gap-2">
-            {!isNightlife(staff) && (
-              <Link href="/eventos/rapido" data-tour="evento-pequeno" className="btn" title="Acceso rápido para un evento chico: una sola pantalla, en la web o con entradas impresas">
-                + Evento pequeño
-              </Link>
-            )}
-            <Link href="/eventos/nuevo" data-tour="nuevo-evento" className="btn btn-primary">
-              {isNightlife(staff) ? "+ Nuevo boliche" : "+ Nuevo evento"}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {!staff.readOnly && !isNightlife(staff) && (
+            <Link href="/eventos/rapido" data-tour="evento-pequeno" className="btn" title="Acceso rápido para un evento chico: una sola pantalla, en la web o con entradas impresas">
+              + Evento pequeño
             </Link>
-          </div>
-        )}
+          )}
+          <CreateEventCta staff={staff} />
+        </div>
       </div>
 
       <FilterForm key={JSON.stringify(sp)}>
@@ -170,7 +176,7 @@ export default async function EventsPage({ searchParams }: Props) {
           </p>
           {!staff.readOnly && (
             <Link href="/eventos/nuevo" className="btn btn-primary mt-4 inline-flex">
-              {isNightlife(staff) ? "Crear el primero" : "Crear el primer evento"}
+              {isNightlife(staff) ? "Crear la primera noche" : "Crear el primer evento"}
             </Link>
           )}
         </div>

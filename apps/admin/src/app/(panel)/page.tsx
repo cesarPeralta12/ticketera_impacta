@@ -5,6 +5,7 @@ import { prisma } from "@ticketera/db";
 import { CountUp } from "@/components/count-up";
 import { GlobalDashboard } from "@/components/global-dashboard";
 import { ROLES, isGlobalView, isNightlife, requireStaff } from "@/lib/session";
+import { CreateEventCta } from "@/components/create-event-cta";
 
 export default async function DashboardPage() {
   await connection();
@@ -37,7 +38,7 @@ export default async function DashboardPage() {
 
   // Color según la función: ámbar = a la venta o pendiente, azul = conteos, magenta = dinero.
   const stats = [
-    { label: "Eventos publicados", value: published, tone: "amber" },
+    { label: isNightlife(staff) ? "Noches publicadas" : "Eventos publicados", value: published, tone: "amber" },
     { label: "Borradores", value: drafts, tone: "blue" },
     { label: "Entradas vendidas", value: ticketsSold, tone: "blue" },
     { label: "Ingresos", value: formatMoney(revenue._sum.totalAmount ?? 0, org.currency), tone: "magenta" },
@@ -45,9 +46,13 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <p className="eyebrow">Hola, {staff.name}</p>
-        <h1 className="text-2xl font-semibold tracking-tight">Resumen</h1>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="eyebrow">Hola, {staff.name}</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Resumen</h1>
+        </div>
+        {/* En un boliche, lo más común es crear la noche: queda a la vista desde el Resumen. */}
+        {isNightlife(staff) && <CreateEventCta staff={staff} />}
       </div>
 
       <dl className="stats grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -65,7 +70,7 @@ export default async function DashboardPage() {
           <p className="px-5 py-4 text-sm text-[var(--ink-muted)]">
             {isNightlife(staff) ? "No hay noches programadas." : "No hay funciones programadas."}{" "}
             <Link href="/eventos" className="text-[var(--accent)] hover:underline">
-              Ir a eventos
+              {isNightlife(staff) ? "Ir a noches" : "Ir a eventos"}
             </Link>
           </p>
         ) : (

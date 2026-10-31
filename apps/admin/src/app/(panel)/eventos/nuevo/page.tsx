@@ -25,12 +25,13 @@ export default async function NewEventPage() {
     <div className="max-w-2xl space-y-6">
       <div>
         <Link href="/eventos" className="text-sm text-[var(--ink-dim)] hover:text-[var(--ink)]">
-          ← Eventos
+          ← {isNightlife(staff) ? "Noches" : "Eventos"}
         </Link>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{isNightlife(staff) ? "Nuevo boliche (noches)" : "Nuevo evento"}</h1>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{isNightlife(staff) ? "Crear noche" : "Nuevo evento"}</h1>
         <p className="text-sm text-[var(--ink-muted)]">
-          Se crea como borrador. Después el asistente te lleva por el lugar y la fecha, las entradas, una revisión con la
-          vista previa del comprador y la publicación.
+          {isNightlife(staff)
+            ? "Se crea como borrador. Después el asistente te lleva por el día y la hora, las entradas y mesas, una revisión y la publicación. Una vez armada, la repites cada semana."
+            : "Se crea como borrador. Después el asistente te lleva por el lugar y la fecha, las entradas, una revisión con la vista previa del comprador y la publicación."}
         </p>
       </div>
       <WizardSteps current="datos" />
@@ -45,7 +46,7 @@ export default async function NewEventPage() {
       <ActionForm action={createEventAction} className="card flex flex-col gap-5 p-6">
         <EventFields clients={staff.organization.isPlatform ? clients : null} categories={allowedCategories(staff)} />
         <button type="submit" disabled={quota?.reached} className="btn btn-primary w-fit disabled:cursor-not-allowed disabled:opacity-50">
-          Crear evento
+          {isNightlife(staff) ? "Crear noche" : "Crear evento"}
         </button>
       </ActionForm>
     </div>
