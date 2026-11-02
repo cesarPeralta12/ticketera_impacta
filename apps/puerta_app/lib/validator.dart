@@ -5,6 +5,7 @@ library;
 import 'dart:typed_data';
 
 import 'dynamic_qr.dart';
+import 'external_code.dart';
 import 'models.dart';
 
 /// Alfabeto de los códigos de entrada (sin 0/O, 1/I/L), igual que el servidor.
@@ -53,6 +54,9 @@ String? extractCodeFromNfcText(String text) {
 abstract class TicketLookup {
   Future<TicketRow?> find(String sessionId, String code);
 
+  /// Entrada importada de otro proveedor cuya clave limpia es una de [keys] (ver external_code.dart), o null.
+  Future<TicketRow?> findByExternalKey(String sessionId, List<String> keys);
+
   /// Llave del QR dinámico de una entrada (descifrada), o null si no la hay.
   Future<Uint8List?> keyFor(String sessionId, String code);
 }
@@ -76,9 +80,13 @@ Future<ScanOutcome> validateScan({
   DateTime? now,
 }) async {
   final code = extractTicketCode(raw);
-  if (code == null) return const ScanOutcome(verdict: ScanVerdict.invalid);
-
-  final ticket = await tickets.find(meta.sessionId, code);
+  // Una entrada de iPass se busca por su código. Si lo leído no es de iPass (o no está), puede ser el QR o el código de
+  // una entrada de otro proveedor: se limpia con las reglas del evento y se busca por su clave.
+  var ticket = code == null ? null : await tickets.find(meta.sessionId, code);
+  if (ticket == null && meta.codeRules.isNotEmpty) {
+    ticket = await tickets.findByExternalKey(meta.sessionId, externalKeyCandidates(raw, meta.codeRules));
+  }
+  if (ticket == null && code == null && meta.codeRules.isEmpty) return const ScanOutcome(verdict: ScanVerdict.invalid);
   if (ticket == null) {
     return const ScanOutcome(
       verdict: ScanVerdict.notFound,

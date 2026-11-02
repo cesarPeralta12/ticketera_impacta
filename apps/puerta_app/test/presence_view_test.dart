@@ -13,6 +13,9 @@ class _Tickets implements TicketLookup {
   Future<TicketRow?> find(String sessionId, String code) async => row;
 
   @override
+  Future<TicketRow?> findByExternalKey(String sessionId, List<String> keys) async => null;
+
+  @override
   Future<Uint8List?> keyFor(String sessionId, String code) async => null;
 }
 

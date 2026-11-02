@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { currentPrice, discountActive, discountedAmount } from "./pricing";
+import { currentPrice, discountActive, discountedAmount, saleStage } from "./pricing";
 
 const end = new Date("2026-10-20T23:59:00Z");
 const type = { unitAmount: 10_000, discountPercent: 20, discountStartsAt: null, discountEndsAt: end };
@@ -31,5 +31,24 @@ describe("precio con descuento de preventa", () => {
   it("redondea al centavo más cercano", () => {
     expect(discountedAmount(9_999, 15)).toBe(8_499); // 8499.15
     expect(discountedAmount(5_000, 33)).toBe(3_350);
+  });
+});
+
+describe("saleStage", () => {
+  const window = { discountPercent: 20, discountStartsAt: null, discountEndsAt: new Date("2026-10-20T00:00:00Z") };
+  const none = { discountPercent: null, discountStartsAt: null, discountEndsAt: null };
+
+  it("preventa mientras dura el descuento; después, venta", () => {
+    expect(saleStage(window, new Date("2026-10-10T00:00:00Z"))).toBe("Preventa");
+    expect(saleStage(window, new Date("2026-10-21T00:00:00Z"))).toBe("Venta");
+  });
+
+  it("una fase de venta se nombra con su número, sola o con la preventa", () => {
+    expect(saleStage({ ...none, phaseOrder: 2 }, new Date())).toBe("Fase 2");
+    expect(saleStage({ ...window, phaseOrder: 1 }, new Date("2026-10-10T00:00:00Z"))).toBe("Preventa · Fase 1");
+  });
+
+  it("sin descuento ni fase es venta", () => {
+    expect(saleStage(none, new Date())).toBe("Venta");
   });
 });

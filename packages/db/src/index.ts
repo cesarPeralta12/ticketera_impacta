@@ -30,6 +30,7 @@ export * from "./operations/security";
 export * from "./operations/tables-live";
 export * from "./operations/sales";
 export * from "./operations/sales-scope";
+export * from "./operations/sold";
 export * from "./operations/ticket-keys";
 export * from "./operations/transfers";
 export * from "./operations/voids";

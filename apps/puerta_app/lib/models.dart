@@ -3,6 +3,8 @@ library;
 
 import 'package:flutter/material.dart';
 
+import 'external_code.dart';
+
 /// Formas de leer una entrada. Cada tipo de entrada define cuáles admite.
 enum AccessMethod {
   qr('QR', 'Cámara', 'Leer el QR con la cámara', Icons.qr_code_scanner),
@@ -155,6 +157,8 @@ class TicketRow {
     this.maxEntries = 1,
     this.zoneIds = const [],
     this.zoneId,
+    this.externalKey,
+    this.externalCode,
   });
 
   final String code;
@@ -195,6 +199,12 @@ class TicketRow {
   /// Zona en la que quedó según lo leído en este teléfono (el servidor no la manda).
   final String? zoneId;
 
+  /// Entrada que ya existía fuera de iPass: la clave limpia de su código (con la que se compara una lectura)…
+  final String? externalKey;
+
+  /// …y el código tal como vino del proveedor, para mostrarlo en la pantalla del resultado (solo en las de esta puerta).
+  final String? externalCode;
+
   bool get isInside => inside ?? status == TicketStatus.used;
   int get entryCount => entries ?? (status == TicketStatus.used ? 1 : 0);
 
@@ -222,6 +232,8 @@ class TicketRow {
         zoneIds: [for (final z in (json['zoneIds'] as List? ?? const [])) z as String],
         // Zona en la que está ahora según el servidor (lecturas de cualquier teléfono). Un servidor anterior no la manda.
         zoneId: json['zoneId'] as String?,
+        externalKey: json['externalKey'] as String?,
+        externalCode: json['externalCode'] as String?,
       );
 
   TicketRow copyWith({TicketStatus? status, DateTime? usedAt, bool? inside, int? entries, String? zoneId}) => TicketRow(
@@ -242,6 +254,8 @@ class TicketRow {
         maxEntries: maxEntries,
         zoneIds: zoneIds,
         zoneId: zoneId ?? this.zoneId,
+        externalKey: externalKey,
+        externalCode: externalCode,
       );
 }
 
@@ -256,6 +270,7 @@ class SessionMeta {
     required this.syncedAt,
     required this.ticketCount,
     this.zones = const {},
+    this.codeRules = const [],
   });
 
   final String sessionId;
@@ -268,6 +283,9 @@ class SessionMeta {
 
   /// Nombre de cada zona del recinto por id (servidor nuevo; vacío con uno anterior).
   final Map<String, String> zones;
+
+  /// Cómo se limpian los códigos de entradas de otro proveedor importadas en este evento (vacío = no hay).
+  final List<ExternalCodeRule> codeRules;
 
   /// Hora del servidor de la última descarga (para pedir solo los cambios).
   final String syncedAt;
@@ -302,6 +320,7 @@ class SessionMeta {
         'gates': [for (final g in gates) g.toJson()],
         'sections': sections,
         'zones': zones,
+        'codeRules': [for (final r in codeRules) r.toJson()],
         'syncedAt': syncedAt,
         'ticketCount': ticketCount,
       };
@@ -313,6 +332,7 @@ class SessionMeta {
         gates: [for (final g in json['gates'] as List) Gate.fromJson(g as Map<String, dynamic>)],
         sections: {for (final e in (json['sections'] as Map).entries) e.key as String: e.value as String},
         zones: {for (final e in ((json['zones'] as Map?) ?? const {}).entries) e.key as String: e.value as String},
+        codeRules: [for (final r in (json['codeRules'] as List? ?? const [])) ExternalCodeRule.fromJson(r)],
         syncedAt: json['syncedAt'] as String,
         ticketCount: json['ticketCount'] as int,
       );
@@ -345,6 +365,8 @@ class DownloadResult {
         gates: [for (final g in json['gates'] as List) Gate.fromJson(g as Map<String, dynamic>)],
         sections: {for (final e in (json['sections'] as Map).entries) e.key as String: e.value as String},
         zones: {for (final e in ((json['zones'] as Map?) ?? const {}).entries) e.key as String: e.value as String},
+        // Un servidor anterior no lo manda; las reglas viajan dentro de la función (session), no en la raíz.
+        codeRules: [for (final r in (session['codeRules'] as List? ?? const [])) ExternalCodeRule.fromJson(r)],
         syncedAt: json['syncedAt'] as String,
         ticketCount: tickets.length,
       ),

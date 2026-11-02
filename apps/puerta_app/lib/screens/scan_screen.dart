@@ -15,6 +15,7 @@ import '../scan_cooldown.dart';
 import '../settings.dart';
 import '../ui/tokens.dart';
 import '../ui/widgets.dart';
+import '../external_code.dart' show externalKeyCandidates;
 import '../validator.dart' show extractTicketCode;
 import 'consult_sheet.dart';
 import 'result_overlay.dart';
@@ -166,7 +167,8 @@ class _ScanScreenState extends State<ScanScreen> {
     if (method != null && raw == _lastRaw && now.difference(_lastAt) < const Duration(seconds: 3)) return;
     // Una entrada recién procesada no se vuelve a leer sola (la cámara sigue viendo el QR, y el de una entrada
     // dinámica cambia cada 30 s). Escribir el código a mano (method == null) siempre se atiende.
-    final code = extractTicketCode(raw);
+    // Una entrada de otro proveedor no tiene código de iPass en lo leído: la pausa va por la clave limpia de su código.
+    final code = extractTicketCode(raw) ?? externalKeyCandidates(raw, widget.meta.codeRules).firstOrNull;
     if (method != null && code != null && _cooldown.blocked(code, now)) return;
     if (method == null && code != null) _cooldown.release(code);
     _lastRaw = raw;

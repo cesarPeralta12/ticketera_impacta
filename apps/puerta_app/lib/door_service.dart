@@ -12,6 +12,7 @@ import 'bar.dart';
 import 'models.dart';
 import 'storage.dart';
 import 'presence_view.dart';
+import 'external_code.dart' show maxExternalCodeLength;
 import 'validator.dart';
 
 const defaultServerUrl = String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:3001');
@@ -320,7 +321,22 @@ class DoorService extends ChangeNotifier {
 
   /// Sube lo pendiente y baja los cambios. Sin internet no hace nada (se reintenta luego).
   /// Devuelve false si no se pudo llegar al servidor.
-  Future<bool> sync(String sessionId) async {
+  ///
+  /// Si ya hay una en curso para esta función, se espera esa en vez de empezar otra: antes cada lectura aceptada, el
+  /// temporizador y cada código no reconocido lanzaban la suya, y se pisaban unas a otras (subían lo mismo, bajaban lo mismo
+  /// y bloqueaban la base) justo cuando el portero estaba leyendo.
+  Future<bool> sync(String sessionId) =>
+      _syncing[sessionId] ??= _syncNow(sessionId).whenComplete(() => _syncing.remove(sessionId));
+
+  final Map<String, Future<bool>> _syncing = {};
+
+  /// Para una lectura que no está en la lista: intenta actualizarla, pero nunca hace esperar a la puerta más de unos
+  /// segundos (con mala señal, la espera completa de la red eran 20 s o más con la cámara parada). Si no llega a tiempo,
+  /// la actualización sigue sola y la persona vuelve a pasar el QR.
+  Future<bool> _refreshQuickly(String sessionId) =>
+      sync(sessionId).timeout(const Duration(seconds: 4), onTimeout: () => false);
+
+  Future<bool> _syncNow(String sessionId) async {
     final meta = await db.meta(sessionId);
     if (meta == null) return true;
     try {
@@ -358,6 +374,22 @@ class DoorService extends ChangeNotifier {
 
   Future<List<RecentScan>> recentScans(String sessionId) => db.recentScans(sessionId);
 
+  /// Última vez que se actualizó la lista por una lectura que no se reconoció.
+  DateTime _lastUnknownRefresh = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// ¿Vale la pena actualizar la lista porque esta lectura no está? Si parece una entrada de iPass, siempre (puede ser una
+  /// venta reciente). Si no, puede ser el código de un proveedor importado después de la descarga (el teléfono todavía
+  /// no tiene sus reglas ni sus entradas): se actualiza también, pero como mucho una vez cada 20 segundos.
+  bool _worthRefreshing(String raw) {
+    if (extractTicketCode(raw) != null) return true;
+    final text = raw.trim();
+    if (text.isEmpty || text.length > maxExternalCodeLength) return false;
+    final now = DateTime.now();
+    if (now.difference(_lastUnknownRefresh) < const Duration(seconds: 20)) return false;
+    _lastUnknownRefresh = now;
+    return true;
+  }
+
   /// Revisa una lectura SIN marcarla como usada: el portero ve los datos y decide si acepta el ingreso.
   ///
   /// Un rechazo (ya usada, otra puerta, anulada…) queda registrado de una vez, porque la persona no entra.
@@ -368,9 +400,9 @@ class DoorService extends ChangeNotifier {
     _readAt[raw] = readAt;
     if (_readAt.length > 50) _readAt.remove(_readAt.keys.first);
     var outcome = await validateScan(tickets: db, meta: meta, raw: raw, method: method, now: readAt);
-    if (outcome.verdict == ScanVerdict.notFound && extractTicketCode(raw) != null) {
+    if (outcome.verdict == ScanVerdict.notFound && _worthRefreshing(raw)) {
       try {
-        if (await sync(meta.sessionId)) {
+        if (await _refreshQuickly(meta.sessionId)) {
           final fresh = await db.meta(meta.sessionId) ?? meta;
           outcome = await validateScan(tickets: db, meta: fresh, raw: raw, method: method, now: readAt);
         }
@@ -378,7 +410,7 @@ class DoorService extends ChangeNotifier {
         // Sin internet o sesión vencida: se queda el "no existe" local.
       }
     }
-    if (!outcome.verdict.ok) await _record(meta, raw, method, outcome.verdict);
+    if (!outcome.verdict.ok) await _record(meta, raw, method, outcome.verdict, code: outcome.ticket?.code);
     return outcome;
   }
 
@@ -387,9 +419,9 @@ class DoorService extends ChangeNotifier {
   Future<(ScanOutcome, PresenceView?)> consult(SessionMeta meta, String raw, AccessMethod? method) async {
     var outcome = await validateScan(tickets: db, meta: meta, raw: raw, method: method, now: serverNow);
     var current = meta;
-    if (outcome.verdict == ScanVerdict.notFound && extractTicketCode(raw) != null) {
+    if (outcome.verdict == ScanVerdict.notFound && _worthRefreshing(raw)) {
       try {
-        if (await sync(meta.sessionId)) {
+        if (await _refreshQuickly(meta.sessionId)) {
           current = await db.meta(meta.sessionId) ?? meta;
           outcome = await validateScan(tickets: db, meta: current, raw: raw, method: method, now: serverNow);
         }
@@ -411,7 +443,7 @@ class DoorService extends ChangeNotifier {
       ticket: asked.ticket,
       detail: time == null ? 'Ya está adentro.' : 'Ingresó a las $time y no salió.',
     );
-    await _record(meta, raw, method, ScanVerdict.alreadyUsed);
+    await _record(meta, raw, method, ScanVerdict.alreadyUsed, code: asked.ticket?.code);
     return outcome;
   }
 
@@ -422,7 +454,8 @@ class DoorService extends ChangeNotifier {
     final readAt = _readAt.remove(raw);
     final checkAt = readAt != null && serverNow.difference(readAt) < const Duration(minutes: 2) ? readAt : serverNow;
     final outcome = await validateScan(tickets: db, meta: meta, raw: raw, method: method, now: checkAt);
-    final code = extractTicketCode(raw);
+    // El código de iPass de la entrada, sea cual sea lo leído (su QR, o el código de otro proveedor).
+    final code = outcome.ticket?.code ?? extractTicketCode(raw);
     if (outcome.verdict.ok && code != null) {
       final now = serverNow;
       final movement = outcome.movement ?? Movement.entry;
@@ -431,7 +464,7 @@ class DoorService extends ChangeNotifier {
       await db.applyMovement(meta.sessionId, code, movement, now, zoneId: zoneId);
       await _record(meta, raw, method, ScanVerdict.accepted, at: now, code: code, movement: movement, zoneId: zoneId);
     } else {
-      await _record(meta, raw, method, outcome.verdict);
+      await _record(meta, raw, method, outcome.verdict, code: outcome.ticket?.code);
     }
     await refreshCounters(meta.sessionId);
     return outcome;

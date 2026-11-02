@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { formatCode, formatDateTime, tableLabel } from "@ticketera/core";
-import { getTicketAccessHistory, prisma } from "@ticketera/db";
+import { formatCode, formatDateTime, formatMoney, tableLabel } from "@ticketera/core";
+import { getTicketAccessHistory, prisma, soldTicketHistory } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { correctPresenceAction } from "@/lib/actions/presence";
 import { CHANNEL_LABEL, DIRECTION_LABEL, MOVEMENT_LABEL, SCAN_LABEL, TICKET_STATUS } from "@/lib/labels";
-import { ROLES, eventScope, requireStaff } from "@/lib/session";
+import { ROLES, eventScope, isGlobalView, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Entrada" };
 
@@ -38,7 +38,10 @@ export default async function TicketPage({ params }: Props) {
     },
   });
   if (!ticket) notFound();
-  const history = await getTicketAccessHistory(ticket.id);
+  const [history, sold] = await Promise.all([getTicketAccessHistory(ticket.id), soldTicketHistory(ticket.id)]);
+  const showNames = isGlobalView(staff);
+  const who = (name: string) => (showNames ? name : name.split(/\s+/).filter(Boolean).map((p) => `${p[0]!.toUpperCase()}.`).join(" "));
+  const currency = staff.organization.currency;
   const tz = ticket.session.venue.timezone;
   const status = TICKET_STATUS[ticket.status];
   const place = tableLabel(ticket.ticketType.name, ticket.credit?.tableNumber, ticket.credit?.seat?.label) ?? ticket.seat?.label;
@@ -95,6 +98,38 @@ export default async function TicketPage({ params }: Props) {
           <dd className="mt-1 text-sm font-medium">{ticket.ticketType.zones.length ? ticket.ticketType.zones.map((z) => z.name).join(", ") : "Las de siempre"}</dd>
         </div>
       </dl>
+
+      {sold && (
+        <section className="card space-y-3 p-6">
+          <h2 className="eyebrow">Historia de la entrada</h2>
+          <p className="text-sm text-[var(--ink-muted)]">
+            {sold.stage.text}
+            {sold.stage.estimated && <span className="text-[var(--ink-dim)]"> (estimado)</span>} ·{" "}
+            <span className="font-mono">{formatMoney(sold.price, currency)}</span>
+            {sold.extra > 0 && <span> + {formatMoney(sold.extra, currency)} de consumo</span>} · titular ahora:{" "}
+            <span className="font-medium text-[var(--ink)]">{who(sold.holderName)}</span>
+            {sold.changedHands && <span className="text-[var(--warn)]"> (cambió de manos)</span>}
+          </p>
+          <ol className="space-y-2 border-l border-[var(--border)] pl-4 text-sm">
+            {sold.steps.map((step, i) => (
+              <li key={i}>
+                <p className="font-mono text-xs text-[var(--ink-dim)]">{formatDateTime(step.at, tz)}</p>
+                {step.kind === "purchase" ? (
+                  <p>
+                    Comprada por <span className="font-medium">{who(step.fromName)}</span> · {CHANNEL_LABEL[sold.channel]} (orden {formatCode(sold.orderCode)})
+                  </p>
+                ) : (
+                  <p>
+                    Transferida de <span className="font-medium">{who(step.fromName)}</span> a <span className="font-medium">{who(step.toName ?? "—")}</span>
+                    {step.oldCode && step.newCode && <span className="text-xs text-[var(--ink-dim)]"> · su código cambió</span>}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ol>
+          {!showNames && <p className="text-xs text-[var(--ink-dim)]">Los nombres completos solo los ve el superadmin de iPass.</p>}
+        </section>
+      )}
 
       <section className="card p-6">
         <h2 className="eyebrow mb-3">Historial en puerta</h2>

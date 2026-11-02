@@ -103,7 +103,7 @@ class DoorDb implements TicketLookup, VoucherLookup {
   static Future<DoorDb> open(Uint8List key) async {
     final db = await openDatabase(
       p.join(await getDatabasesPath(), 'puerta.db'),
-      version: 5,
+      version: 6,
       onUpgrade: (db, oldVersion, _) async {
         if (oldVersion < 2) await db.execute('ALTER TABLE tickets ADD COLUMN document TEXT');
         if (oldVersion < 3) {
@@ -135,6 +135,12 @@ class DoorDb implements TicketLookup, VoucherLookup {
             synced INTEGER NOT NULL DEFAULT 0, server_result TEXT
           )''');
         }
+        if (oldVersion < 6) {
+          // Entradas de otro proveedor: la clave limpia de su código (para reconocerla) y el código como vino (para mostrarlo).
+          await db.execute('ALTER TABLE tickets ADD COLUMN external_key TEXT');
+          await db.execute('ALTER TABLE tickets ADD COLUMN external_code TEXT');
+          await db.execute('CREATE INDEX tickets_external ON tickets (session_id, external_key)');
+        }
       },
       onCreate: (db, _) async {
         await db.execute('''
@@ -143,8 +149,10 @@ class DoorDb implements TicketLookup, VoucherLookup {
             mine INTEGER NOT NULL, holder TEXT, document TEXT, type TEXT, seat TEXT, methods TEXT NOT NULL DEFAULT '',
             used_at INTEGER, qr_dynamic INTEGER NOT NULL DEFAULT 0, qr_key TEXT,
             inside INTEGER, entries INTEGER, max_entries INTEGER NOT NULL DEFAULT 1, zone_ids TEXT NOT NULL DEFAULT '', zone_id TEXT,
+            external_key TEXT, external_code TEXT,
             PRIMARY KEY (session_id, code)
           )''');
+        await db.execute('CREATE INDEX tickets_external ON tickets (session_id, external_key)');
         await db.execute('''
           CREATE TABLE scans (
             id TEXT PRIMARY KEY, session_id TEXT NOT NULL, gate_id TEXT, code TEXT, raw TEXT NOT NULL,
@@ -196,6 +204,8 @@ class DoorDb implements TicketLookup, VoucherLookup {
         'max_entries': t.maxEntries,
         'zone_ids': t.zoneIds.join(','),
         'zone_id': t.zoneId,
+        'external_key': t.externalKey,
+        'external_code': t.externalCode,
       };
 
   static TicketRow _fromRow(Map<String, Object?> r) => TicketRow(
@@ -215,6 +225,8 @@ class DoorDb implements TicketLookup, VoucherLookup {
         maxEntries: r['max_entries'] as int? ?? 1,
         zoneIds: (r['zone_ids'] as String? ?? '').isEmpty ? const [] : (r['zone_ids'] as String).split(','),
         zoneId: r['zone_id'] as String?,
+        externalKey: r['external_key'] as String?,
+        externalCode: r['external_code'] as String?,
       );
 
   // ── Datos sueltos (por ejemplo, la última lista de funciones, para abrir la app sin internet) ──
@@ -300,6 +312,18 @@ class DoorDb implements TicketLookup, VoucherLookup {
   @override
   Future<TicketRow?> find(String sessionId, String code) async {
     final rows = await _db.query('tickets', where: 'session_id = ? AND code = ?', whereArgs: [sessionId, code]);
+    return rows.isEmpty ? null : _fromRow(rows.first);
+  }
+
+  @override
+  Future<TicketRow?> findByExternalKey(String sessionId, List<String> keys) async {
+    if (keys.isEmpty) return null;
+    final rows = await _db.query(
+      'tickets',
+      where: 'session_id = ? AND external_key IN (${List.filled(keys.length, '?').join(',')})',
+      whereArgs: [sessionId, ...keys],
+      limit: 1,
+    );
     return rows.isEmpty ? null : _fromRow(rows.first);
   }
 
@@ -576,6 +600,8 @@ extension on SessionMeta {
         gateId: gateId,
         gates: gates,
         sections: sections,
+        zones: zones,
+        codeRules: codeRules,
         syncedAt: syncedAt,
         ticketCount: count,
       );

@@ -723,6 +723,9 @@ model OrderItem {
   name             String
   /// Consumo extra elegido al comprar (centavos por unidad). Se suma al precio de la línea y al consumo de su QR.
   extraConsumption Int     @default(0)
+  /// Etapa de venta congelada al crear la orden («Preventa», «Fase 2», «Venta»). Vacío en lo vendido antes de guardarla:
+  /// ahí se estima con las fechas del tipo de entrada.
+  saleStage        String?
 
   order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
   ticketType TicketType @relation(fields: [ticketTypeId], references: [id])

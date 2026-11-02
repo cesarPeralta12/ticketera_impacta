@@ -4,6 +4,7 @@ import {
   checkoutSchema,
   commissionFor,
   currentPrice,
+  saleStage,
   findShortage,
   isSeatedTablesLayout,
   onlineSalesEnd,
@@ -353,7 +354,13 @@ export async function createPendingOrder(
     const priced = data.items.flatMap((item) => {
       const type = byId.get(item.ticketTypeId)!;
       // El precio lo decide el servidor al crear la orden (descuento de preventa vigente, si hay).
-      const line = { ticketTypeId: type.id, unitAmount: currentPrice(type, now).unitAmount, name: type.name, extraConsumption: item.extraConsumption ?? 0 };
+      const line = {
+        ticketTypeId: type.id,
+        unitAmount: currentPrice(type, now).unitAmount,
+        name: type.name,
+        extraConsumption: item.extraConsumption ?? 0,
+        saleStage: saleStage(type, now),
+      };
       return item.seatIds
         ? item.seatIds.map((seatId) => ({ ...line, quantity: 1, seatId }))
         : [{ ...line, quantity: item.quantity }];

@@ -153,6 +153,9 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
               Importar Excel
             </Link>
           )}
+          <Link href={`/eventos/${event.id}/vendidas`} className="btn text-xs" title="Cada entrada vendida con su comprador, su titular actual y la etapa en que se vendió">
+            Entradas vendidas
+          </Link>
           <Link href={`/eventos/${event.id}/reporte`} className="btn text-xs">
             Reporte
           </Link>

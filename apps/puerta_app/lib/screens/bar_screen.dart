@@ -170,7 +170,13 @@ class _BarScanScreenState extends State<BarScanScreen> with WidgetsBindingObserv
   DoorService get _s => widget.service;
   late final MobileScannerController? _camera = widget.previewOverride != null
       ? null
-      : MobileScannerController(formats: const [BarcodeFormat.qrCode], detectionSpeed: DetectionSpeed.noDuplicates);
+      : MobileScannerController(
+          formats: const [BarcodeFormat.qrCode],
+          // "noDuplicates" no vuelve a leer el mismo QR hasta que la cámara vea otro y, tras un resultado, la cámara dejaba de
+          // detectar hasta salir y volver a entrar. Con "normal" sigue leyendo; las repeticiones las filtra _handle.
+          detectionSpeed: DetectionSpeed.normal,
+          detectionTimeoutMs: 400,
+        );
   Timer? _timer;
   bool _busy = false;
   String? _lastRaw;
@@ -207,10 +213,11 @@ class _BarScanScreenState extends State<BarScanScreen> with WidgetsBindingObserv
     await _refresh();
   }
 
-  Future<void> _handle(String raw) async {
+  Future<void> _handle(String raw, {bool typed = false}) async {
     if (_busy) return;
     final now = DateTime.now();
-    if (raw == _lastRaw && now.difference(_lastAt) < const Duration(seconds: 3)) return;
+    // La cámara sigue viendo el QR recién procesado: se ignora un momento. Escribir el código a mano siempre se atiende.
+    if (!typed && raw == _lastRaw && now.difference(_lastAt) < const Duration(seconds: 5)) return;
     _lastRaw = raw;
     _lastAt = now;
     _busy = true;
@@ -231,13 +238,14 @@ class _BarScanScreenState extends State<BarScanScreen> with WidgetsBindingObserv
       await _refresh();
     } finally {
       _busy = false;
-      _lastRaw = null;
+      // La pausa de 5 s cuenta desde que terminó el resultado, no desde que se leyó.
+      _lastAt = DateTime.now();
     }
   }
 
   Future<void> _manual() async {
     final code = await showManualEntry(context);
-    if (code != null && code.trim().isNotEmpty) await _handle(code);
+    if (code != null && code.trim().isNotEmpty) await _handle(code, typed: true);
   }
 
   @override

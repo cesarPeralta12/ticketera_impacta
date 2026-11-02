@@ -300,7 +300,8 @@ export async function listTransfers(customerId: string, now = new Date()) {
 /** Las entradas que esta cuenta tiene ahora (compradas o recibidas), con si se pueden transferir. */
 export async function listCustomerTickets(customerId: string, now = new Date()) {
   const tickets = await prisma.ticket.findMany({
-    where: { customerId, status: { in: ["VALID", "USED"] }, order: { status: "PAID" } },
+    // Una entrada importada de otro proveedor se entregó en físico (o por el tercero): no se muestra en la web.
+    where: { customerId, status: { in: ["VALID", "USED"] }, order: { status: "PAID" }, externalKey: null },
     include: {
       ...eventInclude,
       transfers: { where: { status: "PENDING", expiresAt: { gt: now } }, select: { id: true, to: { select: { name: true, email: true } } } },

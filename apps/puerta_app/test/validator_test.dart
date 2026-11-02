@@ -14,6 +14,10 @@ class _FakeTickets implements TicketLookup {
   Future<TicketRow?> find(String sessionId, String code) async => _rows[code];
 
   @override
+  Future<TicketRow?> findByExternalKey(String sessionId, List<String> keys) async =>
+      _rows.values.where((r) => r.externalKey != null && keys.contains(r.externalKey)).firstOrNull;
+
+  @override
   Future<Uint8List?> keyFor(String sessionId, String code) async => keys[code];
 }
 

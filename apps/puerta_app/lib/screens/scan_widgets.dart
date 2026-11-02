@@ -262,7 +262,7 @@ class _ConfirmSheetState extends State<_ConfirmSheet> with SingleTickerProviderS
       if (widget.sectionName != null) (Icons.grid_view_rounded, 'Sector', widget.sectionName!),
       if (t.seat != null) (Icons.event_seat_outlined, 'Asiento', t.seat!),
       if (t.document != null && t.document!.isNotEmpty) (Icons.badge_outlined, 'Carnet', t.document!),
-      (Icons.tag_rounded, 'Código', _code(t.code)),
+      if (t.externalCode != null) (Icons.tag_rounded, 'Código del proveedor', t.externalCode!) else (Icons.tag_rounded, 'Código', _code(t.code)),
       if (widget.gateName != null) (Icons.meeting_room_outlined, 'Puerta', widget.gateName!),
       if (t.maxEntries != 1) (Icons.repeat_rounded, 'Ingresos', t.maxEntries == 0 ? 'Sin límite (lleva ${t.entryCount})' : '${t.entryCount} de ${t.maxEntries} usados'),
     ];
@@ -514,7 +514,7 @@ Future<String?> showManualEntry(BuildContext context) {
           const SizedBox(height: 4),
           const Text('Por si el lector no puede leer la entrada.', style: Type.muted),
           const SizedBox(height: 18),
-          AppField(controller: code, label: 'Código de la entrada', icon: Icons.tag_rounded, autofocus: true, capitalization: TextCapitalization.characters),
+          AppField(controller: code, label: 'Código de la entrada (o del proveedor)', icon: Icons.tag_rounded, autofocus: true, capitalization: TextCapitalization.characters),
           const SizedBox(height: 12),
           AppField(
             controller: otp,
