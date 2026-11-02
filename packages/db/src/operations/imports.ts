@@ -276,7 +276,7 @@ async function checkExternalCodes(db: Db, rows: ResolvedImportRow[]): Promise<Im
  * Lo que depende del momento: que las butacas y mesas sigan libres y que haya cupo (fila por fila, en orden: las
  * últimas son las que no entran). Se usa en la vista previa y otra vez al confirmar, con el inventario bloqueado.
  */
-async function checkAvailability(db: Db, rows: ResolvedImportRow[], now: Date) {
+async function checkAvailability(db: Db, rows: ResolvedImportRow[], now: Date, ignoreCapacity = false) {
   const issues: ImportIssue[] = [];
   const ok: ResolvedImportRow[] = [];
   for (const sessionId of new Set(rows.map((r) => r.sessionId))) {
@@ -306,12 +306,14 @@ async function checkAvailability(db: Db, rows: ResolvedImportRow[], now: Date) {
         continue;
       }
       const next = new Map(requested).set(row.ticketTypeId, (requested.get(row.ticketTypeId) ?? 0) + 1);
-      const shortage = findShortage(
-        inventory,
-        [...next].map(([ticketTypeId, quantity]) => ({ ticketTypeId, quantity })),
-      );
+      const shortage = ignoreCapacity
+        ? null
+        : findShortage(
+            inventory,
+            [...next].map(([ticketTypeId, quantity]) => ({ ticketTypeId, quantity })),
+          );
       if (shortage) {
-        issues.push({ line: row.line, message: `Sin cupo en "${shortage.name}": ya no quedan lugares para esta fila.` });
+        issues.push({ line: row.line, message: `Sin cupo en "${shortage.name}": ya no quedan lugares para esta fila.`, kind: "capacity", overflowRow: row });
         continue;
       }
       requested.set(row.ticketTypeId, next.get(row.ticketTypeId)!);
@@ -348,8 +350,8 @@ export async function createImportDraft(input: {
       staffId: input.staffId,
       fileName: input.fileName.slice(0, 200),
       rows: result.rows,
-      errors,
-      warnings: result.warnings,
+      errors: errors as unknown as Prisma.InputJsonValue,
+      warnings: result.warnings as unknown as Prisma.InputJsonValue,
       totalRows: input.parsed.total,
       validRows: ticketCount > MAX_IMPORT_TICKETS ? 0 : result.rows.length,
       ticketCount,
@@ -372,7 +374,7 @@ const IMPORT_CHUNK = 500;
  * venderse algo desde la vista previa) y emite todo o nada. Cada fila es una orden pagada del canal IMPORT.
  * Con una sola fila con error no se emite nada: se corrige el archivo y se vuelve a subir.
  */
-export async function confirmImport(input: { batchId: string; staffId: string; now?: Date }) {
+export async function confirmImport(input: { batchId: string; staffId: string; overCapacity?: boolean; now?: Date }) {
   try {
     return await confirmImportTx(input);
   } catch (error) {
@@ -384,7 +386,7 @@ export async function confirmImport(input: { batchId: string; staffId: string; n
   }
 }
 
-async function confirmImportTx(input: { batchId: string; staffId: string; now?: Date }) {
+async function confirmImportTx(input: { batchId: string; staffId: string; overCapacity?: boolean; now?: Date }) {
   const now = input.now ?? new Date();
   return prisma.$transaction(
     async (tx) => {
@@ -394,12 +396,15 @@ async function confirmImportTx(input: { batchId: string; staffId: string; now?: 
       if (batch.status !== "DRAFT") {
         throw new DomainError("INVALID_STATE", batch.status === "CONFIRMED" ? "Esta importación ya se confirmó." : "Esta importación ya no se puede confirmar.");
       }
-      const errors = batch.errors as ImportIssue[];
+      const allErrors = batch.errors as ImportIssue[];
+      // Pasando el cupo: las filas que solo fallaban por falta de cupo se emiten igual (con la confirmación expresa de quien importa).
+      const overflow = input.overCapacity ? allErrors.filter((e) => e.kind === "capacity" && e.overflowRow) : [];
+      const errors = allErrors.filter((e) => !overflow.includes(e));
       if (errors.length > 0) {
         throw new DomainError("INVALID_ITEMS", `Hay ${errors.length} fila(s) con error: corrígelas y vuelve a subir el archivo. No se emitió ninguna entrada.`);
       }
-      const rows = batch.rows as unknown as ResolvedImportRow[];
-      if (rows.length === 0 || batch.validRows === 0) throw new DomainError("INVALID_ITEMS", "No hay filas válidas para importar.");
+      const rows = [...(batch.rows as unknown as ResolvedImportRow[]), ...overflow.map((e) => e.overflowRow as ResolvedImportRow)].sort((a, b) => a.line - b.line);
+      if (rows.length === 0) throw new DomainError("INVALID_ITEMS", "No hay filas válidas para importar.");
 
       const typeIds = [...new Set(rows.map((r) => r.ticketTypeId))];
       await lockInventory(tx, typeIds);
@@ -420,7 +425,7 @@ async function confirmImportTx(input: { batchId: string; staffId: string; now?: 
         throw new DomainError("INVALID_ITEMS", "Algún tipo de entrada ya no existe: vuelve a subir el archivo.");
       }
       if (types.some((t) => t.session.cancelledAt)) throw new DomainError("NOT_ON_SALE", "Una de las funciones se canceló.");
-      const check = await checkAvailability(tx, rows, now);
+      const check = await checkAvailability(tx, rows, now, input.overCapacity === true);
       if (check.issues.length > 0) {
         const shown = check.issues.slice(0, 3).map((i) => `fila ${i.line}: ${i.message}`);
         throw new DomainError("SOLD_OUT", `Desde la vista previa cambió lo disponible (${shown.join(" ")}). Vuelve a subir el archivo.`);
@@ -505,14 +510,22 @@ async function confirmImportTx(input: { batchId: string; staffId: string; now?: 
           await tx.ticket.updateMany({ where: { orderId: order.id }, data: { externalCode: row.externalCode, externalKey: row.externalKey } });
         }
       }
-      const confirmed = await tx.importBatch.update({ where: { id: batch.id }, data: { status: "CONFIRMED", confirmedAt: now } });
+      const ticketCount = rows.reduce((sum, r) => sum + r.people, 0);
+      const confirmed = await tx.importBatch.update({
+        where: { id: batch.id },
+        data: {
+          status: "CONFIRMED",
+          confirmedAt: now,
+          ...(overflow.length > 0 ? { rows: rows as unknown as Prisma.InputJsonValue, errors: [], validRows: rows.length, ticketCount } : {}),
+        },
+      });
       await audit(tx, {
         actorType: "staff",
         actorId: input.staffId,
         action: "import.confirm",
         entity: "ImportBatch",
         entityId: batch.id,
-        data: { orders: rows.length, tickets: batch.ticketCount },
+        data: { orders: rows.length, tickets: ticketCount, overCapacity: overflow.length },
       });
       return confirmed;
     },
@@ -621,4 +634,35 @@ export async function importOrdersToEmail(batchId: string, take: number) {
 
 export async function markTicketsEmailed(orderIds: string[], now = new Date()) {
   if (orderIds.length > 0) await prisma.order.updateMany({ where: { id: { in: orderIds } }, data: { ticketsEmailedAt: now } });
+}
+
+/** Formatos de importación guardados de una organización (el proveedor, el emparejamiento y los títulos de sus columnas). */
+export async function listImportFormats(organizationId: string) {
+  return prisma.importFormat.findMany({ where: { organizationId }, orderBy: { name: "asc" }, take: 100 });
+}
+
+/** Guarda un formato; con el mismo nombre lo reemplaza. */
+export async function saveImportFormat(input: {
+  organizationId: string;
+  name: string;
+  sourceName: string | null;
+  readMethod: ExternalReadMethod;
+  mapping: object;
+  titles: Record<string, string>;
+}) {
+  const data = {
+    sourceName: input.sourceName,
+    readMethod: input.readMethod,
+    mapping: input.mapping as Prisma.InputJsonValue,
+    titles: input.titles as Prisma.InputJsonValue,
+  };
+  return prisma.importFormat.upsert({
+    where: { organizationId_name: { organizationId: input.organizationId, name: input.name } },
+    create: { organizationId: input.organizationId, name: input.name, ...data },
+    update: data,
+  });
+}
+
+export async function deleteImportFormat(organizationId: string, id: string) {
+  await prisma.importFormat.deleteMany({ where: { id, organizationId } });
 }

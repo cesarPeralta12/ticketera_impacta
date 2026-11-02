@@ -50,6 +50,25 @@ export function EventReport({ report, csvHref }: { report: Report; csvHref: stri
               ))}
             </tbody>
           </table>
+          {report.importSources.length > 0 && (
+            <>
+              <h3 className="eyebrow mb-2 mt-5">Importadas, por origen</h3>
+              <table className="w-full text-sm">
+                <tbody className="divide-y divide-[var(--border)]">
+                  {report.importSources.map((l) => (
+                    <tr key={l.source ?? "—"}>
+                      <td className="py-2">{l.source ?? "Sin origen"}</td>
+                      <td className="py-2 text-right font-mono">
+                        {l.tickets} entradas
+                        <span className="block text-xs text-[var(--ink-dim)]">{l.used} ingresaron</span>
+                      </td>
+                      <td className="py-2 text-right font-mono">{money(l.revenue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
         </section>
 
         <section className="card p-5">

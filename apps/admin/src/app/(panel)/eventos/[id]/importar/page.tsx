@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { MAX_IMPORT_ROWS, formatDateTime, peopleIn } from "@ticketera/core";
-import { getImportContext, listImportBatches, prisma } from "@ticketera/db";
+import { MAX_IMPORT_ROWS, formatDateTime, peopleIn, type ImportMapping } from "@ticketera/core";
+import { getImportContext, listImportBatches, listImportFormats, prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import { uploadImportAction } from "@/lib/actions/imports";
 import { IMPORT_STATUS } from "@/lib/labels";
@@ -21,7 +21,7 @@ export default async function ImportPage({ params }: Props) {
   const staff = await requireStaff(ROLES.manage);
   const event = await visibleEvent(staff, (await params).id);
   if (!event) notFound();
-  const [sessions, batches] = await Promise.all([getImportContext(prisma, event.id), listImportBatches(event.id)]);
+  const [sessions, batches, formats] = await Promise.all([getImportContext(prisma, event.id), listImportBatches(event.id), listImportFormats(event.organizationId)]);
   const active = sessions.filter((s) => !s.cancelled);
   // Para emparejar las entradas de otro proveedor: cada tipo (por nombre) con lo que define en la puerta.
   const methodText = { QR: "QR", BARCODE: "código de barras", NFC: "NFC" } as const;
@@ -131,7 +131,7 @@ export default async function ImportPage({ params }: Props) {
               <p className="rounded-md bg-[var(--warn-soft)] px-3 py-2 text-xs text-[var(--warn)]">
                 Para leer estas entradas, los teléfonos de puerta necesitan la app de puerta <strong>1.8.0</strong> o más nueva.
               </p>
-              <ExternalImport eventId={event.id} sessions={active.map((s) => s.label)} types={typeChoices} />
+              <ExternalImport eventId={event.id} sessions={active.map((s) => s.label)} types={typeChoices} formats={formats.map((f) => ({ id: f.id, name: f.name, sourceName: f.sourceName, readMethod: f.readMethod === "BARCODE" ? "BARCODE" : "QR", mapping: f.mapping as unknown as ImportMapping, titles: f.titles as Record<string, string> }))} />
             </section>
           )}
         </>

@@ -47,6 +47,9 @@ export default async function ImportBatchPage({ params }: Props) {
   // Entradas de otro proveedor: se leen con su propio código y no se les envía otra entrada.
   const external = batch.codeRule !== null;
   const withCode = batch.rows.filter((r) => r.externalCode).length;
+  // Si todos los errores son de falta de cupo, se puede importar igual pasando el cupo, con una confirmación expresa.
+  const overflowTickets = batch.errors.reduce((sum, e) => sum + ((e.overflowRow as { people?: number } | undefined)?.people ?? 0), 0);
+  const onlyCapacity = batch.errors.length > 0 && batch.errors.every((e) => e.kind === "capacity" && e.overflowRow);
 
   const orders =
     batch.status === "DRAFT" || batch.status === "DISCARDED"
@@ -180,7 +183,24 @@ export default async function ImportBatchPage({ params }: Props) {
 
           {editable && (
             <section className="card flex flex-wrap items-start justify-between gap-4 p-6">
-              {batch.errors.length > 0 ? (
+              {onlyCapacity ? (
+                <ActionForm action={confirmImportAction} className="flex flex-col gap-3">
+                  <input type="hidden" name="batchId" value={batch.id} />
+                  <p className="text-sm text-[var(--warn)]">
+                    {batch.errors.length} fila(s) no caben en el cupo. Corrige el Excel y vuelve a subirlo, o importa todo pasando el cupo.
+                  </p>
+                  <label className="flex items-start gap-2 text-sm">
+                    <input type="checkbox" name="overCapacity" required className="mt-1" />
+                    <span>Entiendo que se venderán más entradas que el cupo de esos tipos y quiero importarlas igual.</span>
+                  </label>
+                  <button type="submit" className="btn btn-primary w-fit">
+                    Importar {batch.ticketCount + overflowTickets} entrada(s) pasando el cupo
+                  </button>
+                  <Link href={`/eventos/${event.id}/importar`} className="text-sm text-[var(--ink-dim)] hover:text-[var(--ink)]">
+                    Mejor subir el archivo corregido
+                  </Link>
+                </ActionForm>
+              ) : batch.errors.length > 0 ? (
                 // Con errores no se emite nada (ni las filas buenas): se corrige el Excel y se sube de nuevo.
                 <div className="flex flex-col gap-3">
                   <p className="text-sm text-[var(--danger)]">

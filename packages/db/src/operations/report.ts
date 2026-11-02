@@ -26,7 +26,7 @@ export async function getEventReport(eventId: string) {
   const sessionIds = event.sessions.map((s) => s.id);
   const bySession = { sessionId: { in: sessionIds } };
 
-  const [ticketsByChannel, revenueByChannel, used, issuedPerSession, usedPerSession, rejected, posSales, buyers] =
+  const [ticketsByChannel, revenueByChannel, used, issuedPerSession, usedPerSession, rejected, posSales, buyers, imported] =
     await Promise.all([
       prisma.ticket.findMany({
         where: { ...bySession, status: { in: [...ISSUED] } },
@@ -55,6 +55,10 @@ export async function getEventReport(eventId: string) {
         },
       }),
       prisma.order.count({ where: { channel: "ONLINE", status: "PAID", items: { some: { ticketType: bySession } } } }),
+      prisma.order.findMany({
+        where: { channel: "IMPORT", status: "PAID", items: { some: { ticketType: bySession } } },
+        select: { totalAmount: true, importBatch: { select: { sourceName: true } }, tickets: { where: { ...bySession, status: { in: [...ISSUED] } }, select: { status: true } } },
+      }),
     ]);
 
   const channels: OrderChannel[] = ["ONLINE", "POS", "PROMOTER", "GUEST", "PRINTED", "IMPORT"];
@@ -82,6 +86,18 @@ export async function getEventReport(eventId: string) {
     posMap.set(key, line);
   }
 
+  // Importadas: por origen («TuBoleto», «preventa de amigos»); las que no dicen de dónde vienen van juntas.
+  const sourceMap = new Map<string, { source: string | null; tickets: number; used: number; revenue: number }>();
+  for (const order of imported) {
+    const source = order.importBatch?.sourceName ?? null;
+    const line = sourceMap.get(source ?? "") ?? { source, tickets: 0, used: 0, revenue: 0 };
+    line.tickets += order.tickets.length;
+    line.used += order.tickets.filter((t) => t.status === "USED").length;
+    line.revenue += order.totalAmount;
+    sourceMap.set(source ?? "", line);
+  }
+  const importSources = [...sourceMap.values()].filter((l) => l.tickets > 0).sort((a, b) => b.tickets - a.tickets);
+
   return {
     event,
     currency: event.organization.currency,
@@ -92,6 +108,7 @@ export async function getEventReport(eventId: string) {
     revenue: byChannel.reduce((sum, c) => sum + c.revenue, 0),
     onlineBuyers: buyers,
     byChannel,
+    importSources,
     sessions: event.sessions.map((s) => ({
       ...s,
       issued: issuedPerSession.find((x) => x.sessionId === s.id)?._count ?? 0,

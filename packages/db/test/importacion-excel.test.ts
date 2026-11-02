@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { parseImportTable, randomCode, type ImportRow } from "@ticketera/core";
 import { prisma } from "../src/client";
 import { scanTicket } from "../src/operations/access";
-import { confirmImport, createImportDraft, getImportSummary, undoImport } from "../src/operations/imports";
+import { confirmImport, createImportDraft, deleteImportFormat, getImportSummary, listImportFormats, saveImportFormat, undoImport } from "../src/operations/imports";
 import { getSessionAvailability } from "../src/operations/orders";
 import { getEventReport } from "../src/operations/report";
 import { createGeneralAdmissionEvent, createPendingOrder, createSeatedEvent, buyer } from "./fixtures";
@@ -70,6 +70,42 @@ describe("importar entradas desde Excel", () => {
 
     const report = await getEventReport(session.eventId);
     expect(report!.byChannel.find((c) => c.channel === "IMPORT")).toMatchObject({ tickets: 3, revenue: 15_000 });
+    expect(report!.importSources).toEqual([{ source: null, tickets: 3, used: 1, revenue: 15_000 }]);
+  });
+
+  it("pasando el cupo: sin la confirmación expresa no entra nada; con ella se emiten todas", async () => {
+    const { session, types } = await createGeneralAdmissionEvent({ sectionCapacity: 2, types: [{ name: "General", capacity: 2 }] });
+    const s = await staff();
+    const batch = await draft(session.eventId, s.id, [
+      ["", "General", "Ana Pérez", "", "", "", ""],
+      ["", "General", "Luis Rojas", "", "", "", ""],
+      ["", "General", "Eva Díaz", "", "", "", ""],
+      ["", "General", "Juan Soto", "", "", "", ""],
+    ]);
+    const errors = batch.errors as { line: number; kind?: string }[];
+    expect(errors.map((e) => [e.line, e.kind])).toEqual([[4, "capacity"], [5, "capacity"]]);
+    await expect(confirmImport({ batchId: batch.id, staffId: s.id })).rejects.toMatchObject({ code: "INVALID_ITEMS" });
+    expect(await prisma.order.count({ where: { importBatchId: batch.id } })).toBe(0);
+
+    await confirmImport({ batchId: batch.id, staffId: s.id, overCapacity: true });
+    expect(await prisma.ticket.count({ where: { order: { importBatchId: batch.id } } })).toBe(4);
+    const done = await prisma.importBatch.findUniqueOrThrow({ where: { id: batch.id } });
+    expect([done.status, done.validRows, done.ticketCount, (done.errors as unknown[]).length]).toEqual(["CONFIRMED", 4, 4, 0]);
+    expect((await getSessionAvailability(session.id)).get(types[0]!.id)).toBeLessThanOrEqual(0);
+  });
+
+  it("los formatos guardados se repiten por organización: guardar con el mismo nombre reemplaza y borrar quita", async () => {
+    const org = await prisma.organization.create({ data: { name: "Formatos", slug: `formatos-${randomCode(6).toLowerCase()}`, currency: "BOB" } });
+    const base = { organizationId: org.id, name: "TuBoleto", sourceName: "TuBoleto", readMethod: "QR" as const, mapping: { headerRow: 0, columns: { code: 2 } }, titles: { code: "N° de ticket" } };
+    await saveImportFormat(base);
+    await saveImportFormat({ ...base, readMethod: "BARCODE", titles: { code: "Código" } });
+    const [saved, ...rest] = await listImportFormats(org.id);
+    expect(rest).toEqual([]);
+    expect([saved!.readMethod, saved!.titles]).toEqual(["BARCODE", { code: "Código" }]);
+    await deleteImportFormat("otra-organizacion", saved!.id);
+    expect(await listImportFormats(org.id)).toHaveLength(1);
+    await deleteImportFormat(org.id, saved!.id);
+    expect(await listImportFormats(org.id)).toHaveLength(0);
   });
 
   it("si se vendió algo desde la vista previa, no importa nada", async () => {

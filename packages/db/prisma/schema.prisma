@@ -27,6 +27,7 @@ enum OrganizationStatus {
 /// organizador (eventos, recintos, ventas, puerta, cuentas) cuelga de su organización:
 /// un organizador nunca ve lo de otro.
 model Organization {
+  importFormats   ImportFormat[]
   id              String             @id @default(cuid())
   name            String
   slug            String             @unique
@@ -1305,6 +1306,27 @@ enum ImportStatus {
   UNDONE
   /// Descartado sin confirmar.
   DISCARDED
+}
+
+/// Emparejamiento de columnas guardado para repetirlo con el mismo proveedor: se elige el formato y las columnas
+/// (buscadas por su título en el archivo nuevo), los valores de tipo y función y la regla del código quedan puestos.
+model ImportFormat {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  /// De dónde vienen las entradas («TuBoleto»), para rellenarlo al elegir el formato.
+  sourceName     String?
+  /// Cómo se lee el código en la puerta: QR o BARCODE.
+  readMethod     String   @default("QR")
+  /// ImportMapping tal como se eligió.
+  mapping        Json
+  /// Título de la columna de cada dato en el archivo de origen ({ code: "N° de ticket" }): con ellos se buscan las columnas en otro archivo.
+  titles         Json
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
 }
 
 /// Un archivo de entradas importadas: se revisa entero (vista previa con errores por fila), se confirma todo junto

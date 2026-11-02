@@ -35,7 +35,11 @@ export type ImportRow = {
   externalKey?: string | null;
 };
 
-export type ImportIssue = { line: number; message: string };
+/**
+ * Un problema de una fila. `kind: "capacity"` es la fila que no entra por falta de cupo: queda guardada entera en
+ * `overflowRow` para poder importarla pasando el cupo si quien confirma lo pide expresamente.
+ */
+export type ImportIssue = { line: number; message: string; kind?: "capacity"; overflowRow?: unknown };
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

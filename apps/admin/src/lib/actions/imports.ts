@@ -22,10 +22,12 @@ import {
   DomainError,
   confirmImport,
   createImportDraft,
+  deleteImportFormat,
   discardImport,
   importOrdersToEmail,
   markTicketsEmailed,
   prisma,
+  saveImportFormat,
   undoImport,
 } from "@ticketera/db";
 import { type FormState } from "@/lib/forms";
@@ -236,7 +238,7 @@ export async function confirmImportAction(_prev: FormState, formData: FormData):
   const batch = await ownBatch(staff, String(formData.get("batchId") ?? ""));
   if (!batch) return { error: "Importación no encontrada." };
   try {
-    await confirmImport({ batchId: batch.id, staffId: staff.id });
+    await confirmImport({ batchId: batch.id, staffId: staff.id, overCapacity: formData.get("overCapacity") === "on" });
   } catch (error) {
     if (error instanceof DomainError) return { error: error.message };
     throw error;
@@ -296,4 +298,40 @@ export async function emailImportAction(_prev: FormState, formData: FormData): P
   revalidatePath(batchPath(batch));
   if (sent.length === 0) return { error: "No se pudo enviar ningún correo. Revisa la configuración del correo e inténtalo de nuevo." };
   return { ok: true, message: `Se enviaron ${sent.length} correo(s).${failed ? ` ${failed} fallaron: vuelve a intentarlo.` : ""}` };
+}
+
+/** Guarda el emparejamiento actual como formato de la organización, para repetirlo con el mismo proveedor. */
+export async function saveImportFormatAction(formData: FormData): Promise<{ error: string } | { ok: true }> {
+  const staff = await requireEditor();
+  const name = String(formData.get("name") ?? "").trim().slice(0, 80);
+  if (!name) return { error: "Ponle un nombre al formato." };
+  const mapping = readMapping(String(formData.get("mapping") ?? ""), 1000, 1_000_000);
+  if (!mapping) return { error: "El emparejamiento no es válido." };
+  const rawTitles = (() => {
+    try {
+      return JSON.parse(String(formData.get("titles") ?? "{}")) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  })();
+  const titles = Object.fromEntries(
+    MAPPABLE_FIELDS.flatMap((field) => (mapping.columns[field] !== undefined && typeof rawTitles[field] === "string" ? [[field, (rawTitles[field] as string).slice(0, 200)]] : [])),
+  );
+  await saveImportFormat({
+    organizationId: staff.organization.id,
+    name,
+    sourceName: String(formData.get("sourceName") ?? "").trim().slice(0, 80) || null,
+    readMethod: formData.get("readMethod") === "BARCODE" ? "BARCODE" : "QR",
+    mapping,
+    titles,
+  });
+  revalidatePath("/eventos", "layout");
+  return { ok: true };
+}
+
+export async function deleteImportFormatAction(formData: FormData): Promise<{ ok: true }> {
+  const staff = await requireEditor();
+  await deleteImportFormat(staff.organization.id, String(formData.get("id") ?? ""));
+  revalidatePath("/eventos", "layout");
+  return { ok: true };
 }

@@ -10,7 +10,7 @@ puerta las acepte con **ese** código. Plan original: «Plan: cargar entradas ya
   butaca, monto), el tipo de entrada y la función (una columna emparejando cada valor, o uno para todas) y cómo se lee
   el código. Después, la revisión por fila y la confirmación de siempre (todo o nada, y se puede deshacer).
 - **Datos**: cada entrada importada guarda `externalCode` (como vino) y `externalKey` (limpia, única por función). El
-  lote guarda `sourceName` (origen), `codeRule` y `mapping`. Migración `20261102120000_codigos_externos`.
+  lote guarda `sourceName` (origen), `codeRule` y `mapping`. Migración `20261103120000_codigos_externos`.
 - **Reglas al importar**: un código no se repite en el archivo, ni en la función (de otro lote) ni es igual al código
   propio de una entrada de iPass. Una fila sin código recibe uno de iPass. Una mesa de varias personas no se carga con
   un solo código. El tipo tiene que admitir cómo se lee (QR o código de barras). A quien ya tiene la entrada del

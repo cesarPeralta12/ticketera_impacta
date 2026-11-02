@@ -12,10 +12,18 @@ import {
   type ImportMapping,
   type MappableField,
 } from "@ticketera/core";
-import { analyzeExternalFileAction, createExternalImportAction, type ExternalFileAnalysis } from "@/lib/actions/imports";
+import {
+  analyzeExternalFileAction,
+  createExternalImportAction,
+  deleteImportFormatAction,
+  saveImportFormatAction,
+  type ExternalFileAnalysis,
+} from "@/lib/actions/imports";
 
 type Analysis = Exclude<ExternalFileAnalysis, { error: string }>;
 export type TypeChoice = { name: string; detail: string };
+/** Emparejamiento guardado para repetirlo con el mismo proveedor; `titles` es el título de la columna de cada dato. */
+export type SavedFormat = { id: string; name: string; sourceName: string | null; readMethod: "QR" | "BARCODE"; mapping: ImportMapping; titles: Record<string, string> };
 
 /** Los datos que se emparejan con columnas del archivo, en el orden de la ventana. */
 const PERSON_FIELDS: MappableField[] = ["name", "document", "email", "place", "amount"];
@@ -31,7 +39,7 @@ function autoMatch(column: ColumnSummary | undefined, options: string[]) {
  * ventana se elige qué columna es cada dato, cómo se lee el código y a qué tipo de entrada corresponde cada valor.
  * Después se revisa fila por fila (como con la plantilla) y se confirma todo junto.
  */
-export function ExternalImport({ eventId, sessions, types }: { eventId: string; sessions: string[]; types: TypeChoice[] }) {
+export function ExternalImport({ eventId, sessions, types, formats }: { eventId: string; sessions: string[]; types: TypeChoice[]; formats: SavedFormat[] }) {
   const formRef = useRef<HTMLFormElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
@@ -42,6 +50,11 @@ export function ExternalImport({ eventId, sessions, types }: { eventId: string; 
   const [values, setValues] = useState<ImportMapping["values"]>({});
   const [rule, setRule] = useState<ExternalCodeRule>(DEFAULT_CODE_RULE);
   const [tryCode, setTryCode] = useState("");
+  const [readMethod, setReadMethod] = useState<"QR" | "BARCODE">("QR");
+  const [sourceName, setSourceName] = useState("");
+  const [formatName, setFormatName] = useState("");
+  const [formatNote, setFormatNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [savingFormat, startSavingFormat] = useTransition();
   const [state, formAction, submitting] = useActionState(createExternalImportAction, undefined);
   const [, startSubmit] = useTransition();
 
@@ -75,6 +88,59 @@ export function ExternalImport({ eventId, sessions, types }: { eventId: string; 
       setValues({ type: autoMatch(typeColumn, typeNames), session: autoMatch(sessionColumn, sessions) });
       setFixed((f) => ({ type: f.type ?? (types.length === 1 ? types[0]!.name : undefined), session: f.session ?? (sessions.length === 1 ? sessions[0] : undefined) }));
       if (!dialogRef.current?.open) dialogRef.current?.showModal();
+    });
+  }
+
+  /** Pone un formato guardado: busca cada columna por su título en este archivo y repite tipos, función y regla del código. */
+  function applyFormat(id: string) {
+    const format = formats.find((f) => f.id === id);
+    if (!format || !analysis) return;
+    const found: ImportMapping["columns"] = {};
+    const missing: string[] = [];
+    for (const [field, title] of Object.entries(format.titles) as [MappableField, string][]) {
+      const match = analysis.columns.find((c) => valueKey(c.title) === valueKey(title));
+      if (match) found[field] = match.index;
+      else missing.push(`${FIELD_LABEL[field]} («${title}»)`);
+    }
+    const keep = (map: Record<string, string> | undefined, options: string[]) => Object.fromEntries(Object.entries(map ?? {}).filter(([, v]) => options.includes(v)));
+    setColumns(found);
+    setValues({ type: keep(format.mapping.values.type, typeNames), session: keep(format.mapping.values.session, sessions) });
+    setFixed({
+      type: format.mapping.fixed.type && typeNames.includes(format.mapping.fixed.type) ? format.mapping.fixed.type : undefined,
+      session: format.mapping.fixed.session && sessions.includes(format.mapping.fixed.session) ? format.mapping.fixed.session : undefined,
+    });
+    setRule({ ...DEFAULT_CODE_RULE, ...format.mapping.codeRule });
+    setReadMethod(format.readMethod);
+    if (format.sourceName) setSourceName(format.sourceName);
+    setFormatName(format.name);
+    setFormatNote(
+      missing.length > 0
+        ? { ok: false, text: `En este archivo no hay columna para: ${missing.join(", ")}. Elígelas a mano.` }
+        : { ok: true, text: `Formato «${format.name}» aplicado: revisa que todo esté bien.` },
+    );
+  }
+
+  function saveFormat() {
+    if (!mapping || !analysis) return;
+    const titles = Object.fromEntries(Object.entries(columns).flatMap(([field, index]) => (index === undefined ? [] : [[field, analysis.columns.find((c) => c.index === index)?.title ?? ""]])));
+    const data = new FormData();
+    data.set("name", formatName);
+    data.set("mapping", JSON.stringify(mapping));
+    data.set("titles", JSON.stringify(titles));
+    data.set("sourceName", sourceName);
+    data.set("readMethod", readMethod);
+    startSavingFormat(async () => {
+      const result = await saveImportFormatAction(data);
+      setFormatNote("error" in result ? { ok: false, text: result.error } : { ok: true, text: `Formato «${formatName.trim()}» guardado: la próxima vez lo eliges y ya queda armado.` });
+    });
+  }
+
+  function removeFormat(id: string) {
+    const data = new FormData();
+    data.set("id", id);
+    startSavingFormat(async () => {
+      await deleteImportFormatAction(data);
+      setFormatNote({ ok: true, text: "Formato borrado." });
     });
   }
 
@@ -126,7 +192,7 @@ export function ExternalImport({ eventId, sessions, types }: { eventId: string; 
         </label>
         <label className="label">
           De dónde vienen (opcional)
-          <input name="sourceName" maxLength={80} placeholder="ej. TuBoleto" className="field w-44" />
+          <input name="sourceName" value={sourceName} onChange={(e) => setSourceName(e.target.value)} maxLength={80} placeholder="ej. TuBoleto" className="field w-44" />
         </label>
         <button type="button" onClick={() => analyze()} disabled={analyzing} className="btn btn-primary">
           {analyzing ? "Leyendo…" : "Elegir columnas"}
@@ -157,6 +223,22 @@ export function ExternalImport({ eventId, sessions, types }: { eventId: string; 
             </div>
 
             <div className="space-y-6 overflow-y-auto px-5 py-4">
+              {formats.length > 0 && (
+                <section className="flex flex-wrap items-end gap-3">
+                  <label className="label min-w-[16rem]">
+                    Formato guardado
+                    <select defaultValue="" onChange={(e) => applyFormat(e.target.value)} className="field">
+                      <option value="">— elegir uno para no emparejar a mano —</option>
+                      {formats.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.name}
+                          {f.sourceName ? ` · ${f.sourceName}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </section>
+              )}
               {/* 1. Hoja, fila de títulos y las primeras filas del archivo */}
               <section className="space-y-2">
                 <div className="flex flex-wrap items-end gap-3">
@@ -321,10 +403,10 @@ export function ExternalImport({ eventId, sessions, types }: { eventId: string; 
                 <h3 className="eyebrow">¿Cómo se lee el código?</h3>
                 <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
                   <label className="flex items-center gap-2">
-                    <input type="radio" name="readMethod" value="QR" defaultChecked /> Viene en un QR
+                    <input type="radio" name="readMethod" value="QR" checked={readMethod === "QR"} onChange={() => setReadMethod("QR")} /> Viene en un QR
                   </label>
                   <label className="flex items-center gap-2">
-                    <input type="radio" name="readMethod" value="BARCODE" /> Viene en un código de barras
+                    <input type="radio" name="readMethod" value="BARCODE" checked={readMethod === "BARCODE"} onChange={() => setReadMethod("BARCODE")} /> Viene en un código de barras
                   </label>
                 </div>
                 <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
@@ -377,6 +459,21 @@ export function ExternalImport({ eventId, sessions, types }: { eventId: string; 
                   {state.error}
                 </p>
               )}
+              <div className="flex flex-wrap items-end gap-2 border-b border-[var(--border)] pb-3">
+                <label className="label">
+                  Guardar este emparejamiento como formato
+                  <input value={formatName} onChange={(e) => setFormatName(e.target.value)} maxLength={80} placeholder="ej. TuBoleto 2026" className="field w-56" />
+                </label>
+                <button type="button" onClick={saveFormat} disabled={!formatName.trim() || problems.length > 0 || savingFormat} className="btn disabled:cursor-not-allowed disabled:opacity-50">
+                  Guardar formato
+                </button>
+                {formats.find((f) => f.name === formatName.trim()) && (
+                  <button type="button" onClick={() => removeFormat(formats.find((f) => f.name === formatName.trim())!.id)} disabled={savingFormat} className="text-sm text-[var(--danger)] underline">
+                    Borrar este formato
+                  </button>
+                )}
+                {formatNote && <p className={`text-sm ${formatNote.ok ? "text-[var(--ink-muted)]" : "text-[var(--warn)]"}`}>{formatNote.text}</p>}
+              </div>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs text-[var(--ink-dim)]">Todavía no ocupa cupo: en el paso siguiente ves cada fila con su error y recién ahí confirmas.</p>
                 <button type="submit" disabled={problems.length > 0 || submitting} className="btn btn-primary disabled:cursor-not-allowed disabled:opacity-50">
