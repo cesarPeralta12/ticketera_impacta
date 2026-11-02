@@ -156,7 +156,14 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Future<void> _handle(String raw, AccessMethod? method) async {
-    if (_busy) return;
+    if (_busy) {
+      // Mientras se atiende una lectura la cámara sigue viendo el QR: se anota para saber cuándo lo retiran.
+      if (method != null) {
+        final seen = extractTicketCode(raw) ?? externalKeyCandidates(raw, widget.meta.codeRules).firstOrNull;
+        if (seen != null) _cooldown.saw(seen, DateTime.now());
+      }
+      return;
+    }
     if (_consultOnly) {
       final at = DateTime.now();
       if (method != null && raw == _lastRaw && at.difference(_lastAt) < const Duration(seconds: 4)) return;
@@ -164,12 +171,14 @@ class _ScanScreenState extends State<ScanScreen> {
     }
     // La cámara ve el mismo código muchos cuadros seguidos: se ignora si es el mismo de hace un momento.
     final now = DateTime.now();
-    if (method != null && raw == _lastRaw && now.difference(_lastAt) < const Duration(seconds: 3)) return;
-    // Una entrada recién procesada no se vuelve a leer sola (la cámara sigue viendo el QR, y el de una entrada
-    // dinámica cambia cada 30 s). Escribir el código a mano (method == null) siempre se atiende.
-    // Una entrada de otro proveedor no tiene código de iPass en lo leído: la pausa va por la clave limpia de su código.
+    // Una entrada recién procesada no se vuelve a leer sola mientras la cámara siga viendo su QR (y el de una entrada
+    // dinámica cambia cada 30 s), pero sí cuando se retira y vuelve a pasar. Escribir el código a mano (method == null)
+    // siempre se atiende. Una entrada de otro proveedor no tiene código de iPass en lo leído: la pausa va por la clave
+    // limpia de su código.
     final code = extractTicketCode(raw) ?? externalKeyCandidates(raw, widget.meta.codeRules).firstOrNull;
     if (method != null && code != null && _cooldown.blocked(code, now)) return;
+    // Un QR sin entrada reconocible (basura, de otro sistema): solo se repite pasado un momento.
+    if (method != null && code == null && raw == _lastRaw && now.difference(_lastAt) < const Duration(seconds: 3)) return;
     if (method == null && code != null) _cooldown.release(code);
     _lastRaw = raw;
     _lastAt = now;

@@ -4,18 +4,36 @@
 /// 30 segundos (su contenido es otro, pero la entrada es la misma). Sin esta pausa, la entrada recién aceptada se
 /// volvía a leer y aparecía como "YA UTILIZADA" sin que nadie la hubiera vuelto a pasar. Se cuenta por código
 /// de entrada, no por el texto leído.
+///
+/// La pausa vale mientras la cámara siga VIENDO ese QR. Si deja de verlo (la persona lo retiró) y vuelve a aparecer,
+/// es una lectura nueva y se atiende en el momento: antes la pausa corría por tiempo (90 s después de un ingreso, 12 s
+/// después de una salida) y quien salía no podía volver a entrar, ni se podía leer dos veces la misma entrada, aunque
+/// se quitara de la cámara.
 library;
 
 class ScanCooldown {
   final Map<String, DateTime> _until = {};
+  final Map<String, DateTime> _seen = {};
 
-  /// ¿Esta entrada está en pausa? (se limpia sola al vencer)
+  /// Cuánto sin ver el QR cuenta como «lo retiraron». La cámara lo detecta cada 0,4 s mientras está delante.
+  static const gone = Duration(milliseconds: 1500);
+
+  /// La cámara ve este código ahora (aunque no se esté atendiendo la lectura): mantiene viva la pausa.
+  void saw(String code, DateTime now) {
+    if (_until.containsKey(code)) _seen[code] = now;
+  }
+
+  /// ¿Esta entrada está en pausa? (se limpia sola al vencer o cuando la cámara deja de verla). Llamar en cada detección.
   bool blocked(String code, DateTime now) {
     final until = _until[code];
     if (until == null) return false;
-    if (now.isBefore(until)) return true;
-    _until.remove(code);
-    return false;
+    final last = _seen[code] ?? now;
+    _seen[code] = now;
+    if (!now.isBefore(until) || now.difference(last) > gone) {
+      release(code);
+      return false;
+    }
+    return true;
   }
 
   /// Pone en pausa la entrada durante [duration] (se queda con la pausa más larga si ya tenía una).
@@ -23,10 +41,14 @@ class ScanCooldown {
     final until = now.add(duration);
     final current = _until[code];
     if (current == null || until.isAfter(current)) _until[code] = until;
+    _seen[code] = now;
   }
 
   /// Quita la pausa (por ejemplo, el portero escribió el código a mano a propósito).
-  void release(String code) => _until.remove(code);
+  void release(String code) {
+    _until.remove(code);
+    _seen.remove(code);
+  }
 }
 
 /// Pausas según lo que pasó con la entrada.
