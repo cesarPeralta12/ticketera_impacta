@@ -48,8 +48,10 @@ export default async function ImportBatchPage({ params }: Props) {
   const external = batch.codeRule !== null;
   const withCode = batch.rows.filter((r) => r.externalCode).length;
   // Si todos los errores son de falta de cupo, se puede importar igual pasando el cupo, con una confirmación expresa.
-  const overflowTickets = batch.errors.reduce((sum, e) => sum + ((e.overflowRow as { people?: number } | undefined)?.people ?? 0), 0);
-  const onlyCapacity = batch.errors.length > 0 && batch.errors.every((e) => e.kind === "capacity" && e.overflowRow);
+  const seatRows = batch.errors.filter((e) => e.kind === "seat" && e.pendingRow).map((e) => e.pendingRow as { ticketTypeId: string; typeName: string });
+  const seatTypes = [...new Map(seatRows.map((r) => [r.ticketTypeId, r.typeName])).entries()].map(([typeId, name]) => ({ typeId, name, count: seatRows.filter((r) => r.ticketTypeId === typeId).length }));
+  const overflowTickets = batch.errors.reduce((sum, e) => sum + ((e.pendingRow as { people?: number } | undefined)?.people ?? 0), 0);
+  const onlyCapacity = batch.errors.length > 0 && batch.errors.every((e) => e.kind === "capacity" && e.pendingRow);
 
   const orders =
     batch.status === "DRAFT" || batch.status === "DISCARDED"
@@ -110,6 +112,24 @@ export default async function ImportBatchPage({ params }: Props) {
                 Corrígelas en el Excel y vuelve a subirlo, o confirma dejándolas fuera (se importan solo las filas listas).
               </p>
               <IssueTable issues={batch.errors} />
+            </section>
+          )}
+          {seatTypes.length > 0 && editable && (
+            <section className="card space-y-3 border-[var(--warn)]/40 p-6">
+              <h2 className="eyebrow text-[var(--warn)]">Filas sin butaca ({seatRows.length})</h2>
+              <p className="text-sm text-[var(--ink-muted)]">
+                Estas filas son de un tipo numerado y el archivo no trae su butaca. Elígelas en el mapa y se les asigna una a cada una, sin volver a subir el
+                archivo.
+              </p>
+              <ul className="flex flex-wrap gap-2">
+                {seatTypes.map((t) => (
+                  <li key={t.typeId}>
+                    <Link href={`/eventos/${event.id}/importar/${batch.id}/butacas?tipo=${t.typeId}`} className="btn btn-primary">
+                      Asignar en el mapa: {t.name} ({t.count})
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             </section>
           )}
           {batch.warnings.length > 0 && (

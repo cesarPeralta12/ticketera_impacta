@@ -36,10 +36,11 @@ export type ImportRow = {
 };
 
 /**
- * Un problema de una fila. `kind: "capacity"` es la fila que no entra por falta de cupo: queda guardada entera en
- * `overflowRow` para poder importarla pasando el cupo si quien confirma lo pide expresamente.
+ * Un problema de una fila. Con `kind` la fila queda guardada entera en `pendingRow` para resolverla sin volver a subir
+ * el archivo: `"capacity"` no entra por falta de cupo (se puede importar pasando el cupo si quien confirma lo pide
+ * expresamente) y `"seat"` es de un tipo numerado sin butaca (se le asigna una en el mapa).
  */
-export type ImportIssue = { line: number; message: string; kind?: "capacity"; overflowRow?: unknown };
+export type ImportIssue = { line: number; message: string; kind?: "capacity" | "seat"; pendingRow?: unknown };
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

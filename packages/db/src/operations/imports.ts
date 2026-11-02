@@ -150,35 +150,37 @@ export async function resolveImportRows(db: Db, input: { eventId: string; rows: 
     let seatId: string | null = null;
     let place: string | null = null;
     let tableNumber: number | null = null;
+    let pendingSeat: string | null = null;
     const noun = type.kind === "TABLE" ? "mesa" : "butaca";
     if (type.section?.seatingMode === "RESERVED") {
       if (!row.place) {
-        fail(`"${type.name}" es numerada: falta la ${noun}.`);
-        continue;
+        // Sin butaca en el archivo: la fila queda guardada para asignarle una en el mapa (no se puede confirmar hasta entonces).
+        pendingSeat = `"${type.name}" es numerada: falta la ${noun}. Asígnala en el mapa.`;
+      } else {
+        let index = indexes.get(type.sectionId!);
+        if (!index) {
+          index = seatIndex(db, type.sectionId!, type.kind === "TABLE");
+          indexes.set(type.sectionId!, index);
+        }
+        const matches = (await index).get(placeKey(row.place)) ?? [];
+        if (matches.length !== 1) {
+          fail(
+            matches.length === 0
+              ? `La ${noun} "${row.place}" no existe en ${type.section.name}.`
+              : `"${row.place}" puede ser ${matches.map((m) => m.label).join(" o ")}: escríbela como en el mapa.`,
+          );
+          continue;
+        }
+        const seat = matches[0]!;
+        const previous = seatLines.get(seat.id);
+        if (previous !== undefined) {
+          fail(`${seat.label} está repetida (fila ${previous}).`);
+          continue;
+        }
+        seatLines.set(seat.id, row.line);
+        seatId = seat.id;
+        place = seat.label;
       }
-      let index = indexes.get(type.sectionId!);
-      if (!index) {
-        index = seatIndex(db, type.sectionId!, type.kind === "TABLE");
-        indexes.set(type.sectionId!, index);
-      }
-      const matches = (await index).get(placeKey(row.place)) ?? [];
-      if (matches.length !== 1) {
-        fail(
-          matches.length === 0
-            ? `La ${noun} "${row.place}" no existe en ${type.section.name}.`
-            : `"${row.place}" puede ser ${matches.map((m) => m.label).join(" o ")}: escríbela como en el mapa.`,
-        );
-        continue;
-      }
-      const seat = matches[0]!;
-      const previous = seatLines.get(seat.id);
-      if (previous !== undefined) {
-        fail(`${seat.label} está repetida (fila ${previous}).`);
-        continue;
-      }
-      seatLines.set(seat.id, row.line);
-      seatId = seat.id;
-      place = seat.label;
     } else if (type.kind === "TABLE" && row.place) {
       const number = Number(/\d+/.exec(row.place)?.[0]);
       if (!Number.isInteger(number) || number < 1 || number > 10_000) {
@@ -198,7 +200,7 @@ export async function resolveImportRows(db: Db, input: { eventId: string; rows: 
       warnings.push({ line: row.line, message: `"${type.name}" es entrada general: no lleva butaca (se ignora "${row.place}").` });
     }
 
-    resolved.push({
+    const resolvedRow: ResolvedImportRow = {
       line: row.line,
       sessionId: session.id,
       ticketTypeId: type.id,
@@ -213,7 +215,9 @@ export async function resolveImportRows(db: Db, input: { eventId: string; rows: 
       people: peopleIn(type),
       externalCode: row.externalCode ?? null,
       externalKey: row.externalKey ?? null,
-    });
+    };
+    if (pendingSeat) errors.push({ line: row.line, message: pendingSeat, kind: "seat", pendingRow: resolvedRow });
+    else resolved.push(resolvedRow);
   }
 
   errors.push(...(await checkExternalCodes(db, resolved)));
@@ -313,7 +317,7 @@ async function checkAvailability(db: Db, rows: ResolvedImportRow[], now: Date, i
             [...next].map(([ticketTypeId, quantity]) => ({ ticketTypeId, quantity })),
           );
       if (shortage) {
-        issues.push({ line: row.line, message: `Sin cupo en "${shortage.name}": ya no quedan lugares para esta fila.`, kind: "capacity", overflowRow: row });
+        issues.push({ line: row.line, message: `Sin cupo en "${shortage.name}": ya no quedan lugares para esta fila.`, kind: "capacity", pendingRow: row });
         continue;
       }
       requested.set(row.ticketTypeId, next.get(row.ticketTypeId)!);
@@ -398,12 +402,12 @@ async function confirmImportTx(input: { batchId: string; staffId: string; overCa
       }
       const allErrors = batch.errors as ImportIssue[];
       // Pasando el cupo: las filas que solo fallaban por falta de cupo se emiten igual (con la confirmación expresa de quien importa).
-      const overflow = input.overCapacity ? allErrors.filter((e) => e.kind === "capacity" && e.overflowRow) : [];
+      const overflow = input.overCapacity ? allErrors.filter((e) => e.kind === "capacity" && e.pendingRow) : [];
       const errors = allErrors.filter((e) => !overflow.includes(e));
       if (errors.length > 0) {
         throw new DomainError("INVALID_ITEMS", `Hay ${errors.length} fila(s) con error: corrígelas y vuelve a subir el archivo. No se emitió ninguna entrada.`);
       }
-      const rows = [...(batch.rows as unknown as ResolvedImportRow[]), ...overflow.map((e) => e.overflowRow as ResolvedImportRow)].sort((a, b) => a.line - b.line);
+      const rows = [...(batch.rows as unknown as ResolvedImportRow[]), ...overflow.map((e) => e.pendingRow as ResolvedImportRow)].sort((a, b) => a.line - b.line);
       if (rows.length === 0) throw new DomainError("INVALID_ITEMS", "No hay filas válidas para importar.");
 
       const typeIds = [...new Set(rows.map((r) => r.ticketTypeId))];
@@ -665,4 +669,86 @@ export async function saveImportFormat(input: {
 
 export async function deleteImportFormat(organizationId: string, id: string) {
   await prisma.importFormat.deleteMany({ where: { id, organizationId } });
+}
+
+/** Las filas de un borrador que están esperando butaca, con lo que hace falta para elegirla en el mapa. */
+export async function listPendingSeatRows(batchId: string) {
+  const batch = await prisma.importBatch.findUnique({ where: { id: batchId }, select: { status: true, errors: true, eventId: true } });
+  if (!batch || batch.status !== "DRAFT") return [];
+  return (batch.errors as ImportIssue[])
+    .filter((e) => e.kind === "seat" && e.pendingRow)
+    .map((e) => e.pendingRow as ResolvedImportRow)
+    .sort((a, b) => a.line - b.line);
+}
+
+/**
+ * Asigna butacas a filas de un borrador de un tipo numerado que vinieron sin ella (una butaca por fila). Vuelve a revisar
+ * que las butacas sean de la sección del tipo, que no se repitan y que sigan libres; lo que no pase queda como error de
+ * esa fila. No ocupa cupo: eso sigue pasando al confirmar.
+ */
+export async function assignImportSeats(input: { batchId: string; staffId: string; assignments: { line: number; seatId: string }[]; now?: Date }) {
+  const now = input.now ?? new Date();
+  if (input.assignments.length === 0) throw new DomainError("INVALID_ITEMS", "Elige al menos una butaca.");
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "ImportBatch" WHERE id = ${input.batchId} FOR UPDATE`;
+      const batch = await tx.importBatch.findUnique({ where: { id: input.batchId } });
+      if (!batch) throw new DomainError("NOT_FOUND", "Importación no encontrada.");
+      if (batch.status !== "DRAFT") throw new DomainError("INVALID_STATE", "Esta importación ya no se puede cambiar.");
+      const errors = batch.errors as ImportIssue[];
+      const pending = new Map(errors.filter((e) => e.kind === "seat" && e.pendingRow).map((e) => [e.line, e.pendingRow as ResolvedImportRow]));
+      const lines = input.assignments.map((a) => a.line);
+      if (new Set(lines).size !== lines.length || new Set(input.assignments.map((a) => a.seatId)).size !== lines.length) {
+        throw new DomainError("INVALID_ITEMS", "Una butaca o una fila está repetida en la asignación.");
+      }
+      for (const line of lines) if (!pending.has(line)) throw new DomainError("INVALID_ITEMS", `La fila ${line} ya no está esperando butaca.`);
+
+      const rowsNow = batch.rows as unknown as ResolvedImportRow[];
+      const typeIds = [...new Set([...pending.values()].map((r) => r.ticketTypeId))];
+      const [types, seats] = await Promise.all([
+        tx.ticketType.findMany({ where: { id: { in: typeIds } }, select: { id: true, name: true, sectionId: true } }),
+        tx.seat.findMany({ where: { id: { in: input.assignments.map((a) => a.seatId) } }, select: { id: true, label: true, sectionId: true } }),
+      ]);
+      const sectionOf = new Map(types.map((t) => [t.id, t.sectionId]));
+      const seatById = new Map(seats.map((s) => [s.id, s]));
+      const usedSeats = new Map(rowsNow.flatMap((r) => (r.seatId ? [[r.seatId, r.line] as const] : [])));
+
+      const filled: ResolvedImportRow[] = [];
+      for (const { line, seatId } of input.assignments) {
+        const row = pending.get(line)!;
+        const seat = seatById.get(seatId);
+        if (!seat || seat.sectionId !== sectionOf.get(row.ticketTypeId)) {
+          throw new DomainError("INVALID_ITEMS", `La butaca elegida para la fila ${line} no es de la sección de "${row.typeName}".`);
+        }
+        const clash = usedSeats.get(seatId);
+        if (clash !== undefined) throw new DomainError("INVALID_ITEMS", `${seat.label} ya la tiene la fila ${clash}.`);
+        filled.push({ ...row, seatId, place: seat.label });
+      }
+
+      const assigned = new Set(lines);
+      const kept = errors.filter((e) => !assigned.has(e.line));
+      const codeIssues = await checkExternalCodes(tx, filled);
+      const clashing = new Set(codeIssues.map((e) => e.line));
+      const check = await checkAvailability(tx, [...rowsNow, ...filled.filter((r) => !clashing.has(r.line))], now);
+      // Lo que no pasa la revisión (butaca tomada, sin cupo) vuelve a quedar como error de su fila.
+      // Una butaca recién asignada que ya no está libre deja la fila esperando otra butaca (no se pierde).
+      const backToPending = check.issues.map((i) => {
+        const row = filled.find((r) => r.line === i.line);
+        return row && !i.kind ? { ...i, kind: "seat" as const, pendingRow: { ...row, seatId: null, place: null } } : i;
+      });
+      const stillErrors = [...kept.filter((e) => !check.issues.some((i) => i.line === e.line)), ...codeIssues, ...backToPending].sort((a, b) => a.line - b.line);
+      const ticketCount = check.rows.reduce((sum, r) => sum + r.people, 0);
+      await tx.importBatch.update({
+        where: { id: batch.id },
+        data: {
+          rows: check.rows as unknown as Prisma.InputJsonValue,
+          errors: stillErrors as unknown as Prisma.InputJsonValue,
+          validRows: ticketCount > MAX_IMPORT_TICKETS ? 0 : check.rows.length,
+          ticketCount,
+        },
+      });
+      return { assigned: filled.length, errors: stillErrors.length };
+    },
+    { maxWait: 15_000, timeout: 120_000 },
+  );
 }

@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { parseImportTable, randomCode, type ImportRow } from "@ticketera/core";
 import { prisma } from "../src/client";
 import { scanTicket } from "../src/operations/access";
-import { confirmImport, createImportDraft, deleteImportFormat, getImportSummary, listImportFormats, saveImportFormat, undoImport } from "../src/operations/imports";
+import { assignImportSeats, confirmImport, createImportDraft, deleteImportFormat, getImportSummary, listImportFormats, listPendingSeatRows, saveImportFormat, undoImport } from "../src/operations/imports";
 import { getSessionAvailability } from "../src/operations/orders";
 import { getEventReport } from "../src/operations/report";
 import { createGeneralAdmissionEvent, createPendingOrder, createSeatedEvent, buyer } from "./fixtures";
@@ -108,6 +108,36 @@ describe("importar entradas desde Excel", () => {
     expect(await listImportFormats(org.id)).toHaveLength(0);
   });
 
+  it("las filas de un tipo numerado sin butaca se asignan en el mapa antes de confirmar", async () => {
+    const { session, sections } = await createSeatedEvent({ sections: [{ name: "Platea", seats: 5 }] });
+    const s = await staff();
+    const [a1, a2, a3, a4] = sections[0]!.seats;
+    const batch = await draft(session.eventId, s.id, [
+      ["1", "Platea", "Ana Pérez", "", "", "", ""],
+      ["1", "Platea", "Luis Rojas", "", "", "", ""],
+      ["1", "Platea", "Eva Díaz", "", "", "A 1", ""],
+    ]);
+    expect((batch.errors as { line: number; kind?: string }[]).map((e) => [e.line, e.kind])).toEqual([[2, "seat"], [3, "seat"]]);
+    expect((await listPendingSeatRows(batch.id)).map((r) => r.name)).toEqual(["Ana Pérez", "Luis Rojas"]);
+    await expect(confirmImport({ batchId: batch.id, staffId: s.id })).rejects.toMatchObject({ code: "INVALID_ITEMS" });
+
+    // Una butaca de otra sección, o ya usada por otra fila, se rechaza; una sección distinta no existe aquí, así que se prueba la repetida.
+    await expect(assignImportSeats({ batchId: batch.id, staffId: s.id, assignments: [{ line: 2, seatId: a1!.id }] })).rejects.toMatchObject({ code: "INVALID_ITEMS" });
+    await expect(assignImportSeats({ batchId: batch.id, staffId: s.id, assignments: [{ line: 2, seatId: a2!.id }, { line: 3, seatId: a2!.id }] })).rejects.toMatchObject({ code: "INVALID_ITEMS" });
+
+    // Una butaca vendida desde la vista previa vuelve a quedar como error de su fila.
+    await createPendingOrder({ sessionId: session.id, buyer: buyer(7), items: [{ ticketTypeId: sections[0]!.ticketType.id, quantity: 1, seatIds: [a4!.id] }] });
+    const partial = await assignImportSeats({ batchId: batch.id, staffId: s.id, assignments: [{ line: 2, seatId: a2!.id }, { line: 3, seatId: a4!.id }] });
+    expect(partial).toEqual({ assigned: 2, errors: 1 });
+    const left = await prisma.importBatch.findUniqueOrThrow({ where: { id: batch.id } });
+    expect((left.errors as { line: number; message: string }[]).map((e) => [e.line, e.message])).toEqual([[3, "A-4 ya está vendida o reservada."]]);
+
+    await assignImportSeats({ batchId: batch.id, staffId: s.id, assignments: [{ line: 3, seatId: a3!.id }] });
+    await confirmImport({ batchId: batch.id, staffId: s.id });
+    const tickets = await prisma.ticket.findMany({ where: { order: { importBatchId: batch.id } }, include: { seat: true }, orderBy: { holderName: "asc" } });
+    expect(tickets.map((t) => [t.holderName, t.seat?.label])).toEqual([["Ana Pérez", "A-2"], ["Eva Díaz", "A-1"], ["Luis Rojas", "A-3"]]);
+  });
+
   it("si se vendió algo desde la vista previa, no importa nada", async () => {
     const { session } = await createGeneralAdmissionEvent({ sectionCapacity: 2, types: [{ name: "General", capacity: 2 }] });
     const s = await staff();
@@ -137,7 +167,7 @@ describe("importar entradas desde Excel", () => {
     ]);
     const errors = batch.errors as { line: number; message: string }[];
     expect(errors.map((e) => [e.line, e.message])).toEqual([
-      [3, '"Platea" es numerada: falta la butaca.'],
+      [3, '"Platea" es numerada: falta la butaca. Asígnala en el mapa.'],
       [4, 'La butaca "A-9" no existe en Platea.'],
       [5, "A-1 está repetida (fila 2)."],
       [6, "A-2 ya está vendida o reservada."],

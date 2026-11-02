@@ -20,11 +20,13 @@ import {
 } from "@ticketera/core";
 import {
   DomainError,
+  assignImportSeats,
   confirmImport,
   createImportDraft,
   deleteImportFormat,
   discardImport,
   importOrdersToEmail,
+  listPendingSeatRows,
   markTicketsEmailed,
   prisma,
   saveImportFormat,
@@ -383,4 +385,33 @@ export async function createImportTypeAction(formData: FormData): Promise<{ erro
   await logAudit({ actorType: "staff", actorId: staff.id, action: "import.type.create", entity: "Event", entityId: event.id, data: { name, capacity, sessions: sessions.length } });
   revalidatePath(`/eventos/${event.id}/importar`);
   return { ok: true, name };
+}
+
+/** Asigna butacas elegidas en el mapa a las filas de un borrador que vinieron sin ella. */
+export async function assignImportSeatsAction(formData: FormData): Promise<{ error: string } | { ok: true; message: string; remaining: number }> {
+  const staff = await requireEditor();
+  const batch = await ownBatch(staff, String(formData.get("batchId") ?? ""));
+  if (!batch) return { error: "Importación no encontrada." };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(String(formData.get("assignments") ?? ""));
+  } catch {
+    return { error: "La asignación no es válida." };
+  }
+  const assignments = Array.isArray(raw)
+    ? raw.flatMap((a) => (a && Number.isInteger(a.line) && typeof a.seatId === "string" ? [{ line: a.line as number, seatId: a.seatId as string }] : []))
+    : [];
+  try {
+    const result = await assignImportSeats({ batchId: batch.id, staffId: staff.id, assignments });
+    const remaining = (await listPendingSeatRows(batch.id)).length;
+    revalidatePath(batchPath(batch));
+    return {
+      ok: true,
+      remaining,
+      message: `Se asignaron ${result.assigned} butaca(s).${result.errors ? ` ${result.errors} fila(s) siguen con error: míralas en la revisión.` : ""}`,
+    };
+  } catch (error) {
+    if (error instanceof DomainError) return { error: error.message };
+    throw error;
+  }
 }
