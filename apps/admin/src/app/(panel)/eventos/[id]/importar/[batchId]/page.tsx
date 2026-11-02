@@ -44,6 +44,9 @@ export default async function ImportBatchPage({ params }: Props) {
     byType.set(key, line);
   }
   const declared = batch.rows.reduce((sum, r) => sum + r.amount, 0);
+  // Entradas de otro proveedor: se leen con su propio código y no se les envía otra entrada.
+  const external = batch.codeRule !== null;
+  const withCode = batch.rows.filter((r) => r.externalCode).length;
 
   const orders =
     batch.status === "DRAFT" || batch.status === "DISCARDED"
@@ -60,7 +63,7 @@ export default async function ImportBatchPage({ params }: Props) {
             totalAmount: true,
             ticketsEmailedAt: true,
             items: { select: { name: true, seat: { select: { label: true } } } },
-            tickets: { select: { status: true, credit: { select: { tableNumber: true } } } },
+            tickets: { select: { status: true, externalCode: true, credit: { select: { tableNumber: true } } } },
           },
         });
 
@@ -78,7 +81,14 @@ export default async function ImportBatchPage({ params }: Props) {
           Subido por {batch.staff.name} el {formatDateTime(batch.createdAt, timeZone)}
           {batch.confirmedAt && ` · confirmado el ${formatDateTime(batch.confirmedAt, timeZone)}`}
           {batch.undoneAt && ` · deshecho el ${formatDateTime(batch.undoneAt, timeZone)}`}
+          {batch.sourceName && ` · origen: ${batch.sourceName}`}
         </p>
+        {external && (
+          <p className="mt-2 rounded-md bg-[var(--warn-soft)] px-3 py-2 text-sm text-[var(--warn)]">
+            {withCode} entrada(s) traen el código de otro proveedor: en la puerta se leen con ese código y no se les envía otra entrada
+            por correo (ya tienen la suya). Los teléfonos de puerta necesitan la app <strong>1.8.0</strong> o más nueva para leerlas.
+          </p>
+        )}
       </div>
 
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -139,6 +149,7 @@ export default async function ImportBatchPage({ params }: Props) {
                     <thead className="text-left text-xs text-[var(--ink-dim)]">
                       <tr>
                         <th className="py-1 font-normal">Fila</th>
+                        {external && <th className="py-1 font-normal">Código</th>}
                         <th className="py-1 font-normal">Nombre</th>
                         <th className="py-1 font-normal">Carnet</th>
                         <th className="py-1 font-normal">Correo</th>
@@ -151,6 +162,7 @@ export default async function ImportBatchPage({ params }: Props) {
                       {batch.rows.slice(0, SHOWN_ROWS).map((r) => (
                         <tr key={r.line}>
                           <td className="py-1.5 font-mono text-xs text-[var(--ink-dim)]">{r.line}</td>
+                          {external && <td className="py-1.5 font-mono text-xs">{r.externalCode ?? "— (iPass le da uno)"}</td>}
                           <td className="py-1.5">{r.name}</td>
                           <td className="py-1.5">{r.document ?? "—"}</td>
                           <td className="py-1.5">{r.email ?? "—"}</td>
@@ -274,6 +286,7 @@ export default async function ImportBatchPage({ params }: Props) {
                 <thead className="text-left text-xs text-[var(--ink-dim)]">
                   <tr>
                     <th className="py-1 font-normal">Nombre</th>
+                    {external && <th className="py-1 font-normal">Código del proveedor</th>}
                     <th className="py-1 font-normal">Carnet</th>
                     <th className="py-1 font-normal">Tipo</th>
                     <th className="py-1 font-normal">Butaca o mesa</th>
@@ -290,6 +303,7 @@ export default async function ImportBatchPage({ params }: Props) {
                     return (
                       <tr key={o.code}>
                         <td className="py-1.5">{o.buyerName}</td>
+                        {external && <td className="py-1.5 font-mono text-xs">{ticket?.externalCode ?? "—"}</td>}
                         <td className="py-1.5">{o.buyerDocument ?? "—"}</td>
                         <td className="py-1.5">
                           {o.items[0]?.name}
@@ -297,7 +311,7 @@ export default async function ImportBatchPage({ params }: Props) {
                         </td>
                         <td className="py-1.5">{o.items[0]?.seat?.label ?? (table ? `Mesa ${table}` : "—")}</td>
                         <td className="py-1.5">{state && <span className={`badge ${state.className}`}>{state.text}</span>}</td>
-                        <td className="py-1.5 text-xs">{o.buyerEmail ? (o.ticketsEmailedAt ? "Enviado" : "Pendiente") : "Sin correo"}</td>
+                        <td className="py-1.5 text-xs">{ticket?.externalCode ? "Ya tiene la suya" : o.buyerEmail ? (o.ticketsEmailedAt ? "Enviado" : "Pendiente") : "Sin correo"}</td>
                         <td className="py-1.5 font-mono text-xs">{o.code}</td>
                       </tr>
                     );

@@ -1,6 +1,8 @@
 import {
   deriveTicketKey,
+  externalKeyCandidates,
   isExitScan,
+  parseCodeRule,
   parseDynamicPayload,
   parseManualWithOtp,
   parseTicketPayload,
@@ -11,7 +13,7 @@ import {
   verifyDynamicPayload,
 } from "@ticketera/core";
 import { prisma } from "../client";
-import type { AccessMethod, PresenceMovement, ScanResult } from "../generated/prisma/client";
+import { Prisma, type AccessMethod, type PresenceMovement, type ScanResult } from "../generated/prisma/client";
 import { expireTimedTickets } from "./nightlife";
 import { isUniqueViolation, requireEnv } from "./shared";
 
@@ -64,6 +66,43 @@ const OFFLINE_STEP_WINDOW = 2;
  * - clientScanId hace idempotente el reenvío: si la app sube dos veces la misma lectura
  *   (se cortó la red a mitad de la sincronización), cuenta una sola vez.
  */
+/** Lo que se carga de una entrada al leerla (la misma forma para un código de iPass o uno externo). */
+const scanInclude = {
+  ticketType: { include: { zones: { select: { id: true } } } },
+  seat: { include: { section: true } },
+  session: { include: { event: true } },
+  credit: { select: { tableNumber: true, seat: { select: { label: true } } } },
+  printBatch: { select: { mode: true } },
+} as const;
+
+/** Las reglas con que se limpian los códigos de terceros importados en un evento (una por lote; normalmente ninguna). */
+export async function externalCodeRules(eventId: string) {
+  const batches = await prisma.importBatch.findMany({
+    where: { eventId, status: { not: "DISCARDED" }, codeRule: { not: Prisma.DbNull } },
+    select: { codeRule: true },
+  });
+  const unique = new Map(batches.map((b) => parseCodeRule(b.codeRule)).map((rule) => [JSON.stringify(rule), rule]));
+  return [...unique.values()];
+}
+
+/**
+ * Segunda forma de reconocer una lectura: el código de un tercero (entrada importada con su propio QR o código). Se
+ * limpia con las reglas de los lotes del evento y se busca primero en esta función y después en las otras del evento
+ * (para decir "función equivocada" en vez de "no existe"). Solo se usa cuando la lectura no es una entrada de iPass.
+ */
+async function findExternalTicket(sessionId: string, raw: string) {
+  const session = await prisma.eventSession.findUnique({ where: { id: sessionId }, select: { eventId: true } });
+  if (!session) return null;
+  const rules = await externalCodeRules(session.eventId);
+  if (rules.length === 0) return null;
+  const keys = externalKeyCandidates(raw, rules);
+  if (keys.length === 0) return null;
+  return (
+    (await prisma.ticket.findFirst({ where: { sessionId, externalKey: { in: keys } }, include: scanInclude })) ??
+    (await prisma.ticket.findFirst({ where: { session: { eventId: session.eventId }, externalKey: { in: keys } }, include: scanInclude }))
+  );
+}
+
 export async function scanTicket(input: {
   sessionId: string;
   accessPointId?: string;
@@ -91,25 +130,18 @@ export async function scanTicket(input: {
   const dynamic = raw.startsWith("TK2.") ? parseDynamicPayload(raw) : null;
   const otp = dynamic ? null : parseManualWithOtp(raw);
   const statik = dynamic || otp ? null : await parseTicketPayload(raw, secret);
-  const code = dynamic?.code ?? otp?.code ?? (statik?.ok ? statik.code : null);
+  const ipassCode = dynamic?.code ?? otp?.code ?? (statik?.ok ? statik.code : null);
 
   let result: ScanResult = "INVALID";
   let allowedGates: string[] = [];
   let movement: ScanOutcome["movement"];
   let zoneAfter: { id: string; name: string } | null = null;
   let proofNote: ScanOutcome["proofNote"];
-  const ticket = code
-    ? await prisma.ticket.findUnique({
-        where: { code },
-        include: {
-          ticketType: { include: { zones: { select: { id: true } } } },
-          seat: { include: { section: true } },
-          session: { include: { event: true } },
-          credit: { select: { tableNumber: true, seat: { select: { label: true } } } },
-          printBatch: { select: { mode: true } },
-        },
-      })
-    : null;
+  // Si no es una entrada de iPass, puede ser el código de un tercero importado (su QR, su código de barras o tipeado).
+  const ticket =
+    (ipassCode ? await prisma.ticket.findUnique({ where: { code: ipassCode }, include: scanInclude }) : null) ??
+    (dynamic ? null : await findExternalTicket(input.sessionId, raw));
+  const code = ticket?.code ?? ipassCode;
 
   // Tipo de QR: una entrada dinámica solo se acepta con una prueba vigente (QR o código + OTP); su código estático no sirve.
   let qrFailure: ScanResult | null = null;

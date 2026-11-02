@@ -9,6 +9,7 @@ import { uploadImportAction } from "@/lib/actions/imports";
 import { IMPORT_STATUS } from "@/lib/labels";
 import { ROLES, requireStaff, visibleEvent } from "@/lib/session";
 import { Help } from "@/components/help";
+import { ExternalImport, type TypeChoice } from "./external-import";
 
 export const metadata: Metadata = { title: "Importar entradas" };
 
@@ -22,6 +23,23 @@ export default async function ImportPage({ params }: Props) {
   if (!event) notFound();
   const [sessions, batches] = await Promise.all([getImportContext(prisma, event.id), listImportBatches(event.id)]);
   const active = sessions.filter((s) => !s.cancelled);
+  // Para emparejar las entradas de otro proveedor: cada tipo (por nombre) con lo que define en la puerta.
+  const methodText = { QR: "QR", BARCODE: "código de barras", NFC: "NFC" } as const;
+  const typeChoices: TypeChoice[] = [
+    ...new Map(
+      active.flatMap((s) =>
+        s.ticketTypes
+          .filter((t) => t.qrMode !== "DYNAMIC")
+          .map((t) => [
+            t.name,
+            {
+              name: t.name,
+              detail: `${t.section?.name ?? "Sin sección"} · se lee con ${t.accessMethods.map((m) => methodText[m]).join(" o ")}${peopleIn(t) > 1 ? ` · mesa de ${peopleIn(t)} (no se carga con código)` : ""}`,
+            },
+          ] as const),
+      ),
+    ).values(),
+  ];
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -99,6 +117,21 @@ export default async function ImportPage({ params }: Props) {
                   Revisar archivo
                 </button>
               </ActionForm>
+            </section>
+          )}
+
+          {!staff.readOnly && (
+            <section className="card space-y-3 p-6">
+              <h2 className="eyebrow">O: entradas que ya tienen su código (de otro proveedor)</h2>
+              <p className="text-sm text-[var(--ink-muted)]">
+                Para entradas ya vendidas por un tercero (o por ti) que la persona ya tiene, con su propio QR o código. Sube el archivo
+                como venga: en una ventana eliges qué columna es el código, el nombre y el tipo de entrada. iPass no les manda otra
+                entrada: en la puerta se leen con su propio código.
+              </p>
+              <p className="rounded-md bg-[var(--warn-soft)] px-3 py-2 text-xs text-[var(--warn)]">
+                Para leer estas entradas, los teléfonos de puerta necesitan la app de puerta <strong>1.8.0</strong> o más nueva.
+              </p>
+              <ExternalImport eventId={event.id} sessions={active.map((s) => s.label)} types={typeChoices} />
             </section>
           )}
         </>

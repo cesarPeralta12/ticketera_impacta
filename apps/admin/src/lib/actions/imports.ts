@@ -2,8 +2,22 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { readSheet } from "read-excel-file/universal";
-import { parseDelimited, parseImportTable } from "@ticketera/core";
+import readXlsxFile, { readSheet } from "read-excel-file/universal";
+import {
+  LONG_NUMBER_MARK,
+  MAPPABLE_FIELDS,
+  detectHeaderRow,
+  excelNumberText,
+  parseCodeRule,
+  parseDelimited,
+  parseImportTable,
+  parseMappedTable,
+  suggestMapping,
+  summarizeColumns,
+  type ColumnSummary,
+  type ImportMapping,
+  type MappableField,
+} from "@ticketera/core";
 import {
   DomainError,
   confirmImport,
@@ -77,6 +91,141 @@ export async function uploadImportAction(_prev: FormState, formData: FormData): 
     entity: "ImportBatch",
     entityId: batch.id,
     data: { rows: batch.totalRows, valid: batch.validRows },
+  });
+  redirect(batchPath(batch));
+}
+
+/** Un archivo subido como tabla de texto: la hoja elegida de un Excel (con los números tal como están guardados) o un CSV. */
+async function readUploadedTable(file: unknown, sheet?: string): Promise<{ table: string[][]; sheets: string[]; sheet: string } | { error: string }> {
+  if (!(file instanceof File) || file.size === 0) return { error: "Elige el archivo de Excel (.xlsx) o CSV." };
+  if (file.size > MAX_FILE_BYTES) return { error: "El archivo supera 5 MB." };
+  if (/\.xls$/i.test(file.name)) return { error: "Es un Excel antiguo (.xls): en Excel usa Archivo → Guardar como → Libro de Excel (.xlsx)." };
+  if (/\.xlsx$/i.test(file.name)) {
+    try {
+      // Los números como texto: un código 00123 guardado como texto queda igual, y uno largo guardado como número se marca.
+      const sheets = await readXlsxFile<string>(await file.arrayBuffer(), { parseNumber: excelNumberText });
+      const chosen = sheets.find((s) => s.sheet === sheet) ?? sheets[0];
+      if (!chosen) return { error: "El Excel no tiene hojas." };
+      return { table: chosen.data.map((row) => row.map(cellText)), sheets: sheets.map((s) => s.sheet), sheet: chosen.sheet };
+    } catch {
+      return { error: "No se pudo leer el Excel. Revisa que sea un .xlsx válido." };
+    }
+  }
+  if (/\.(csv|txt)$/i.test(file.name)) return { table: parseDelimited(await file.text()), sheets: [], sheet: "" };
+  return { error: "Sube un Excel (.xlsx) o un CSV." };
+}
+
+export type ExternalFileAnalysis =
+  | { error: string }
+  | {
+      fileName: string;
+      sheets: string[];
+      sheet: string;
+      headerRow: number;
+      /** Filas con datos debajo de los títulos. */
+      rowCount: number;
+      /** Las primeras filas del archivo, para ver la de títulos y unos ejemplos. */
+      preview: string[][];
+      columns: ColumnSummary[];
+      suggested: Partial<Record<MappableField, number>>;
+    };
+
+/**
+ * Entradas que ya existen (de otro proveedor): lee el archivo y devuelve sus columnas, con ejemplos, valores distintos
+ * y qué parece cada una. No guarda nada: el emparejamiento se elige en la ventana y se envía con el archivo.
+ */
+export async function analyzeExternalFileAction(formData: FormData): Promise<ExternalFileAnalysis> {
+  const staff = await requireEditor();
+  const event = await visibleEvent(staff, String(formData.get("eventId") ?? ""));
+  if (!event) return { error: "Evento no encontrado." };
+  const read = await readUploadedTable(formData.get("file"), String(formData.get("sheet") ?? "") || undefined);
+  if ("error" in read) return read;
+  const { table } = read;
+  if (table.every((row) => row.every((cell) => cell.trim() === ""))) return { error: "El archivo está vacío." };
+  const requested = Number(formData.get("headerRow"));
+  const headerRow = formData.get("headerRow") !== null && Number.isInteger(requested) && requested >= 0 && requested < table.length ? requested : detectHeaderRow(table);
+  const columns = summarizeColumns(table, headerRow);
+  const file = formData.get("file") as File;
+  return {
+    fileName: file.name,
+    sheets: read.sheets,
+    sheet: read.sheet,
+    headerRow,
+    rowCount: table.slice(headerRow + 1).filter((row) => row.some((cell) => cell.trim() !== "")).length,
+    preview: table.slice(0, Math.max(headerRow + 6, 10)).map((row) => row.slice(0, 40).map((cell) => cell.replace(LONG_NUMBER_MARK, "").slice(0, 80))),
+    columns,
+    suggested: suggestMapping(columns),
+  };
+}
+
+/** El emparejamiento que manda la ventana, revisado: columnas que existen, textos y la regla del código. */
+function readMapping(raw: string, width: number, rows: number): ImportMapping | null {
+  let input: unknown;
+  try {
+    input = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof input !== "object" || input === null) return null;
+  const m = input as Record<string, unknown>;
+  const headerRow = Number(m.headerRow);
+  if (!Number.isInteger(headerRow) || headerRow < 0 || headerRow >= rows) return null;
+  const columns: ImportMapping["columns"] = {};
+  const given = (typeof m.columns === "object" && m.columns) || {};
+  for (const field of MAPPABLE_FIELDS) {
+    const index = (given as Record<string, unknown>)[field];
+    if (index === undefined || index === null || index === "") continue;
+    if (!Number.isInteger(index) || (index as number) < 0 || (index as number) >= width) return null;
+    columns[field] = index as number;
+  }
+  const text = (value: unknown) => (typeof value === "string" ? value.slice(0, 200) : undefined);
+  const record = (value: unknown) =>
+    typeof value === "object" && value !== null
+      ? Object.fromEntries(Object.entries(value as Record<string, unknown>).flatMap(([k, v]) => (typeof v === "string" && v ? [[k.slice(0, 200), v.slice(0, 200)]] : [])))
+      : undefined;
+  const fixed = (typeof m.fixed === "object" && m.fixed) || {};
+  const values = (typeof m.values === "object" && m.values) || {};
+  return {
+    headerRow,
+    columns,
+    fixed: { session: text((fixed as Record<string, unknown>).session), type: text((fixed as Record<string, unknown>).type) },
+    values: { session: record((values as Record<string, unknown>).session), type: record((values as Record<string, unknown>).type) },
+    codeRule: parseCodeRule(m.codeRule),
+  };
+}
+
+/** Entradas de otro proveedor: con el archivo y el emparejamiento, arma el borrador y abre la revisión por fila. */
+export async function createExternalImportAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const event = await visibleEvent(staff, String(formData.get("eventId") ?? ""));
+  if (!event) return { error: "Evento no encontrado." };
+  const read = await readUploadedTable(formData.get("file"), String(formData.get("sheet") ?? "") || undefined);
+  if ("error" in read) return { error: read.error };
+  const width = Math.max(0, ...read.table.map((row) => row.length));
+  const mapping = readMapping(String(formData.get("mapping") ?? ""), width, read.table.length);
+  if (!mapping) return { error: "El emparejamiento de columnas no es válido: vuelve a elegir las columnas." };
+  if (mapping.columns.code === undefined) return { error: "Elige qué columna es el código de la entrada." };
+  if (mapping.columns.type === undefined && !mapping.fixed.type) return { error: "Elige qué columna es el tipo de entrada, o un tipo para todas." };
+  const readMethod = formData.get("readMethod") === "BARCODE" ? "BARCODE" : "QR";
+  const sourceName = String(formData.get("sourceName") ?? "").trim().slice(0, 80) || null;
+
+  const parsed = parseMappedTable(read.table, mapping);
+  if (parsed.total === 0) return { error: "El archivo no tiene filas debajo de la fila de títulos." };
+  const file = formData.get("file") as File;
+  const batch = await createImportDraft({
+    eventId: event.id,
+    staffId: staff.id,
+    fileName: file.name,
+    parsed,
+    external: { sourceName, codeRule: mapping.codeRule, readMethod, mapping: { ...mapping, sheet: read.sheet } },
+  });
+  await logAudit({
+    actorType: "staff",
+    actorId: staff.id,
+    action: "import.upload",
+    entity: "ImportBatch",
+    entityId: batch.id,
+    data: { rows: batch.totalRows, valid: batch.validRows, external: true, source: sourceName },
   });
   redirect(batchPath(batch));
 }

@@ -25,7 +25,7 @@ export default async function TicketPage({ params }: Props) {
       zone: { select: { name: true, color: true } },
       seat: { select: { label: true } },
       credit: { select: { tableNumber: true, seat: { select: { label: true } } } },
-      order: { select: { code: true, channel: true, buyerName: true, buyerDocument: true } },
+      order: { select: { code: true, channel: true, buyerName: true, buyerDocument: true, importBatch: { select: { sourceName: true } } } },
       session: {
         select: {
           id: true,
@@ -61,6 +61,13 @@ export default async function TicketPage({ params }: Props) {
           {place && ` · ${place}`} · {CHANNEL_LABEL[ticket.order.channel]} (orden {formatCode(ticket.order.code)}) ·{" "}
           {formatDateTime(ticket.session.startsAt, tz)}
         </p>
+        {ticket.externalCode && (
+          <p className="mt-1 text-sm">
+            Código del proveedor: <span className="font-mono font-medium">{ticket.externalCode}</span>
+            {ticket.order.importBatch?.sourceName && <span className="text-[var(--ink-muted)]"> · origen: {ticket.order.importBatch.sourceName}</span>}
+            <span className="text-[var(--ink-dim)]"> · en la puerta se lee con este código</span>
+          </p>
+        )}
       </div>
 
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">

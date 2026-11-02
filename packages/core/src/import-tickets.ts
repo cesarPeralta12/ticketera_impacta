@@ -30,6 +30,9 @@ export type ImportRow = {
   place: string | null;
   /** Centavos. */
   amount: number;
+  /** Entrada que ya existe fuera de iPass: su código tal como viene en el archivo y la clave con la que se compara. */
+  externalCode?: string | null;
+  externalKey?: string | null;
 };
 
 export type ImportIssue = { line: number; message: string };
@@ -47,14 +50,15 @@ export const normalizeText = (value: string) =>
 const ALIASES: Record<ImportColumn, string[]> = {
   session: ["funcion", "fecha", "dia", "fecha y hora"],
   type: ["tipo de entrada", "tipo", "entrada", "sector", "categoria", "localidad"],
-  name: ["nombre", "nombres", "nombre completo", "nombre y apellido", "titular", "invitado", "asistente"],
+  name: ["nombre", "nombres", "nombre completo", "nombre y apellido", "titular", "invitado", "asistente", "comprador", "nombre del comprador", "cliente"],
   document: ["carnet", "ci", "c.i.", "c.i", "documento", "dni", "cedula", "carnet de identidad", "nro de carnet"],
   email: ["correo", "email", "e-mail", "mail", "correo electronico"],
   place: ["butaca o mesa", "butaca", "asiento", "mesa", "lugar", "ubicacion"],
-  amount: ["monto cobrado (bs)", "monto cobrado", "monto", "precio", "pagado", "importe", "monto (bs)", "precio (bs)"],
+  amount: ["monto cobrado (bs)", "monto cobrado", "monto", "precio", "pagado", "importe", "monto (bs)", "precio (bs)", "pagado (bs)", "importe (bs)", "total", "total (bs)", "monto pagado"],
 };
 
-function columnOf(header: string): ImportColumn | null {
+/** Qué columna de la plantilla es un título ("CI", "Email", "Mesa"…), o null si no se reconoce. */
+export function importColumnOf(header: string): ImportColumn | null {
   const clean = normalizeText(header).replace(/\*$/, "").replace(/\(opcional\)/, "").trim();
   for (const [key, names] of Object.entries(ALIASES) as [ImportColumn, string[]][]) {
     if (names.includes(clean)) return key;
@@ -81,7 +85,7 @@ export function parseImportTable(table: string[][]): { rows: ImportRow[]; errors
   if (headerIndex < 0) return { rows: [], errors: [{ line: 1, message: "El archivo está vacío." }], total: 0 };
   const columns = new Map<ImportColumn, number>();
   table[headerIndex]!.forEach((cell, i) => {
-    const key = columnOf(cell);
+    const key = importColumnOf(cell);
     if (key && !columns.has(key)) columns.set(key, i);
   });
   if (!columns.has("name") || !columns.has("type")) {

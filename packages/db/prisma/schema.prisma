@@ -848,7 +848,14 @@ model Ticket {
   // Para asientos numerados se agregará un índice único parcial
   // (sessionId, seatId) WHERE status <> 'CANCELLED' mediante SQL en la migración:
   // es la última barrera contra la doble venta.
+  /// Entrada que ya existía fuera de iPass (importada de un tercero): su código tal como vino en el archivo…
+  externalCode   String?
+  /// …y la clave con la que se compara una lectura (packages/core/src/external-codes.ts). Única por función; al
+  /// deshacer la importación se libera, para poder volver a cargar el archivo corregido.
+  externalKey    String?
+
   @@unique([sessionId, serial])
+  @@unique([sessionId, externalKey])
   @@index([printBatchId])
   @@index([sessionId, inside, zoneId])
   @@index([sessionId, status])
@@ -1315,6 +1322,12 @@ model ImportBatch {
   validRows   Int
   /// Entradas que se emiten (una mesa emite una por persona).
   ticketCount Int
+  /// De dónde vienen las entradas («TuBoleto», «preventa de amigos»), para reconocerlas en los reportes.
+  sourceName  String?
+  /// Cómo se limpia el código del tercero (ExternalCodeRule). Null si el lote no trae códigos propios.
+  codeRule    Json?
+  /// Qué columna del archivo se emparejó con cada dato (ImportMapping), de constancia.
+  mapping     Json?
   createdAt   DateTime     @default(now())
   confirmedAt DateTime?
   undoneAt    DateTime?

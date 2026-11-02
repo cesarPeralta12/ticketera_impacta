@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { deriveTicketKey, printedOpensDoor, tableLabel, toBase64Url, type PrintStateName } from "@ticketera/core";
 import { prisma } from "../client";
 import type { AccessMethod, StaffRole } from "../generated/prisma/client";
+import { externalCodeRules } from "./access";
 import { verifyStaffCredentials } from "./accounts";
 import { expireTimedTickets } from "./nightlife";
 import { requireEnv } from "./shared";
@@ -369,9 +370,13 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
       inside: true,
       zoneId: true,
       entries: true,
+      externalCode: true,
+      externalKey: true,
     },
   });
   const secret = tickets.some((t) => t.ticketType.qrMode === "DYNAMIC") ? requireEnv("TICKET_QR_SECRET") : "";
+  // Entradas importadas con el código de un tercero: la app las reconoce limpiando la lectura con estas reglas.
+  const codeRules = await externalCodeRules(session.eventId);
 
   // Códigos que dejaron de valer por una transferencia: el teléfono los saca de su lista.
   const revoked = since
@@ -393,6 +398,9 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
       startsAt: session.startsAt.toISOString(),
       venue: session.venue.name,
       timezone: session.venue.timezone,
+      // Nuevo (se agrega sin quitar nada): reglas para leer códigos de terceros importados (packages/core/src/external-codes.ts)
+      // y la versión de la app que los entiende. Una app anterior los ignora y rechaza esos códigos.
+      ...(codeRules.length > 0 ? { codeRules, requiresApp: "1.8.0" } : {}),
     },
     gateId: gate?.id ?? null,
     // direction (IN, OUT, BOTH) y zoneId: para que la app sepa si la puerta es de salida y a qué zona da.
@@ -421,6 +429,8 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
           status: inactive ? STATUS_CODE.CANCELLED : canReenter ? STATUS_CODE.VALID : STATUS_CODE[t.status],
           sectionId,
           mine,
+          // Entrada importada: la clave de su código externo (nuevo; solo si la tiene), para reconocerla sin internet.
+          ...(t.externalKey ? { externalKey: t.externalKey } : {}),
         };
         if (!mine) return base;
         const dynamic = t.ticketType.qrMode === "DYNAMIC";
@@ -430,6 +440,8 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
           // Titular actual: si la entrada se transfirió, el carnet es el de quien la recibió.
           document: t.holderDocument ?? t.order.buyerDocument,
           type: t.ticketType.name,
+          // El código del tercero tal como vino (nuevo; solo en importadas), para mostrarlo en la pantalla del resultado.
+          ...(t.externalCode ? { externalCode: t.externalCode } : {}),
           // En un boliche, la mesa de la persona va donde iría la butaca.
           seat: tableLabel(t.ticketType.name, t.credit?.tableNumber, t.credit?.seat?.label) ?? t.seat?.label ?? null,
           methods: t.ticketType.accessMethods,

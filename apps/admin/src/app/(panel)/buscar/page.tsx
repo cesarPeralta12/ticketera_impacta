@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
-import { formatCode, formatDateTime, formatMoney } from "@ticketera/core";
+import { formatCode, formatDateTime, formatMoney, normalizeExternalCode } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { CHANNEL_LABEL, EVENT_STATUS, TICKET_STATUS } from "@/lib/labels";
 import { ROLES, eventScope, requireStaff } from "@/lib/session";
@@ -23,6 +23,8 @@ export default async function SearchPage({ searchParams }: Props) {
   const scope = eventScope(staff);
   const code = q.replace(/[\s-]/g, "").toUpperCase();
   const isCode = /^[A-Z0-9]{6,16}$/.test(code);
+  // Código de otro proveedor (entradas importadas): como se escribió o limpio (sin guiones ni espacios, en mayúsculas).
+  const externalKey = normalizeExternalCode(q);
   const contains = { contains: q, mode: "insensitive" as const };
   const orderScope = { items: { some: { ticketType: { session: { event: scope } } } } };
 
@@ -52,9 +54,12 @@ export default async function SearchPage({ searchParams }: Props) {
               items: { take: 1, select: { ticketType: { select: { session: { select: { event: { select: { title: true } } } } } } } },
             },
           }),
-          isCode
+          isCode || externalKey
             ? prisma.ticket.findMany({
-                where: { code, session: { event: scope } },
+                where: {
+                  session: { event: scope },
+                  OR: [...(isCode ? [{ code }] : []), ...(externalKey ? [{ externalKey }, { externalCode: { equals: q, mode: "insensitive" as const } }] : [])],
+                },
                 take: LIMIT,
                 select: { code: true, status: true, holderName: true, ticketType: { select: { name: true } }, session: { select: { event: { select: { title: true } } } } },
               })

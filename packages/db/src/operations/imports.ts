@@ -3,6 +3,7 @@
  * se revisa entero antes de tocar el cupo (lote en BORRADOR con errores por fila), se confirma todo junto o nada, y el
  * lote se puede deshacer (se anulan las entradas que no se usaron).
  */
+import { Prisma } from "../generated/prisma/client";
 import {
   findShortage,
   formatDateTime,
@@ -37,7 +38,13 @@ export type ResolvedImportRow = {
   tableNumber: number | null;
   /** Entradas que emite la fila: 1, o las personas de la mesa. */
   people: number;
+  /** Entrada que ya existe fuera de iPass: su código como vino en el archivo y la clave con la que se lee. */
+  externalCode?: string | null;
+  externalKey?: string | null;
 };
+
+/** Cómo entrega el tercero sus entradas: el tipo de entrada tiene que admitir esa lectura en la puerta. */
+export type ExternalReadMethod = "QR" | "BARCODE";
 
 export const MAX_IMPORT_TICKETS = 10_000;
 
@@ -55,6 +62,7 @@ export async function getImportContext(db: Db, eventId: string) {
           name: true,
           kind: true,
           qrMode: true,
+          accessMethods: true,
           peoplePerUnit: true,
           currency: true,
           capacity: true,
@@ -96,7 +104,7 @@ async function seatIndex(db: Db, sectionId: string, tables: boolean) {
  * Revisa cada fila contra el evento: la función, el tipo de entrada, la butaca o mesa (que exista en el mapa y no se
  * repita) y después el cupo y lo ya vendido. Devuelve las filas listas y los errores y avisos por fila.
  */
-export async function resolveImportRows(db: Db, input: { eventId: string; rows: ImportRow[]; now?: Date }) {
+export async function resolveImportRows(db: Db, input: { eventId: string; rows: ImportRow[]; now?: Date; readMethod?: ExternalReadMethod }) {
   const now = input.now ?? new Date();
   const sessions = await getImportContext(db, input.eventId);
   const resolved: ResolvedImportRow[] = [];
@@ -125,6 +133,18 @@ export async function resolveImportRows(db: Db, input: { eventId: string; rows: 
     if (type.qrMode === "DYNAMIC") {
       fail(`"${type.name}" es de QR dinámico: vive en el celular del comprador y solo se vende online.`);
       continue;
+    }
+    if (row.externalKey) {
+      // Un código del tercero es de UNA entrada: una mesa de varias personas necesitaría un código por persona.
+      if (peopleIn(type) > 1) {
+        fail(`"${type.name}" es una mesa de ${peopleIn(type)} personas: con el código de otro proveedor se carga una entrada por fila.`);
+        continue;
+      }
+      const method = input.readMethod ?? "QR";
+      if (!type.accessMethods.includes(method)) {
+        fail(`"${type.name}" no se lee con ${method === "QR" ? "QR" : "código de barras"} en la puerta: actívalo en su precio (Más opciones → Lectura en puerta).`);
+        continue;
+      }
     }
 
     let seatId: string | null = null;
@@ -191,10 +211,18 @@ export async function resolveImportRows(db: Db, input: { eventId: string; rows: 
       place,
       tableNumber,
       people: peopleIn(type),
+      externalCode: row.externalCode ?? null,
+      externalKey: row.externalKey ?? null,
     });
   }
 
-  const available = await checkAvailability(db, resolved, now);
+  errors.push(...(await checkExternalCodes(db, resolved)));
+  const clashing = new Set(errors.map((e) => e.line));
+  const available = await checkAvailability(
+    db,
+    resolved.filter((r) => !clashing.has(r.line)),
+    now,
+  );
   errors.push(...available.issues);
 
   // Aviso (no impide importar): ese carnet ya tiene entradas en el evento.
@@ -217,6 +245,31 @@ export async function resolveImportRows(db: Db, input: { eventId: string; rows: 
 
   const byLine = (a: ImportIssue, b: ImportIssue) => a.line - b.line;
   return { rows: available.rows, errors: errors.sort(byLine), warnings: warnings.sort(byLine) };
+}
+
+/**
+ * Que el código de cada fila no esté ya cargado en esa función (de este lote o de otro) ni sea igual al código propio
+ * de una entrada de iPass: la puerta los confundiría. Devuelve un error por fila.
+ */
+async function checkExternalCodes(db: Db, rows: ResolvedImportRow[]): Promise<ImportIssue[]> {
+  const external = rows.filter((r) => r.externalKey);
+  if (external.length === 0) return [];
+  const keys = [...new Set(external.map((r) => r.externalKey!))];
+  const [loaded, own] = await Promise.all([
+    db.ticket.findMany({
+      where: { sessionId: { in: [...new Set(external.map((r) => r.sessionId))] }, externalKey: { in: keys } },
+      select: { sessionId: true, externalKey: true, order: { select: { code: true } } },
+    }),
+    db.ticket.findMany({ where: { code: { in: keys } }, select: { code: true } }),
+  ]);
+  const loadedIn = new Map(loaded.map((t) => [`${t.sessionId}:${t.externalKey}`, t.order.code]));
+  const ownCodes = new Set(own.map((t) => t.code));
+  return external.flatMap((row) => {
+    const order = loadedIn.get(`${row.sessionId}:${row.externalKey}`);
+    if (order) return [{ line: row.line, message: `El código ${row.externalCode} ya está cargado en esta función (orden ${order}).` }];
+    if (ownCodes.has(row.externalKey!)) return [{ line: row.line, message: `El código ${row.externalCode} es igual al de una entrada de iPass: la puerta los confundiría.` }];
+    return [];
+  });
 }
 
 /**
@@ -274,9 +327,16 @@ export async function createImportDraft(input: {
   staffId: string;
   fileName: string;
   parsed: { rows: ImportRow[]; errors: ImportIssue[]; total: number };
+  /** Entradas de un tercero: de dónde vienen, cómo se limpia su código, cómo se leen y qué columna era cada dato. */
+  external?: { sourceName: string | null; codeRule: object; readMethod: ExternalReadMethod; mapping: object };
   now?: Date;
 }) {
-  const result = await resolveImportRows(prisma, { eventId: input.eventId, rows: input.parsed.rows, now: input.now });
+  const result = await resolveImportRows(prisma, {
+    eventId: input.eventId,
+    rows: input.parsed.rows,
+    now: input.now,
+    readMethod: input.external?.readMethod,
+  });
   const errors = [...input.parsed.errors, ...result.errors].sort((a, b) => a.line - b.line);
   const ticketCount = result.rows.reduce((sum, r) => sum + r.people, 0);
   if (ticketCount > MAX_IMPORT_TICKETS) {
@@ -293,6 +353,13 @@ export async function createImportDraft(input: {
       totalRows: input.parsed.total,
       validRows: ticketCount > MAX_IMPORT_TICKETS ? 0 : result.rows.length,
       ticketCount,
+      ...(input.external
+        ? {
+            sourceName: input.external.sourceName?.slice(0, 80) || null,
+            codeRule: { ...input.external.codeRule, readMethod: input.external.readMethod },
+            mapping: input.external.mapping,
+          }
+        : {}),
     },
   });
 }
@@ -306,6 +373,18 @@ const IMPORT_CHUNK = 500;
  * Con una sola fila con error no se emite nada: se corrige el archivo y se vuelve a subir.
  */
 export async function confirmImport(input: { batchId: string; staffId: string; now?: Date }) {
+  try {
+    return await confirmImportTx(input);
+  } catch (error) {
+    // Otro lote cargó el mismo código en la función entre la vista previa y la confirmación.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002" && String(error.meta?.target ?? "").includes("externalKey")) {
+      throw new DomainError("INVALID_ITEMS", "Un código del archivo se cargó en otra importación mientras tanto: vuelve a subir el archivo.");
+    }
+    throw error;
+  }
+}
+
+async function confirmImportTx(input: { batchId: string; staffId: string; now?: Date }) {
   const now = input.now ?? new Date();
   return prisma.$transaction(
     async (tx) => {
@@ -401,6 +480,8 @@ export async function confirmImport(input: { batchId: string; staffId: string; n
             sessionId: byId.get(row.ticketTypeId)!.sessionId,
             seatId: row.seatId,
             holderName: row.name,
+            externalCode: row.externalCode ?? null,
+            externalKey: row.externalKey ?? null,
           })),
         });
       }
@@ -419,6 +500,10 @@ export async function confirmImport(input: { batchId: string; staffId: string; n
           { ...order, items: order.items.map((item) => ({ ...item, ticketType: type })) },
           row.tableNumber !== null ? new Map([[order.items[0]!.id, row.tableNumber]]) : undefined,
         );
+        // Con código del tercero, la fila emite una sola entrada (una mesa de varias personas no se acepta).
+        if (row.externalKey) {
+          await tx.ticket.updateMany({ where: { orderId: order.id }, data: { externalCode: row.externalCode, externalKey: row.externalKey } });
+        }
       }
       const confirmed = await tx.importBatch.update({ where: { id: batch.id }, data: { status: "CONFIRMED", confirmedAt: now } });
       await audit(tx, {
@@ -454,7 +539,8 @@ export async function undoImport(input: { batchId: string; staffId: string; now?
     if (batch.status !== "CONFIRMED") throw new DomainError("INVALID_STATE", "Solo se deshace una importación confirmada.");
     const { count: cancelled } = await tx.ticket.updateMany({
       where: { order: { importBatchId: batch.id }, status: "VALID" },
-      data: { status: "CANCELLED", cancelledAt: now },
+      // La clave del código externo se libera: el archivo corregido se puede volver a cargar.
+      data: { status: "CANCELLED", cancelledAt: now, externalKey: null },
     });
     const used = await tx.ticket.count({ where: { order: { importBatchId: batch.id }, status: "USED" } });
     await tx.order.updateMany({
@@ -495,6 +581,9 @@ export async function listImportBatches(eventId: string) {
   });
 }
 
+/** Órdenes con entradas de iPass: las que traen el código de un tercero no se envían por correo (ya tienen la suya). */
+const ownTicketsOnly = { tickets: { none: { externalCode: { not: null } } } } satisfies Prisma.OrderWhereInput;
+
 /** Una importación con lo que pasó después: entradas por estado, lo declarado como cobrado y los correos. */
 export async function getImportSummary(batchId: string) {
   const batch = await prisma.importBatch.findUnique({ where: { id: batchId }, include: { staff: { select: { name: true } } } });
@@ -502,7 +591,7 @@ export async function getImportSummary(batchId: string) {
   const [byStatus, revenue, toEmail, emailed, withoutEmail] = await Promise.all([
     prisma.ticket.groupBy({ by: ["status"], where: { order: { importBatchId: batchId } }, _count: true }),
     prisma.order.aggregate({ where: { importBatchId: batchId, status: "PAID" }, _sum: { totalAmount: true } }),
-    prisma.order.count({ where: { importBatchId: batchId, status: "PAID", buyerEmail: { not: "" }, ticketsEmailedAt: null } }),
+    prisma.order.count({ where: { importBatchId: batchId, status: "PAID", buyerEmail: { not: "" }, ticketsEmailedAt: null, ...ownTicketsOnly } }),
     prisma.order.count({ where: { importBatchId: batchId, ticketsEmailedAt: { not: null } } }),
     prisma.order.count({ where: { importBatchId: batchId, status: "PAID", buyerEmail: "" } }),
   ]);
@@ -523,7 +612,7 @@ export async function getImportSummary(batchId: string) {
 /** Órdenes de la importación que tienen correo y todavía no recibieron sus entradas. */
 export async function importOrdersToEmail(batchId: string, take: number) {
   return prisma.order.findMany({
-    where: { importBatchId: batchId, status: "PAID", buyerEmail: { not: "" }, ticketsEmailedAt: null },
+    where: { importBatchId: batchId, status: "PAID", buyerEmail: { not: "" }, ticketsEmailedAt: null, ...ownTicketsOnly },
     orderBy: { createdAt: "asc" },
     take,
     select: { id: true, code: true },
