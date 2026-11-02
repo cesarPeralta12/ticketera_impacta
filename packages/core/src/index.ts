@@ -29,6 +29,7 @@ export * from "./promoters";
 export * from "./qr";
 export * from "./sale-window";
 export * from "./seat-geometry";
+export * from "./seat-ranges";
 export * from "./seat-picking";
 export * from "./seated-tables";
 export * from "./session-times";

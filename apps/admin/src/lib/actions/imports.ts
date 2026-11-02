@@ -335,3 +335,52 @@ export async function deleteImportFormatAction(formData: FormData): Promise<{ ok
   revalidatePath("/eventos", "layout");
   return { ok: true };
 }
+
+/**
+ * Crea desde el asistente el tipo de entrada para lo importado, en cada función activa del evento (con el mismo nombre y
+ * en la sección general elegida). Queda cerrado a la venta en la web: solo recibe entradas por importación.
+ */
+export async function createImportTypeAction(formData: FormData): Promise<{ error: string } | { ok: true; name: string }> {
+  const staff = await requireEditor();
+  const event = await visibleEvent(staff, String(formData.get("eventId") ?? ""));
+  if (!event) return { error: "Evento no encontrado." };
+  const name = String(formData.get("name") ?? "").trim().slice(0, 60);
+  const sectionName = String(formData.get("section") ?? "");
+  const capacity = Number(formData.get("capacity"));
+  if (name.length < 2) return { error: "Ponle un nombre al tipo de entrada." };
+  if (!Number.isInteger(capacity) || capacity < 1 || capacity > 100_000) return { error: "El cupo debe ser un número entero de 1 en adelante." };
+  const sessions = await prisma.eventSession.findMany({
+    where: { eventId: event.id, cancelledAt: null },
+    orderBy: { startsAt: "asc" },
+    select: { id: true, venue: { select: { id: true, sections: { select: { id: true, name: true, seatingMode: true, capacity: true } } } }, ticketTypes: { select: { name: true } } },
+  });
+  if (sessions.length === 0) return { error: "El evento no tiene funciones activas." };
+  const wanted = sessions.map((s) => ({ session: s, section: s.venue.sections.find((x) => x.name === sectionName) }));
+  for (const { session, section } of wanted) {
+    if (session.ticketTypes.some((t) => t.name.toLowerCase() === name.toLowerCase())) return { error: `Ya existe un tipo de entrada llamado "${name}".` };
+    if (!section || section.seatingMode !== "GENERAL_ADMISSION") return { error: `Elige una sección general que exista en todas las funciones.` };
+    if (capacity > section.capacity) return { error: `"${section.name}" admite como máximo ${section.capacity} personas.` };
+  }
+  const closed = new Date(Date.now() - 60_000);
+  await prisma.$transaction(
+    wanted.map(({ session, section }) =>
+      prisma.ticketType.create({
+        data: {
+          sessionId: session.id,
+          sectionId: section!.id,
+          name,
+          unitAmount: 0,
+          currency: staff.organization.currency,
+          capacity,
+          maxPerOrder: 1,
+          salesEndAt: closed,
+          accessMethods: ["QR", "BARCODE"],
+          sortOrder: session.ticketTypes.length,
+        },
+      }),
+    ),
+  );
+  await logAudit({ actorType: "staff", actorId: staff.id, action: "import.type.create", entity: "Event", entityId: event.id, data: { name, capacity, sessions: sessions.length } });
+  revalidatePath(`/eventos/${event.id}/importar`);
+  return { ok: true, name };
+}

@@ -23,6 +23,12 @@ export default async function ImportPage({ params }: Props) {
   if (!event) notFound();
   const [sessions, batches, formats] = await Promise.all([getImportContext(prisma, event.id), listImportBatches(event.id), listImportFormats(event.organizationId)]);
   const active = sessions.filter((s) => !s.cancelled);
+  // Secciones generales (sin butaca) del lugar de cada función: el tipo nuevo del asistente va en una de ellas.
+  const generalSections = [
+    ...new Set(
+      (await prisma.section.findMany({ where: { seatingMode: "GENERAL_ADMISSION", venue: { sessions: { some: { eventId: event.id, cancelledAt: null } } } }, select: { name: true }, orderBy: { name: "asc" } })).map((s) => s.name),
+    ),
+  ];
   // Para emparejar las entradas de otro proveedor: cada tipo (por nombre) con lo que define en la puerta.
   const methodText = { QR: "QR", BARCODE: "código de barras", NFC: "NFC" } as const;
   const typeChoices: TypeChoice[] = [
@@ -131,7 +137,19 @@ export default async function ImportPage({ params }: Props) {
               <p className="rounded-md bg-[var(--warn-soft)] px-3 py-2 text-xs text-[var(--warn)]">
                 Para leer estas entradas, los teléfonos de puerta necesitan la app de puerta <strong>1.8.0</strong> o más nueva.
               </p>
-              <ExternalImport eventId={event.id} sessions={active.map((s) => s.label)} types={typeChoices} formats={formats.map((f) => ({ id: f.id, name: f.name, sourceName: f.sourceName, readMethod: f.readMethod === "BARCODE" ? "BARCODE" : "QR", mapping: f.mapping as unknown as ImportMapping, titles: f.titles as Record<string, string> }))} />
+              <p className="text-xs text-[var(--ink-dim)]">
+                ¿El proveedor vendió butacas de un mapa y solo quieres que no se vendan dos veces? Bloquéalas en{" "}
+                {active.map((s, i) => (
+                  <span key={s.id}>
+                    {i > 0 && ", "}
+                    <Link href={`/eventos/${event.id}/funciones/${s.id}/retenciones`} className="text-[var(--accent)] underline">
+                      Retenciones{active.length > 1 ? ` (función ${i + 1})` : ""}
+                    </Link>
+                  </span>
+                ))}
+                : eliges las butacas en el mapa, por rango («A 1-20») o arrastrando.
+              </p>
+              <ExternalImport eventId={event.id} sessions={active.map((s) => s.label)} types={typeChoices} sections={generalSections} formats={formats.map((f) => ({ id: f.id, name: f.name, sourceName: f.sourceName, readMethod: f.readMethod === "BARCODE" ? "BARCODE" : "QR", mapping: f.mapping as unknown as ImportMapping, titles: f.titles as Record<string, string> }))} />
             </section>
           )}
         </>

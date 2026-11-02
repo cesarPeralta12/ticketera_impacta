@@ -15,6 +15,7 @@ import {
 import {
   analyzeExternalFileAction,
   createExternalImportAction,
+  createImportTypeAction,
   deleteImportFormatAction,
   saveImportFormatAction,
   type ExternalFileAnalysis,
@@ -39,7 +40,7 @@ function autoMatch(column: ColumnSummary | undefined, options: string[]) {
  * ventana se elige qué columna es cada dato, cómo se lee el código y a qué tipo de entrada corresponde cada valor.
  * Después se revisa fila por fila (como con la plantilla) y se confirma todo junto.
  */
-export function ExternalImport({ eventId, sessions, types, formats }: { eventId: string; sessions: string[]; types: TypeChoice[]; formats: SavedFormat[] }) {
+export function ExternalImport({ eventId, sessions, types, formats, sections }: { eventId: string; sessions: string[]; types: TypeChoice[]; formats: SavedFormat[]; sections: string[] }) {
   const formRef = useRef<HTMLFormElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
@@ -55,6 +56,9 @@ export function ExternalImport({ eventId, sessions, types, formats }: { eventId:
   const [formatName, setFormatName] = useState("");
   const [formatNote, setFormatNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [savingFormat, startSavingFormat] = useTransition();
+  const [newType, setNewType] = useState({ name: "", section: sections[0] ?? "", capacity: "" });
+  const [typeNote, setTypeNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [creatingType, startCreatingType] = useTransition();
   const [state, formAction, submitting] = useActionState(createExternalImportAction, undefined);
   const [, startSubmit] = useTransition();
 
@@ -132,6 +136,24 @@ export function ExternalImport({ eventId, sessions, types, formats }: { eventId:
     startSavingFormat(async () => {
       const result = await saveImportFormatAction(data);
       setFormatNote("error" in result ? { ok: false, text: result.error } : { ok: true, text: `Formato «${formatName.trim()}» guardado: la próxima vez lo eliges y ya queda armado.` });
+    });
+  }
+
+  /** Crea un tipo de entrada solo para lo importado y lo deja elegido para todas las filas. */
+  function createType() {
+    const data = new FormData();
+    data.set("eventId", eventId);
+    data.set("name", newType.name);
+    data.set("section", newType.section);
+    data.set("capacity", newType.capacity);
+    startCreatingType(async () => {
+      const result = await createImportTypeAction(data);
+      if ("error" in result) {
+        setTypeNote({ ok: false, text: result.error });
+        return;
+      }
+      setTypeNote({ ok: true, text: `Tipo «${result.name}» creado. Ya aparece en la lista: elígelo en «Todas son» o al emparejar.` });
+      setNewType((t) => ({ ...t, name: "", capacity: "" }));
     });
   }
 
@@ -294,11 +316,13 @@ export function ExternalImport({ eventId, sessions, types, formats }: { eventId:
               {/* 2. Cada dato de iPass con su columna */}
               <section className="space-y-3">
                 <h3 className="eyebrow">Los datos</h3>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid items-start gap-x-3 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
                   {(["code", ...PERSON_FIELDS] as MappableField[]).map((field) => (
                     <label key={field} className="label">
-                      {FIELD_LABEL[field]}
-                      {field === "code" && <span className="text-[var(--danger)]"> *</span>}
+                      <span>
+                        {FIELD_LABEL[field]}
+                        {field === "code" && <span className="text-[var(--danger)]"> *</span>}
+                      </span>
                       <select value={columns[field] ?? ""} onChange={(e) => setColumn(field, e.target.value)} className="field">
                         <option value="">— no está en el archivo —</option>
                         {analysis.columns.map((c) => (
@@ -345,6 +369,34 @@ export function ExternalImport({ eventId, sessions, types, formats }: { eventId:
                         </label>
                       )}
                     </div>
+                    {field === "type" && sections.length > 0 && (
+                      <details className="rounded-md border border-[var(--border)] px-3 py-2">
+                        <summary className="cursor-pointer text-sm text-[var(--accent)]">¿Falta el tipo de entrada? Crear uno</summary>
+                        <div className="mt-2 flex flex-wrap items-end gap-3">
+                          <label className="label">
+                            Nombre
+                            <input value={newType.name} onChange={(e) => setNewType((t) => ({ ...t, name: e.target.value }))} maxLength={60} placeholder="ej. General TuBoleto" className="field w-52" />
+                          </label>
+                          <label className="label">
+                            Sección
+                            <select value={newType.section} onChange={(e) => setNewType((t) => ({ ...t, section: e.target.value }))} className="field">
+                              {sections.map((s) => (
+                                <option key={s}>{s}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="label">
+                            Cupo (por función)
+                            <input value={newType.capacity} onChange={(e) => setNewType((t) => ({ ...t, capacity: e.target.value }))} inputMode="numeric" className="field w-28" />
+                          </label>
+                          <button type="button" onClick={createType} disabled={creatingType || !newType.name.trim() || !newType.capacity} className="btn disabled:cursor-not-allowed disabled:opacity-50">
+                            Crear tipo
+                          </button>
+                        </div>
+                        <p className="mt-1 text-xs text-[var(--ink-dim)]">Se crea en todas las funciones, sin precio y cerrado a la venta en la web: solo recibe entradas importadas.</p>
+                        {typeNote && <p className={`mt-1 text-sm ${typeNote.ok ? "text-[var(--ink-muted)]" : "text-[var(--warn)]"}`}>{typeNote.text}</p>}
+                      </details>
+                    )}
                     {field === "type" && columns.type === undefined && fixed.type && (
                       <p className="text-xs text-[var(--ink-dim)]">{types.find((t) => t.name === fixed.type)?.detail}</p>
                     )}

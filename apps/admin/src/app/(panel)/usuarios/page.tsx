@@ -193,25 +193,25 @@ export default async function UsersPage({ searchParams }: Props) {
                 )}
                 <span className="ml-auto text-xs text-[var(--ink-dim)]">{groupTotal} cuenta(s)</span>
               </summary>
-              <table className="w-full border-t border-[var(--border)] text-left text-sm">
-                <tbody className="divide-y divide-[var(--border)]">
+              <table className="w-full border-t border-[var(--border)] text-left text-sm max-sm:block">
+                <tbody className="divide-y divide-[var(--border)] max-sm:block">
                   {members.map((m) => (
-                    <tr key={m.id}>
-                      <td className="px-5 py-3">
+                    <tr key={m.id} className="max-sm:flex max-sm:flex-wrap max-sm:items-center max-sm:gap-x-4 max-sm:gap-y-1 max-sm:px-4 max-sm:py-3">
+                      <td className="px-5 py-3 max-sm:p-0">
                         <p className="font-medium">{m.user.name}</p>
                         <p className="font-mono text-xs text-[var(--ink-dim)]">{m.user.email}</p>
                       </td>
-                      <td className="px-5 py-3">
+                      <td className="px-5 py-3 max-sm:p-0">
                         {ROLE_LABEL[m.role]}
                         {m.client && <p className="text-xs text-[var(--ink-dim)]">{m.client.name}</p>}
                         {m.user.mustChangePassword && <p className="text-xs text-[var(--warn)]">Contraseña temporal</p>}
                       </td>
-                      <td className="px-5 py-3">
+                      <td className="px-5 py-3 max-sm:p-0">
                         <span className={`badge ${m.user.active ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--surface-2)] text-[var(--ink-dim)]"}`}>
                           {m.user.active ? "Activo" : "Desactivado"}
                         </span>
                       </td>
-                      <td className="flex items-center justify-end gap-2 px-5 py-3 text-right">
+                      <td className="flex items-center justify-end gap-2 px-5 py-3 text-right max-sm:w-full max-sm:justify-start max-sm:p-0">
                         {manageable(m.role) && m.role === "OPERATOR" && (
                           <Link href={`/usuarios/${m.userId}`} className="btn text-xs">
                             Funciones y teléfonos

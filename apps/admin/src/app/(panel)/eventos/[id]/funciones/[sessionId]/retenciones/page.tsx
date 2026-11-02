@@ -28,7 +28,7 @@ export default async function HoldsPage({ params }: Props) {
           sections: {
             where: { seatingMode: "RESERVED" },
             orderBy: { sortOrder: "asc" },
-            select: { name: true, color: true, layout: true, seats: { select: { id: true, label: true, x: true, y: true } } },
+            select: { name: true, color: true, layout: true, seats: { select: { id: true, label: true, row: true, number: true, x: true, y: true } } },
           },
         },
       },
@@ -44,6 +44,9 @@ export default async function HoldsPage({ params }: Props) {
     return placed.map((seat) => ({
       id: seat.id,
       label: `${section.name} · ${seat.label}`,
+      section: section.name,
+      row: seat.row,
+      number: seat.number,
       x: seat.x,
       y: seat.y,
       sectionColor: section.color,
@@ -77,7 +80,7 @@ export default async function HoldsPage({ params }: Props) {
       {seats.length === 0 ? (
         <p className="card p-6 text-sm text-[var(--ink-muted)]">Esta función no tiene butacas numeradas, mesas ni lounges en el mapa: no hay nada para apartar.</p>
       ) : (
-        <HoldsEditor sessionId={session.id} seats={seats} holds={info} items={mapItemsOf(session.venue.mapItems)} readOnly={staff.readOnly} />
+        <HoldsEditor sessionId={session.id} seats={seats} holds={info} items={mapItemsOf(session.venue.mapItems)} readOnly={staff.readOnly} canDrag={staff.platform} />
       )}
     </div>
   );
