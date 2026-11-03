@@ -11,13 +11,27 @@ import { ROLES, eventScope, isGlobalView, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Entrada" };
 
-type Props = { params: Promise<{ code: string }> };
+type Props = { params: Promise<{ code: string }>; searchParams: Promise<{ volver?: string }> };
+
+/** A dónde vuelve la flecha: la pantalla de la que se llegó (solo rutas internas conocidas), o el ingreso en vivo. */
+function backTarget(volver: string | undefined, fallback: { href: string; label: string }) {
+  if (!volver || !volver.startsWith("/") || volver.startsWith("//") || volver.includes("\\")) return fallback;
+  const known: [RegExp, string][] = [
+    [/^\/eventos\/[^/?]+\/vendidas(\?|$)/, "Entradas vendidas"],
+    [/^\/eventos\/[^/?]+\/funciones\/[^/?]+\/en-vivo(\?|$)/, "Ingreso en vivo"],
+    [/^\/ordenes\/[^/?]+(\?|$)/, "Venta"],
+    [/^\/buscar(\?|$)/, "Búsqueda"],
+  ];
+  const match = known.find(([re]) => re.test(volver));
+  return match ? { href: volver, label: match[1] } : fallback;
+}
 
 /** Una entrada: de quién es, si está adentro y en qué zona, cada lectura en puerta y la corrección manual. */
-export default async function TicketPage({ params }: Props) {
+export default async function TicketPage({ params, searchParams }: Props) {
   await connection();
   const staff = await requireStaff(ROLES.manage);
   const code = (await params).code.replace(/-/g, "").toUpperCase();
+  const { volver } = await searchParams;
   const ticket = await prisma.ticket.findFirst({
     where: { code, session: { event: eventScope(staff) } },
     include: {
@@ -47,12 +61,13 @@ export default async function TicketPage({ params }: Props) {
   const place = tableLabel(ticket.ticketType.name, ticket.credit?.tableNumber, ticket.credit?.seat?.label) ?? ticket.seat?.label;
   const max = ticket.ticketType.maxEntries;
   const editable = !staff.readOnly && ticket.status !== "CANCELLED";
+  const back = backTarget(volver, { href: `/eventos/${ticket.session.eventId}/funciones/${ticket.session.id}/en-vivo`, label: "Ingreso en vivo" });
 
   return (
     <div className="max-w-4xl space-y-6">
       <div>
-        <Link href={`/eventos/${ticket.session.eventId}/funciones/${ticket.session.id}/en-vivo`} className="text-sm text-[var(--ink-dim)] hover:text-[var(--ink)]">
-          ← Ingreso en vivo · {ticket.session.event.title}
+        <Link href={back.href} className="text-sm text-[var(--ink-dim)] hover:text-[var(--ink)]">
+          ← {back.label} · {ticket.session.event.title}
         </Link>
         <div className="mt-1 flex flex-wrap items-center gap-3">
           <h1 className="font-mono text-2xl font-medium">{formatCode(ticket.code)}</h1>

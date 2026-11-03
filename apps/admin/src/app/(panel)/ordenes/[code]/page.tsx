@@ -175,7 +175,7 @@ export default async function OrderPage({ params }: { params: Promise<{ code: st
             <ul className="divide-y divide-[var(--border)]">
               {order.tickets.map((t) => (
                 <li key={t.id} className="flex justify-between gap-3 py-1.5">
-                  <Link href={`/entradas/${t.code}`} className="font-mono hover:underline">
+                  <Link href={`/entradas/${t.code}?volver=${encodeURIComponent(`/ordenes/${order.code}`)}`} className="font-mono hover:underline">
                     {formatCode(t.code)}
                   </Link>
                   <span className="text-[var(--ink-muted)]">

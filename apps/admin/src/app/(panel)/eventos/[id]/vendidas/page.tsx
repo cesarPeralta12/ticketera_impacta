@@ -48,6 +48,7 @@ export default async function SoldTicketsPage({ params, searchParams }: Props) {
   const first = await listSoldTickets({ ...filter, page: 1, pageSize: 1 });
   const page = pageFrom(pagina, Math.ceil(first.total / PAGE_SIZE));
   const { total, rows } = await listSoldTickets({ ...filter, page, pageSize: PAGE_SIZE });
+  const here = `/eventos/${event.id}/vendidas${new URLSearchParams(Object.entries({ q, noche, estado, manos, pagina: pagina ?? "" }).filter(([, v]) => v)).toString().replace(/^(?=.)/, "?")}`;
   const money = (cents: number) => formatMoney(cents, event.organization.currency);
   const who = (name: string) => (showNames ? name : maskName(name));
   const doc = (d: string | null) => (showNames ? d : maskDocument(d));
@@ -130,7 +131,7 @@ export default async function SoldTicketsPage({ params, searchParams }: Props) {
               return (
                 <tr key={t.id} className="align-top">
                   <td data-label="Entrada" className="px-4 py-2.5">
-                    <Link href={`/entradas/${t.code}`} className="font-mono text-[var(--accent)] hover:underline">
+                    <Link href={`/entradas/${t.code}?volver=${encodeURIComponent(here)}`} className="font-mono text-[var(--accent)] hover:underline">
                       {formatCode(t.code)}
                     </Link>
                     <p className="text-xs text-[var(--ink-dim)]">

@@ -114,7 +114,7 @@ export default async function SearchPage({ searchParams }: Props) {
           <ul className="divide-y divide-[var(--border)] text-sm">
             {tickets.map((t) => (
               <li key={t.code}>
-                <Link href={`/entradas/${t.code}`} className="flex flex-wrap items-center justify-between gap-2 py-2 hover:text-[var(--accent)]">
+                <Link href={`/entradas/${t.code}?volver=${encodeURIComponent(`/buscar?q=${encodeURIComponent(q)}`)}`} className="flex flex-wrap items-center justify-between gap-2 py-2 hover:text-[var(--accent)]">
                   <span>
                     <span className="font-mono">{formatCode(t.code)}</span> · {t.holderName ?? "—"} · {t.ticketType.name} · {t.session.event.title}
                   </span>
