@@ -1,7 +1,7 @@
 /**
  * Límite de intentos: cuenta por ventana de tiempo, sin bloquear a otros y sin contar de más.
  */
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { randomCode } from "@ticketera/core";
 import { prisma } from "../src/client";
 import { hit, isLimited, recordHit } from "../src/operations/rate-limit";
@@ -43,5 +43,24 @@ describe("límite de intentos", () => {
     expect(await prisma.rateLimitHit.count({ where: { key: k } })).toBe(0);
     for (let i = 0; i < 3; i++) await recordHit(k);
     expect(await isLimited(k, rule)).toBe(true);
+  });
+});
+
+describe("interruptor para pruebas de carga", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("con RATE_LIMITS_DISABLED=1 no rechaza ni anota nada", async () => {
+    vi.stubEnv("RATE_LIMITS_DISABLED", "1");
+    const k = key();
+    for (let i = 0; i < 10; i++) expect(await hit(k, rule)).toBe(true);
+    expect(await isLimited(k, rule)).toBe(false);
+    expect(await prisma.rateLimitHit.count({ where: { key: k } })).toBe(0);
+  });
+
+  it("cualquier otro valor deja los límites activos", async () => {
+    vi.stubEnv("RATE_LIMITS_DISABLED", "true");
+    const k = key();
+    for (let i = 0; i < 3; i++) await hit(k, rule);
+    expect(await hit(k, rule)).toBe(false);
   });
 });

@@ -12,14 +12,37 @@ export type Limit = { limit: number; windowSeconds: number };
 
 const since = (now: Date, windowSeconds: number) => new Date(now.getTime() - windowSeconds * 1000);
 
+/**
+ * Interruptor para las pruebas de carga: con `RATE_LIMITS_DISABLED=1` ningún límite rechaza ni anota nada.
+ * Solo para un ambiente de demostración o de pruebas: en uno real deja pasar intentos de adivinar contraseñas.
+ */
+export function rateLimitsDisabled() {
+  return process.env.RATE_LIMITS_DISABLED?.trim() === "1";
+}
+
+let warned = false;
+function warnDisabled() {
+  if (warned) return;
+  warned = true;
+  console.warn("[límites] RATE_LIMITS_DISABLED=1: los límites de intentos están DESACTIVADOS. Quítalo al terminar las pruebas de carga.");
+}
+
 /** ¿Ya se alcanzó el límite para esta clave? (no anota nada) */
 export async function isLimited(key: string, { limit, windowSeconds }: Limit, now = new Date()) {
+  if (rateLimitsDisabled()) {
+    warnDisabled();
+    return false;
+  }
   const count = await prisma.rateLimitHit.count({ where: { key, createdAt: { gt: since(now, windowSeconds) } } });
   return count >= limit;
 }
 
 /** Anota un intento. */
 export async function recordHit(key: string, now = new Date()) {
+  if (rateLimitsDisabled()) {
+    warnDisabled();
+    return;
+  }
   await prisma.rateLimitHit.create({ data: { key, createdAt: now } });
   // Limpieza ocasional: lo de hace más de un día ya no cuenta para ningún límite.
   if (Math.random() < 0.02) {
@@ -32,6 +55,10 @@ export async function recordHit(key: string, now = new Date()) {
  * quien llama rechaza la operación.
  */
 export async function hit(key: string, limit: Limit, now = new Date()): Promise<boolean> {
+  if (rateLimitsDisabled()) {
+    warnDisabled();
+    return true;
+  }
   if (await isLimited(key, limit, now)) return false;
   await recordHit(key, now);
   return true;
