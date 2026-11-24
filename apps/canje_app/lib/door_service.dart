@@ -1,0 +1,510 @@
+/// Lógica de la app: sesión, descarga, validación local, cola de lecturas y sincronización.
+library;
+
+import 'dart:convert';
+import 'dart:math';
+
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/foundation.dart';
+
+import 'api.dart';
+import 'bar.dart';
+import 'models.dart';
+import 'storage.dart';
+import 'presence_view.dart';
+import 'external_code.dart' show maxExternalCodeLength;
+import 'validator.dart';
+
+const defaultServerUrl = String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:3001');
+
+String _scanId() {
+  final rnd = Random.secure();
+  return List.generate(16, (_) => rnd.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+}
+
+class DoorService extends ChangeNotifier {
+  DoorService({required this.sessionStore, required this.db});
+
+  final SessionStore sessionStore;
+  final DoorDb db;
+
+  ApiClient? _api;
+  String? staffName;
+
+  /// Rol de la cuenta (OWNER, ADMIN, OPERATOR).
+  String? role;
+
+  /// El grabador de pulseras NFC es solo para administradores.
+  bool get canWriteBracelets => role == 'OWNER' || role == 'ADMIN';
+  String serverUrl = defaultServerUrl;
+
+  /// Funciones del portero (las del servidor, o las últimas conocidas si no hay internet).
+  List<Assignment> assignments = const [];
+
+  bool get loggedIn => _api?.token != null;
+
+  /// La cuenta tiene contraseña temporal: la app pide cambiarla antes de seguir.
+  bool mustChangePassword = false;
+
+  /// Cuántas lecturas esperan subirse (para mostrarlo en pantalla).
+  int pendingCount = 0;
+  int conflictCount = 0;
+
+  /// Se llama cuando el servidor dice que la sesión ya no vale: la pantalla vuelve al login.
+  VoidCallback? onSessionExpired;
+
+  /// Diferencia entre la hora del servidor y la del reloj del teléfono, medida en cada sincronización. El QR
+  /// dinámico se compara con la hora del servidor, así que un reloj mal puesto no deja afuera a nadie.
+  int clockOffsetMs = 0;
+
+  /// Hora del servidor según el teléfono.
+  DateTime get serverNow => DateTime.now().add(Duration(milliseconds: clockOffsetMs));
+
+  /// Hora (del servidor) en que se leyó cada código, para validar la prueba del QR con ese instante al confirmar
+  /// (el portero tarda unos segundos en aceptar y el QR del comprador sigue cambiando).
+  final Map<String, DateTime> _readAt = {};
+
+  Future<void> _calibrate(DateTime start, DateTime end, String serverTimeIso) async {
+    final server = DateTime.tryParse(serverTimeIso);
+    if (server == null) return;
+    final midpoint = start.add(end.difference(start) ~/ 2); // el servidor armó la respuesta hacia la mitad del viaje
+    clockOffsetMs = server.difference(midpoint).inMilliseconds;
+    await db.putKv('clock_offset', '$clockOffsetMs');
+  }
+
+  Future<void> restore() async {
+    serverUrl = await sessionStore.serverUrl ?? defaultServerUrl;
+    final token = await sessionStore.token;
+    staffName = await sessionStore.name;
+    role = await sessionStore.role;
+    clockOffsetMs = int.tryParse(await db.getKv('clock_offset') ?? '') ?? 0;
+    _api = ApiClient(baseUrl: serverUrl, token: token);
+    notifyListeners();
+  }
+
+  Future<String> _deviceName() async {
+    try {
+      final info = DeviceInfoPlugin();
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        final a = await info.androidInfo;
+        return '${a.manufacturer} ${a.model}';
+      }
+      if (defaultTargetPlatform == TargetPlatform.iOS) return (await info.iosInfo).name;
+    } catch (_) {}
+    return 'Teléfono';
+  }
+
+  Future<void> login({required String server, required String email, required String password}) async {
+    final url = server.trim().isEmpty ? defaultServerUrl : server.trim();
+    final api = ApiClient(baseUrl: url);
+    final result = await api.login(
+      email: email.trim(),
+      password: password,
+      deviceId: await sessionStore.deviceId,
+      deviceName: await _deviceName(),
+    );
+    await sessionStore.save(server: url, token: result.token, refreshToken: result.refreshToken, email: email.trim(), name: result.name, role: result.role);
+    role = result.role;
+    serverUrl = url;
+    staffName = result.name;
+    mustChangePassword = result.mustChangePassword;
+    _api = ApiClient(baseUrl: url, token: result.token);
+    notifyListeners();
+  }
+
+  /// Comprueba la contraseña de la cuenta que tiene la sesión abierta (para ver datos reservados, como los ingresos).
+  /// Vuelve a iniciar sesión con el mismo email; el servidor reemplaza el token de este teléfono por uno nuevo y la
+  /// app lo adopta, así que no cambia nada de lo descargado. Devuelve false si la contraseña no es correcta.
+  Future<bool> confirmPassword(String password) async {
+    final email = await sessionStore.email;
+    if (email == null || email.isEmpty) return false;
+    try {
+      await login(server: serverUrl, email: email, password: password);
+      return true;
+    } on ApiException catch (e) {
+      if (e.unauthorized) return false;
+      rethrow;
+    }
+  }
+
+  Future<void> changePassword({required String current, required String next}) async {
+    await _guard((api) => api.changePassword(current: current, next: next));
+    mustChangePassword = false;
+    notifyListeners();
+  }
+
+  /// Cierra la sesión. Se borran las entradas descargadas: no deben quedar en un teléfono sin sesión.
+  Future<void> logout() async {
+    await _api?.logout();
+    await sessionStore.clearSession();
+    await db.clearAll();
+    db.useKey(await sessionStore.resetDbKey()); // lo que quede cifrado con la clave anterior ya no se puede leer
+    _readAt.clear();
+    role = null;
+    _api = ApiClient(baseUrl: serverUrl);
+    mustChangePassword = false;
+    assignments = const [];
+    pendingCount = 0;
+    notifyListeners();
+  }
+
+  Future<bool>? _refreshing;
+
+  /// Renueva el token de acceso con el de renovación. Una sola renovación a la vez: si dos llamadas vencen
+  /// juntas, esperan la misma (renovar dos veces con el mismo token de renovación cerraría la sesión).
+  /// Devuelve false si la sesión ya no es válida; si falla por falta de conexión, lanza el error de red.
+  Future<bool> _refreshSession() => _refreshing ??= _doRefresh().whenComplete(() => _refreshing = null);
+
+  Future<bool> _doRefresh() async {
+    final refresh = await sessionStore.refreshToken;
+    if (refresh == null) return false; // sesión de una versión anterior: pide iniciar sesión otra vez
+    try {
+      final pair = await ApiClient(baseUrl: serverUrl).refresh(refresh);
+      await sessionStore.saveTokens(pair.token, pair.refreshToken);
+      _api = ApiClient(baseUrl: serverUrl, token: pair.token);
+      return true;
+    } on ApiException catch (e) {
+      if (e.unauthorized) return false;
+      rethrow; // sin conexión u otro fallo pasajero: la sesión sigue, se reintenta luego
+    }
+  }
+
+  Future<T> _guard<T>(Future<T> Function(ApiClient api) call) async {
+    final api = _api;
+    if (api == null || api.token == null) throw const ApiException('Inicia sesión.', status: 401);
+    try {
+      return await call(api);
+    } on ApiException catch (e) {
+      if (e.passwordChangeRequired) {
+        mustChangePassword = true;
+        notifyListeners();
+      }
+      if (e.unauthorized) {
+        // El token de acceso es corto: antes de dar la sesión por perdida, se intenta renovar.
+        if (await _refreshSession()) return await call(_api!);
+        await sessionStore.clearSession();
+        _api = ApiClient(baseUrl: serverUrl);
+        onSessionExpired?.call();
+        notifyListeners();
+      }
+      rethrow;
+    }
+  }
+
+  // ── Modo Barra (QR de consumo) ──
+
+  /// ¿Esta cuenta es solo de barra? Entra directo al modo Barra y no ve la puerta.
+  bool get isBarOnly => role == 'BAR';
+
+  /// Los administradores y la barra pueden atender la barra; un portero no.
+  bool get canUseBar => role == 'OWNER' || role == 'ADMIN' || role == 'BAR';
+
+  /// Noches con consumo que esta cuenta atiende. Sin internet, usa las últimas guardadas.
+  Future<List<BarNight>> barNights() async {
+    try {
+      final nights = await _guard((api) => api.barNights());
+      await db.putKv('bar_nights', jsonEncode([for (final n in nights) n.toJson()]));
+      return nights;
+    } on ApiException catch (e) {
+      if (!e.offline) rethrow;
+      final saved = await db.getKv('bar_nights');
+      if (saved == null) rethrow;
+      return [for (final n in jsonDecode(saved) as List) BarNight.fromJson(n as Map<String, dynamic>)];
+    }
+  }
+
+  /// Descarga los QR de consumo de la noche (reemplaza lo anterior; lo leído aquí y sin subir se conserva).
+  Future<void> barDownload(String sessionId) async {
+    final vouchers = await _guard((api) => api.barDownload(sessionId));
+    await db.saveVouchers(sessionId, vouchers);
+  }
+
+  /// Revisa una lectura SIN marcarla: de quién es, cuánto consumo tiene o por qué no vale. Si el código no está en la
+  /// lista y hay internet, primero actualiza la lista (puede ser una compra reciente).
+  Future<VoucherOutcome> barInspect(String sessionId, String raw) async {
+    var outcome = await inspectVoucher(vouchers: db, sessionId: sessionId, raw: raw);
+    if (outcome.verdict == VoucherVerdict.notFound) {
+      try {
+        if (await barSync(sessionId, refresh: true)) outcome = await inspectVoucher(vouchers: db, sessionId: sessionId, raw: raw);
+      } on ApiException {
+        // Sin internet o sesión vencida: se queda el "no existe" local.
+      }
+    }
+    return outcome;
+  }
+
+  /// El de barra confirmó: se marca como leído en este teléfono (queda para subir) y se avisa al servidor.
+  /// Devuelve el vale tal como quedó, o null si ya no se podía marcar (otro lo leyó mientras tanto).
+  Future<Voucher?> barRead(String sessionId, String raw, {String? note}) async {
+    final code = extractVoucherCode(raw);
+    if (code == null) return null;
+    final current = await db.findVoucher(sessionId, code);
+    if (current == null || current.isRead || current.cancelled) return null;
+    final at = serverNow;
+    await db.markVoucherRead(id: _scanId(), sessionId: sessionId, code: code, at: at, note: note?.trim().isEmpty ?? true ? null : note!.trim());
+    await refreshBarCounters(sessionId);
+    return db.findVoucher(sessionId, code);
+  }
+
+  int barPending = 0;
+  int barConflicts = 0;
+
+  Future<void> refreshBarCounters(String sessionId) async {
+    barPending = await db.pendingVoucherCount(sessionId);
+    barConflicts = await db.voucherConflictCount(sessionId);
+    notifyListeners();
+  }
+
+  /// Sube las lecturas pendientes (en orden) y, con `refresh`, vuelve a bajar la lista para ver lo que leyeron otros
+  /// teléfonos. Devuelve false si no se pudo llegar al servidor.
+  Future<bool> barSync(String sessionId, {bool refresh = true}) async {
+    try {
+      while (true) {
+        final batch = await db.pendingVoucherReads(sessionId);
+        if (batch.isEmpty) break;
+        final results = await _guard(
+          (api) => api.postBarReads(sessionId, [
+            for (final r in batch) {'id': r.id, 'code': r.code, 'readAt': r.readAt.toUtc().toIso8601String(), if (r.note != null) 'note': r.note},
+          ]),
+        );
+        await db.applyVoucherResults(sessionId, {for (final r in results) r.id: (result: r.result, voucher: r.voucher)});
+        if (batch.length < 200) break;
+      }
+      if (refresh) await barDownload(sessionId);
+      await refreshBarCounters(sessionId);
+      return true;
+    } on ApiException catch (e) {
+      if (e.offline) {
+        await refreshBarCounters(sessionId);
+        return false;
+      }
+      rethrow;
+    }
+  }
+
+  Future<({int total, int read})> barCounts(String sessionId) => db.voucherCounts(sessionId);
+
+  Future<List<Voucher>> barRecent(String sessionId) => db.recentVoucherReads(sessionId);
+
+  /// Funciones asignadas. Sin internet, usa la última lista guardada.
+  Future<void> loadAssignments() async {
+    try {
+      assignments = await _guard((api) => api.assignments());
+      await db.putKv('assignments', jsonEncode([for (final a in assignments) a.toJson()]));
+    } on ApiException catch (e) {
+      if (!e.offline) rethrow;
+      final cached = await db.getKv('assignments');
+      if (cached == null) rethrow;
+      assignments = [for (final a in jsonDecode(cached) as List) Assignment.fromJson(a as Map<String, dynamic>)];
+    }
+    notifyListeners();
+  }
+
+  Future<SessionMeta?> meta(String sessionId) => db.meta(sessionId);
+
+  /// Entrada a la que se vinculó una tarjeta NFC (por su número de serie normalizado), o null si no está registrada.
+  Future<TicketRow?> ticketByNfcUid(String sessionId, String uid) => db.findByNfcUid(sessionId, uid);
+
+  // ── Canje: tarjetas NFC ──
+
+  /// Vincula una tarjeta o manilla NFC a una entrada en el servidor (necesita internet: el servidor decide si la tarjeta
+  /// ya es de otra entrada) y la anota en este teléfono. Si falla, lanza [ApiException] con el motivo.
+  Future<void> linkNfcCard({
+    required String sessionId,
+    required String code,
+    required String uid,
+    required Map<String, dynamic> card,
+    bool replace = false,
+  }) async {
+    await _guard((api) => api.linkNfcCard(sessionId: sessionId, code: code, uid: uid, card: card, replace: replace));
+    await db.setNfcUid(sessionId, code, uid);
+  }
+
+  /// Descarga completa de la función para la puerta elegida (reemplaza lo descargado antes).
+  Future<SessionMeta> download(Assignment a, Gate? gate) async {
+    final started = DateTime.now();
+    final data = await _guard((api) => api.download(a.sessionId, gateId: gate?.id));
+    await _calibrate(started, DateTime.now(), data.meta.syncedAt);
+    await db.saveFull(data);
+    await refreshCounters(a.sessionId);
+    return (await db.meta(a.sessionId))!;
+  }
+
+  /// Sube lo pendiente y baja los cambios. Sin internet no hace nada (se reintenta luego).
+  /// Devuelve false si no se pudo llegar al servidor.
+  ///
+  /// Si ya hay una en curso para esta función, se espera esa en vez de empezar otra: antes cada lectura aceptada, el
+  /// temporizador y cada código no reconocido lanzaban la suya, y se pisaban unas a otras (subían lo mismo, bajaban lo mismo
+  /// y bloqueaban la base) justo cuando el portero estaba leyendo.
+  Future<bool> sync(String sessionId) =>
+      _syncing[sessionId] ??= _syncNow(sessionId).whenComplete(() => _syncing.remove(sessionId));
+
+  final Map<String, Future<bool>> _syncing = {};
+
+  /// Para una lectura que no está en la lista: intenta actualizarla, pero nunca hace esperar a la puerta más de unos
+  /// segundos (con mala señal, la espera completa de la red eran 20 s o más con la cámara parada). Si no llega a tiempo,
+  /// la actualización sigue sola y la persona vuelve a pasar el QR.
+  Future<bool> _refreshQuickly(String sessionId) =>
+      sync(sessionId).timeout(const Duration(seconds: 4), onTimeout: () => false);
+
+  Future<bool> _syncNow(String sessionId) async {
+    final meta = await db.meta(sessionId);
+    if (meta == null) return true;
+    try {
+      while (true) {
+        final batch = await db.pending(sessionId);
+        if (batch.isEmpty) break;
+        final results = await _guard((api) => api.postScans(sessionId, [for (final s in batch) s.toApi()]));
+        await db.markSynced({for (final r in results) r.id: r.result});
+        if (batch.length < 200) break;
+      }
+      // Solape de unos segundos: mejor repetir un cambio que perderlo.
+      final since = DateTime.parse(meta.syncedAt).subtract(const Duration(seconds: 10)).toUtc().toIso8601String();
+      final started = DateTime.now();
+      final delta = await _guard((api) => api.download(sessionId, gateId: meta.gateId, since: since));
+      await _calibrate(started, DateTime.now(), delta.meta.syncedAt);
+      await db.applyDelta(delta);
+      await refreshCounters(sessionId);
+      return true;
+    } on ApiException catch (e) {
+      if (e.offline) {
+        await refreshCounters(sessionId);
+        return false;
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> refreshCounters(String sessionId) async {
+    pendingCount = await db.pendingCount(sessionId);
+    conflictCount = await db.conflictCount(sessionId);
+    notifyListeners();
+  }
+
+  Future<({int total, int used, int inside})> gateCounts(String sessionId) => db.gateCounts(sessionId);
+
+  Future<List<RecentScan>> recentScans(String sessionId) => db.recentScans(sessionId);
+
+  /// Última vez que se actualizó la lista por una lectura que no se reconoció.
+  DateTime _lastUnknownRefresh = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// ¿Vale la pena actualizar la lista porque esta lectura no está? Si parece una entrada de iPass, siempre (puede ser una
+  /// venta reciente). Si no, puede ser el código de un proveedor importado después de la descarga (el teléfono todavía
+  /// no tiene sus reglas ni sus entradas): se actualiza también, pero como mucho una vez cada 20 segundos.
+  bool _worthRefreshing(String raw) {
+    if (extractTicketCode(raw) != null) return true;
+    final text = raw.trim();
+    if (text.isEmpty || text.length > maxExternalCodeLength) return false;
+    final now = DateTime.now();
+    if (now.difference(_lastUnknownRefresh) < const Duration(seconds: 20)) return false;
+    _lastUnknownRefresh = now;
+    return true;
+  }
+
+  /// Revisa una lectura SIN marcarla como usada: el portero ve los datos y decide si acepta el ingreso.
+  ///
+  /// Un rechazo (ya usada, otra puerta, anulada…) queda registrado de una vez, porque la persona no entra.
+  /// Si el código no está en la lista y hay internet, primero actualiza la lista (puede ser una entrada
+  /// vendida después de la descarga) y vuelve a revisar.
+  Future<ScanOutcome> inspect(SessionMeta meta, String raw, AccessMethod? method) async {
+    final readAt = serverNow;
+    _readAt[raw] = readAt;
+    if (_readAt.length > 50) _readAt.remove(_readAt.keys.first);
+    var outcome = await validateScan(tickets: db, meta: meta, raw: raw, method: method, now: readAt);
+    if (outcome.verdict == ScanVerdict.notFound && _worthRefreshing(raw)) {
+      try {
+        if (await _refreshQuickly(meta.sessionId)) {
+          final fresh = await db.meta(meta.sessionId) ?? meta;
+          outcome = await validateScan(tickets: db, meta: fresh, raw: raw, method: method, now: readAt);
+        }
+      } on ApiException {
+        // Sin internet o sesión vencida: se queda el "no existe" local.
+      }
+    }
+    if (!outcome.verdict.ok) await _record(meta, raw, method, outcome.verdict, code: outcome.ticket?.code);
+    return outcome;
+  }
+
+  /// Consulta una lectura SIN registrar nada (ni siquiera un rechazo): dónde está la persona y qué pasaría si se
+  /// leyera en esta puerta. Es para quien revisa una zona y solo necesita saber si ya ingresó o no.
+  Future<(ScanOutcome, PresenceView?)> consult(SessionMeta meta, String raw, AccessMethod? method) async {
+    var outcome = await validateScan(tickets: db, meta: meta, raw: raw, method: method, now: serverNow);
+    var current = meta;
+    if (outcome.verdict == ScanVerdict.notFound && _worthRefreshing(raw)) {
+      try {
+        if (await _refreshQuickly(meta.sessionId)) {
+          current = await db.meta(meta.sessionId) ?? meta;
+          outcome = await validateScan(tickets: db, meta: current, raw: raw, method: method, now: serverNow);
+        }
+      } on ApiException {
+        // Sin internet: se queda el "no existe" local.
+      }
+    }
+    final ticket = outcome.ticket;
+    return (outcome, ticket == null ? null : describePresence(ticket, current, outcome));
+  }
+
+  /// El portero dijo que NO es una salida: es una entrada que ya se usó. Queda registrada como rechazo.
+  Future<ScanOutcome> declineExit(SessionMeta meta, String raw, AccessMethod? method, ScanOutcome asked) async {
+    _readAt.remove(raw);
+    final at = asked.ticket?.usedAt;
+    final time = at == null ? null : '${at.hour.toString().padLeft(2, '0')}:${at.minute.toString().padLeft(2, '0')}';
+    final outcome = ScanOutcome(
+      verdict: ScanVerdict.alreadyUsed,
+      ticket: asked.ticket,
+      detail: time == null ? 'Ya está adentro.' : 'Ingresó a las $time y no salió.',
+    );
+    await _record(meta, raw, method, ScanVerdict.alreadyUsed, code: asked.ticket?.code);
+    return outcome;
+  }
+
+  /// El portero aceptó el ingreso: se vuelve a validar (por si otra lectura la usó mientras tanto)
+  /// y recién ahí se marca como usada y se guarda para subirla.
+  Future<ScanOutcome> confirm(SessionMeta meta, String raw, AccessMethod? method) async {
+    // La prueba del QR se revisa con el instante en que se leyó, no con el de ahora (aceptar tarda unos segundos).
+    final readAt = _readAt.remove(raw);
+    final checkAt = readAt != null && serverNow.difference(readAt) < const Duration(minutes: 2) ? readAt : serverNow;
+    final outcome = await validateScan(tickets: db, meta: meta, raw: raw, method: method, now: checkAt);
+    // El código de iPass de la entrada, sea cual sea lo leído (su QR, o el código de otro proveedor).
+    final code = outcome.ticket?.code ?? extractTicketCode(raw);
+    if (outcome.verdict.ok && code != null) {
+      final now = serverNow;
+      final movement = outcome.movement ?? Movement.entry;
+      // La zona en la que queda la persona: la de la puerta por la que pasó (una salida la deja afuera).
+      final zoneId = movement == Movement.exit ? null : meta.gate?.zoneId;
+      await db.applyMovement(meta.sessionId, code, movement, now, zoneId: zoneId);
+      await _record(meta, raw, method, ScanVerdict.accepted, at: now, code: code, movement: movement, zoneId: zoneId);
+    } else {
+      await _record(meta, raw, method, outcome.verdict, code: outcome.ticket?.code);
+    }
+    await refreshCounters(meta.sessionId);
+    return outcome;
+  }
+
+  Future<void> _record(
+    SessionMeta meta,
+    String raw,
+    AccessMethod? method,
+    ScanVerdict verdict, {
+    DateTime? at,
+    String? code,
+    Movement? movement,
+    String? zoneId,
+  }) async {
+    await db.addScan(
+      PendingScan(
+        id: _scanId(),
+        sessionId: meta.sessionId,
+        gateId: meta.gateId,
+        raw: raw,
+        method: scanMethodApi(method),
+        scannedAt: at ?? serverNow,
+        verdict: verdict,
+        movement: movement,
+        zoneId: zoneId,
+      ),
+      code: code ?? extractTicketCode(raw),
+    );
+    await refreshCounters(meta.sessionId);
+  }
+}
