@@ -1,0 +1,18 @@
+[
+  { "note": "con dos puntos, como lo muestran las apps de NFC", "raw": "04:7F:8C:52:0F:7A:80", "uid": "047F8C520F7A80" },
+  { "note": "con guiones y en minúsculas", "raw": "04-7f-8c-52-0f-7a-80", "uid": "047F8C520F7A80" },
+  { "note": "pegado", "raw": "047f8c520f7a80", "uid": "047F8C520F7A80" },
+  { "note": "con espacios en los extremos y en el medio", "raw": " 04 7F 8C 52 0F 7A 80 ", "uid": "047F8C520F7A80" },
+  { "note": "de 4 bytes", "raw": "A1:B2:C3:D4", "uid": "A1B2C3D4" },
+  { "note": "de 8 bytes (ISO 15693)", "raw": "E0:04:01:50:12:34:56:78", "uid": "E004015012345678" },
+  { "note": "de 10 bytes", "raw": "047F8C520F7A801122AA", "uid": "047F8C520F7A801122AA" },
+  { "note": "UID aleatorio de 4 bytes (teléfono o tarjeta virtual): no identifica", "raw": "08:11:22:33", "uid": null },
+  { "note": "un 08 al inicio de uno de 7 bytes es normal", "raw": "08:7F:8C:52:0F:7A:80", "uid": "087F8C520F7A80" },
+  { "note": "todo ceros", "raw": "00:00:00:00", "uid": null },
+  { "note": "todo unos", "raw": "FF:FF:FF:FF:FF:FF:FF", "uid": null },
+  { "note": "muy corto", "raw": "04:7F:8C", "uid": null },
+  { "note": "largo raro (5 bytes)", "raw": "04:7F:8C:52:0F", "uid": null },
+  { "note": "número impar de dígitos", "raw": "04:7F:8C:52:0F:7A:8", "uid": null },
+  { "note": "no es hexadecimal", "raw": "ZZ:7F:8C:52", "uid": null },
+  { "note": "vacío", "raw": "", "uid": null }
+]

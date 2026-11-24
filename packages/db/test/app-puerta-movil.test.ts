@@ -148,6 +148,24 @@ describe("descarga para validar sin internet", () => {
     const afterScan = await getDoorDownload({ sessionId: session.id, accessPointId: gates[0]!.id, since });
     expect(afterScan!.tickets).toMatchObject([{ code: first!.code, status: "U" }]);
   });
+
+  it("una entrada ya usada lleva quién la leyó, por qué puerta y cuándo (y la que no se usó, no)", async () => {
+    const { session, type, cashier, operator } = await setup(["QR"]);
+    const [first, second] = await sell(session.id, type.id, cashier.id, 2);
+    const gate = await prisma.accessPoint.findFirstOrThrow({ where: { venueId: session.venueId }, orderBy: { name: "asc" } });
+    const at = new Date(Date.now() - 5 * 60_000);
+    await scanTicket({ sessionId: session.id, raw: first!.code, method: "QR", accessPointId: gate.id, operatorId: operator.id, scannedAt: at });
+
+    const full = await getDoorDownload({ sessionId: session.id });
+    const used = full!.tickets.find((t) => t.code === first!.code) as { lastRead?: { at: string; by: string | null; gate: string | null; movement: string | null } };
+    expect(used.lastRead).toMatchObject({ by: "Portero", gate: gate.name, movement: "ENTRY" });
+    expect(new Date(used.lastRead!.at).getTime()).toBe(at.getTime());
+    expect(full!.tickets.find((t) => t.code === second!.code)).not.toHaveProperty("lastRead");
+
+    // En la descarga de cambios también llega (la entrada cambió: se usó después de `since`).
+    const delta = await getDoorDownload({ sessionId: session.id, since: new Date(at.getTime() - 1000) });
+    expect(delta!.tickets.find((t) => t.code === first!.code)).toHaveProperty("lastRead");
+  });
 });
 
 describe("ingreso en vivo", () => {

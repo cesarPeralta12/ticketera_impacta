@@ -11,6 +11,7 @@ export * from "./operations/imports";
 export * from "./operations/email-tokens";
 export * from "./operations/live";
 export * from "./operations/mobile";
+export * from "./operations/nfc-cards";
 export * from "./operations/nightlife";
 export * from "./operations/orders";
 export * from "./operations/printed";

@@ -352,11 +352,14 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
               { soldAt: { gte: since } },
               // Salió, reingresó o cambió de zona.
               { lastMovementAt: { gte: since } },
+              // Se le vinculó (o cambió) la tarjeta NFC.
+              { nfcLinkedAt: { gte: since } },
             ],
           }
         : {}),
     },
     select: {
+      id: true,
       code: true,
       status: true,
       holderName: true,
@@ -372,11 +375,20 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
       entries: true,
       externalCode: true,
       externalKey: true,
+      nfcUid: true,
     },
   });
   const secret = tickets.some((t) => t.ticketType.qrMode === "DYNAMIC") ? requireEnv("TICKET_QR_SECRET") : "";
   // Entradas importadas con el código de un tercero: la app las reconoce limpiando la lectura con estas reglas.
   const codeRules = await externalCodeRules(session.eventId);
+
+  // Última lectura aceptada de las entradas que ya se usaron: cuándo, quién (operador) y por qué puerta, para decirlo en «Ya
+  // utilizada» y en la consulta.
+  const reads = await lastAcceptedReads(
+    input.sessionId,
+    tickets.filter((t) => t.status === "USED" || t.entries > 0).map((t) => t.id),
+    !since,
+  );
 
   // Códigos que dejaron de valer por una transferencia: el teléfono los saca de su lista.
   const revoked = since
@@ -431,11 +443,16 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
           mine,
           // Entrada importada: la clave de su código externo (nuevo; solo si la tiene), para reconocerla sin internet.
           ...(t.externalKey ? { externalKey: t.externalKey } : {}),
+          // Tarjeta o manilla NFC vinculada (nuevo; solo si la tiene): su número de serie, para reconocerla sin internet.
+          ...(t.nfcUid ? { nfcUid: t.nfcUid } : {}),
         };
         if (!mine) return base;
         const dynamic = t.ticketType.qrMode === "DYNAMIC";
+        const read = reads.get(t.id);
         return {
           ...base,
+          // Última lectura aceptada (nuevo; solo si ya se usó): cuándo, quién y por qué puerta.
+          ...(read ? { lastRead: read } : {}),
           holder: t.holderName ?? t.order.buyerName,
           // Titular actual: si la entrada se transfirió, el carnet es el de quien la recibió.
           document: t.holderDocument ?? t.order.buyerDocument,
@@ -460,6 +477,34 @@ export async function getDoorDownload(input: { sessionId: string; accessPointId?
       }),
     ),
   };
+}
+
+/** Última lectura aceptada de cada entrada: cuándo, el operador que la hizo y la puerta. */
+export type LastRead = { at: string; by: string | null; gate: string | null; movement: string | null };
+
+/**
+ * Última lectura aceptada de cada entrada de la lista. En una descarga completa se piden todas las de la función; en
+ * una de cambios, solo las de las entradas que cambiaron (`ticketIds`).
+ */
+async function lastAcceptedReads(sessionId: string, ticketIds: string[], all: boolean): Promise<Map<string, LastRead>> {
+  const reads = new Map<string, LastRead>();
+  if (!all && ticketIds.length === 0) return reads;
+  const scans = await prisma.accessScan.findMany({
+    where: { sessionId, result: "ACCEPTED", ticketId: all ? { not: null } : { in: ticketIds } },
+    orderBy: [{ ticketId: "asc" }, { scannedAt: "desc" }],
+    distinct: ["ticketId"],
+    select: { ticketId: true, scannedAt: true, movement: true, operator: { select: { name: true } }, accessPoint: { select: { name: true } } },
+  });
+  for (const scan of scans) {
+    if (!scan.ticketId) continue;
+    reads.set(scan.ticketId, {
+      at: scan.scannedAt.toISOString(),
+      by: scan.operator?.name ?? null,
+      gate: scan.accessPoint?.name ?? null,
+      movement: scan.movement ?? null,
+    });
+  }
+  return reads;
 }
 
 export type DoorDownload = NonNullable<Awaited<ReturnType<typeof getDoorDownload>>>;

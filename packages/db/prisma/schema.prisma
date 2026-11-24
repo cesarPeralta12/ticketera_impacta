@@ -857,9 +857,18 @@ model Ticket {
   /// …y la clave con la que se compara una lectura (packages/core/src/external-codes.ts). Única por función; al
   /// deshacer la importación se libera, para poder volver a cargar el archivo corregido.
   externalKey    String?
+  /// Tarjeta o manilla NFC vinculada en el canje: su número de serie (UID) normalizado (packages/core/src/nfc-uid.ts).
+  /// Es la clave con la que la puerta encuentra la entrada al leer la tarjeta. Único por función.
+  nfcUid         String?
+  /// Huella completa de la tarjeta tal como la leyó la app de canje (tipo de etiqueta, modelo, tecnologías, UID).
+  nfcCard        Json?
+  nfcLinkedAt    DateTime?
+  /// Quién la vinculó (usuario del panel).
+  nfcLinkedById  String?
 
   @@unique([sessionId, serial])
   @@unique([sessionId, externalKey])
+  @@unique([sessionId, nfcUid])
   @@index([printBatchId])
   @@index([sessionId, inside, zoneId])
   @@index([sessionId, status])

@@ -20,6 +20,7 @@ export * from "./landing";
 export * from "./locale";
 export * from "./money";
 export * from "./net";
+export * from "./nfc-uid";
 export * from "./nightlife";
 export * from "./phases";
 export * from "./pricing";
