@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPass · Prototipo del editor de entrada virtual (v2)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow:wght@400;600;700&family=Bebas+Neue&family=Inter:wght@400;600;700;800&family=Montserrat:wght@400;600;700;800&family=Oswald:wght@400;600;700&family=Playfair+Display:wght@600;700;800&family=Poppins:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0e1524;--panel:#141d30;--raised:#1b2740;--raised2:#24324f;--border:#2a3751;--ink:#f5f6f8;--muted:#9ba9c4;--dim:#7d89a3;--accent:#ad468d;--accent2:#c457a3;--yellow:#f5b700;--green:#35c48f;--red:#ff6b81}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Poppins,system-ui,sans-serif;background:var(--bg);color:var(--ink);height:100dvh;overflow:hidden;font-size:13px}
+  button,input,select,textarea{font:inherit;color:inherit}
+  button{cursor:pointer;border:0;background:none}
+  .app{display:grid;grid-template-rows:auto auto 1fr;height:100dvh}
+  .top{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .brand{font-weight:800;font-size:18px;margin-right:6px}.brand b{color:var(--accent)}
+  .crumb{color:var(--muted);font-size:12px}.sp{flex:1}
+  .btn{padding:8px 14px;border-radius:10px;background:var(--raised2);font-weight:600;font-size:12.5px;white-space:nowrap}
+  .btn:hover{background:#2c3d60}.btn.pri{background:var(--accent)}.btn.pri:hover{background:var(--accent2)}
+  .btn.sm{padding:5px 10px;font-size:12px}.btn[disabled]{opacity:.35;pointer-events:none}
+  .ico{width:34px;height:34px;border-radius:10px;background:var(--raised2);font-size:15px}.ico[disabled]{opacity:.35;pointer-events:none}
+  .scope{display:flex;align-items:center;gap:8px;padding:8px 14px;background:#101a2d;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .scope label{color:var(--muted);font-size:12px;margin-right:2px}
+  .pill{padding:6px 12px;border-radius:999px;background:var(--raised);border:1px solid var(--border);font-size:12px;font-weight:600;color:var(--muted)}
+  .pill.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .pill i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--yellow);margin-left:6px}
+  .scope .note{margin-left:auto;color:var(--dim);font-size:12px}
+  .main{display:grid;grid-template-columns:250px 1fr 330px;min-height:0}
+  aside{background:var(--panel);overflow:auto;min-height:0}
+  .left{border-right:1px solid var(--border)}.right{border-left:1px solid var(--border)}
+  h4{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);margin:16px 14px 8px}
+  .add{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 14px}
+  .add button{padding:10px 8px;border-radius:10px;background:var(--raised);border:1px solid var(--border);font-size:12px;font-weight:600}
+  .add button:hover{border-color:var(--accent)}
+  .layers{padding:0 8px 14px}
+  .layer{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;font-size:12.5px;cursor:pointer;border:1px solid transparent}
+  .layer:hover{background:var(--raised)}.layer.sel{background:var(--raised2);border-color:var(--accent)}
+  .layer .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.layer .k{color:var(--dim);font-size:11px;width:38px;flex:none}
+  .layer button{font-size:13px;opacity:.7}.layer button:hover{opacity:1}.layer.hid .t{opacity:.4;text-decoration:line-through}
+  .stage{display:flex;flex-direction:column;min-width:0;min-height:0;background:radial-gradient(circle at 50% 30%,#18233a,#0b1220)}
+  .tabs{display:flex;gap:6px;padding:10px 14px 4px;justify-content:center;flex-wrap:wrap;align-items:center}
+  .tools{display:flex;gap:6px;padding:2px 14px 8px;justify-content:center;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted)}
+  .tools label{display:flex;gap:5px;align-items:center;cursor:pointer;padding:3px 8px;border-radius:8px;background:var(--raised)}
+  .tools input{accent-color:var(--accent)}
+  select{background:var(--raised);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:12px}
+  select option{background:#1b2740}
+  .view{flex:1;min-height:0;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:6px 14px 18px}
+  .phone{background:#06090f;border-radius:34px;padding:12px 10px;box-shadow:0 20px 60px rgba(0,0,0,.6);border:1px solid #2a3751;position:relative}
+  .phone::before{content:"";display:block;width:60px;height:5px;border-radius:3px;background:#1c2536;margin:0 auto 8px}
+  .canvaswrap{position:relative}
+  .ticket{position:absolute;left:0;top:0;transform-origin:0 0;overflow:hidden;user-select:none}
+  .ticket .el{position:absolute;overflow:hidden;line-height:1.15}
+  .ticket .el.flex{display:flex;align-items:center}
+  .overlay{position:absolute;left:0;top:0;transform-origin:0 0}
+  .hit{position:absolute;cursor:move}.hit:hover{outline:1px dashed rgba(255,255,255,.55)}.hit.sel{outline:2px solid #4da3ff}.hit.lockd{cursor:default}
+  .hnd{position:absolute;width:12px;height:12px;background:#fff;border:2px solid #4da3ff;border-radius:3px;z-index:5}
+  .guide{position:absolute;background:#ff4d9a;z-index:6;pointer-events:none}
+  .gridov{position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.08) 1px,transparent 1px);background-size:20px 20px}
+  .safeov{position:absolute;inset:16px;border:1px dashed rgba(255,214,0,.55);pointer-events:none;border-radius:6px}
+  .checks{width:100%;max-width:440px;margin:12px auto 0;display:grid;gap:6px}
+  .chk{font-size:12px;display:flex;gap:8px;padding:7px 10px;border-radius:10px;background:var(--raised)}
+  .chk.ok b{color:var(--green)}.chk.warn b{color:var(--yellow)}.chk.bad b{color:var(--red)}
+  .grid3{display:flex;gap:18px;flex-wrap:wrap;justify-content:center;padding:6px 0}
+  .card3{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+  .card3 .tagx{padding:3px 10px;border-radius:999px;background:var(--raised2);font-weight:600;color:var(--ink)}.card3 .tagx.o{background:rgba(245,183,0,.18);color:var(--yellow)}
+  .mail{width:min(520px,100%);background:#f5f6f8;color:#192438;border-radius:14px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);font-family:Arial,sans-serif}
+  .mail .mh{background:#192438;color:#fff;padding:14px 24px;font-size:22px;font-weight:700}.mail .mh b{color:#ad468d}
+  .mail .mb{padding:20px 24px;background:#fff}
+  .mail .hero{position:relative;overflow:hidden;border-radius:12px;margin:12px 0}
+  .mail .qrbox{text-align:center;border:1px solid #e6eaf0;border-radius:12px;padding:14px;margin:12px 0}.mail .qrbox svg{width:150px;height:150px}
+  .mail p{font-size:13px;line-height:1.5;color:#60718b;margin-top:8px}
+  .mail .mbtn{display:inline-block;background:#ad468d;color:#fff;padding:12px 22px;border-radius:10px;font-weight:700;margin-top:8px}
+  .jsonwrap{width:min(780px,100%)}
+  textarea.json{width:100%;height:380px;background:#0a101c;border:1px solid var(--border);border-radius:12px;padding:14px;font-size:11.5px;line-height:1.45;color:#cbd4e6;font-family:Consolas,monospace;resize:vertical}
+  .ptabs{display:flex;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:2}
+  .ptabs button{flex:1;padding:12px 6px;font-weight:600;font-size:12.5px;color:var(--muted);border-bottom:2px solid transparent}
+  .ptabs button.on{color:var(--ink);border-color:var(--accent)}
+  .sec{padding:12px 14px;border-bottom:1px solid var(--border)}
+  .sec>.st{font-weight:700;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+  .row{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+  .row label{width:84px;color:var(--muted);font-size:12px;flex:none}
+  .row input[type=text],.row input[type=number],.row select{flex:1;min-width:0;background:var(--raised);border:1px solid var(--border);border-radius:8px;padding:6px 8px;font-size:12.5px}
+  .row input[type=range]{flex:1;accent-color:var(--accent)}
+  .row input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
+  .row input[type=color]{width:34px;height:28px;border:1px solid var(--border);border-radius:6px;background:none;padding:0;cursor:pointer}
+  .row output{width:38px;text-align:right;color:var(--muted);font-size:12px}
+  .seg{display:flex;background:var(--raised);border-radius:8px;padding:2px;flex:1;gap:2px}
+  .seg button{flex:1;padding:5px 4px;border-radius:6px;font-size:12px;color:var(--muted)}.seg button.on{background:var(--accent);color:#fff}
+  .sw{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .sw button{width:24px;height:24px;border-radius:7px;border:2px solid var(--border)}.sw button.on{border-color:#fff}
+  .themes{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .theme{border-radius:10px;border:2px solid var(--border);padding:8px;text-align:left;background:var(--raised);font-size:12px;font-weight:600}.theme.on{border-color:var(--accent)}
+  .theme .bars{display:flex;height:14px;border-radius:5px;overflow:hidden;margin-bottom:6px}.theme .bars i{flex:1}
+  .shapes{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
+  .shp{border-radius:10px;border:2px solid var(--border);padding:8px 4px 6px;background:var(--raised);font-size:11px;font-weight:600;text-align:center;color:var(--muted)}
+  .shp.on{border-color:var(--accent);color:#fff}
+  .shp svg{display:block;margin:0 auto 5px}
+  .empty{padding:30px 18px;color:var(--dim);text-align:center;line-height:1.6}
+  .hint{font-size:11.5px;color:var(--dim);line-height:1.5;margin-top:4px}
+  .banner{margin:12px 14px 0;padding:10px 12px;border-radius:10px;background:rgba(245,183,0,.12);border:1px solid rgba(245,183,0,.35);color:#f6d778;font-size:12px;line-height:1.5}.banner .btn{margin-top:8px}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#0b1220;border:1px solid var(--border);padding:11px 18px;border-radius:12px;z-index:60;font-weight:600;box-shadow:0 10px 40px rgba(0,0,0,.5);display:none}
+  .modal{position:fixed;inset:0;background:rgba(5,8,14,.7);backdrop-filter:blur(5px);z-index:50;display:none;align-items:center;justify-content:center;padding:20px}.modal.open{display:flex}
+  .box{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:20px;width:min(460px,100%);max-height:80vh;overflow:auto}.box h3{font-size:16px;margin-bottom:12px}
+  .ver{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:12.5px}
+  @keyframes drain{from{width:100%}to{width:0}}
+  @media(max-width:1000px){.main{grid-template-columns:1fr}aside{max-height:260px}.left{border-right:0;border-bottom:1px solid var(--border)}.right{border-left:0;border-top:1px solid var(--border)}body{overflow:auto}.app{height:auto}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <div class="brand"><b>i</b>Pass</div>
+    <div class="crumb">Eventos › <strong>Noche en vivo</strong> › Tipos de entrada › <strong>Diseñar entrada</strong></div>
+    <div class="sp"></div>
+    <button class="ico" id="undo" title="Deshacer (Ctrl+Z)">↶</button>
+    <button class="ico" id="redo" title="Rehacer (Ctrl+Y)">↷</button>
+    <button class="btn" id="hist">Historial</button>
+    <button class="btn" id="reset">Restablecer</button>
+    <button class="btn" id="test">Probar lectura del código</button>
+    <button class="btn pri" id="publish">Publicar</button>
+  </div>
+  <div class="scope" id="scope"></div>
+  <div class="main">
+    <aside class="left">
+      <h4>Agregar</h4>
+      <div class="add">
+        <button data-add="text">＋ Texto</button>
+        <button data-add="field">＋ Dato del evento</button>
+        <button data-add="shape">＋ Forma</button>
+        <button data-add="circle">＋ Círculo</button>
+        <button data-add="dash">＋ Línea de corte</button>
+        <button data-add="image">＋ Imagen</button>
+      </div>
+      <input type="file" id="file" accept="image/*" hidden>
+      <h4>Capas (de arriba a abajo)</h4>
+      <div class="layers" id="layers"></div>
+    </aside>
+    <section class="stage">
+      <div class="tabs" id="tabs"></div>
+      <div class="tools" id="tools"></div>
+      <div class="view" id="view"></div>
+    </section>
+    <aside class="right">
+      <div class="ptabs"><button data-pt="design" class="on">Entrada</button><button data-pt="el">Elemento</button></div>
+      <div id="props"></div>
+    </aside>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div class="modal" id="modal"><div class="box" id="box"></div></div>
+
+<script>
+/* ═════════ Datos de ejemplo ═════════ */
+const SESSIONS=[
+  {id:'s1',label:'Vie 20 nov',date:'Viernes 20 de noviembre · 20:00',venue:'Alice Park'},
+  {id:'s2',label:'Sáb 21 nov',date:'Sábado 21 de noviembre · 20:00',venue:'Alice Park'},
+  {id:'s3',label:'Vie 27 nov',date:'Viernes 27 de noviembre · 21:00',venue:'Alice Park'}];
+const TYPES=[
+  {id:'gen',name:'General',price:'Bs 150',entry:'Acceso norte'},
+  {id:'ter',name:'Terraza',price:'Bs 250',entry:'Acceso terraza'},
+  {id:'vip',name:'Zona VIP',price:'Bs 450',entry:'Acceso VIP'}];
+const DATA={event:{title:'Noche en vivo'},org:{name:'Alice Park'},buyer:{name:'María Fernández'},ticket:{code:'K7Q 3MX PA2'}};
+const LONG={'event.title':'Gran Festival Internacional de Música Andina y Fusión 2026','buyer.name':'María del Carmen Fernández de la Vega','session.venue':'Centro de Convenciones Alice Park, Av. Melchor Urquidi'};
+const FIELDS={'event.title':'Nombre del evento','session.date':'Fecha y hora','session.venue':'Lugar','type.name':'Tipo de entrada','type.price':'Precio','type.entry':'Acceso','buyer.name':'Nombre del comprador','ticket.code':'Código','org.name':'Organizador'};
+const FONTS=['Poppins','Inter','Montserrat','Space Grotesk','Playfair Display','Oswald','Anton','Bebas Neue','Barlow'];
+const THEMES={
+  ipass:{name:'iPass',primary:'#ad468d',secondary:'#f5b700',text:'#ffffff',ink:'#192438',bg1:'#2a1840',bg2:'#111a2b'},
+  noche:{name:'Noche',primary:'#7c5cff',secondary:'#ff6bd6',text:'#ffffff',ink:'#1a1233',bg1:'#2b1b66',bg2:'#0b0720'},
+  rojo:{name:'Club rojo',primary:'#e8431f',secondary:'#ffd166',text:'#ffffff',ink:'#2a0a05',bg1:'#8a1220',bg2:'#1c0508'},
+  verde:{name:'Festival verde',primary:'#25b77a',secondary:'#f5f26b',text:'#ffffff',ink:'#05261b',bg1:'#0e6b4a',bg2:'#04160f'},
+  dorado:{name:'VIP dorado',primary:'#d4a73a',secondary:'#ffffff',text:'#fff6dc',ink:'#241a05',bg1:'#4a3a10',bg2:'#0e0b03'},
+  claro:{name:'Claro',primary:'#ad468d',secondary:'#192438',text:'#192438',ink:'#192438',bg1:'#f5f6f8',bg2:'#e6eaf0'}};
+const SIZES={short:{w:360,h:520,l:'Compacta'},std:{w:360,h:620,l:'Estándar'},tall:{w:360,h:720,l:'Alta'}};
+const CODE_MIN={qr:[150,150],bar:[220,70],both:[170,230],nfc:[90,90]};
+const CODE_LABEL={qr:'Código QR',bar:'Código de barras',both:'QR + barras',nfc:'NFC'};
+const dim=d=>SIZES[d.size||'std'];
+
+/* ═════════ Estado ═════════ */
+let uid=1;const nid=()=>'e'+(uid++);
+const clone=o=>JSON.parse(JSON.stringify(o));
+function defaultDesign(themeKey='ipass'){
+  const t=THEMES[themeKey];
+  return {size:'std',theme:{key:themeKey,primary:t.primary,secondary:t.secondary,text:t.text,ink:t.ink},
+    bg:{type:'gradient',c1:t.bg1,c2:t.bg2,angle:160,image:null,overlay:.45,blur:0,pattern:'none',patOp:.12},
+    shape:{kind:'round',r:26,nr:16,ny:540,c:24,sc:22,bw:0,bc:'@secondary',stub:false,stubC:'@secondary'},
+    els:[
+    {id:nid(),kind:'text',name:'Logo',text:'iPass',x:24,y:22,w:110,h:32,size:24,weight:800,font:'Poppins',color:'@text',align:'left'},
+    {id:nid(),kind:'field',name:'Tipo de entrada',field:'type.name',x:24,y:66,w:150,h:26,size:12,weight:700,font:'Poppins',color:'@ink',fill:'@secondary',radius:13,upper:true,align:'center',pad:12},
+    {id:nid(),kind:'field',name:'Nombre del evento',field:'event.title',x:24,y:104,w:312,h:82,size:36,weight:800,font:'Poppins',color:'@text',align:'left'},
+    {id:nid(),kind:'field',name:'Fecha y hora',field:'session.date',x:24,y:190,w:312,h:22,size:13.5,weight:600,font:'Poppins',color:'@text',align:'left'},
+    {id:nid(),kind:'field',name:'Lugar',field:'session.venue',x:24,y:213,w:312,h:22,size:13.5,weight:400,font:'Poppins',color:'@text',align:'left',opacity:.85},
+    {id:nid(),kind:'shape',sh:'rect',name:'Tarjeta del código',x:24,y:252,w:312,h:282,fill:'#ffffff',radius:22},
+    {id:nid(),kind:'code',mode:'qr',name:'Código de acceso',prot:true,x:80,y:268,w:200,h:200,radius:12,ring:false,showText:true},
+    {id:nid(),kind:'field',name:'Código',field:'ticket.code',x:40,y:480,w:280,h:24,size:15,weight:700,font:'Barlow',color:'@ink',align:'center',mono:true},
+    {id:nid(),kind:'field',name:'Acceso',field:'type.entry',x:40,y:504,w:280,h:22,size:12,weight:600,font:'Poppins',color:'@primary',align:'center'},
+    {id:nid(),kind:'text',name:'A nombre de',text:'A nombre de',x:24,y:550,w:312,h:16,size:10.5,weight:600,font:'Poppins',color:'@text',align:'left',opacity:.7,upper:true},
+    {id:nid(),kind:'field',name:'Comprador',field:'buyer.name',x:24,y:566,w:312,h:24,size:17,weight:700,font:'Poppins',color:'@text',align:'left'},
+    {id:nid(),kind:'text',name:'Aviso',text:'Lleva tu carnet. Este código es personal.',x:24,y:594,w:312,h:18,size:10.5,weight:400,font:'Poppins',color:'@text',align:'left',opacity:.65}
+  ]};
+}
+const KEY='ipass-editor-proto-v2';
+function fresh(){return {designs:{event:defaultDesign('ipass'),types:{gen:null,ter:null,vip:null}},scope:'event',sel:null,pt:'design',view:'phone',session:'s1',type:'gen',versions:[],grid:false,snap:false,safe:false,long:false,zoom:'fit'}}
+let S;try{const raw=localStorage.getItem(KEY);S=raw?JSON.parse(raw):fresh();uid=2000+Math.floor(Math.random()*1e5)}catch(e){S=fresh()}
+let past=[],future=[],guides=[];
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+const snapshot=()=>{past.push(JSON.stringify(S.designs));if(past.length>80)past.shift();future=[]};
+const commit=(re=true)=>{persist();if(re)renderAll()};
+function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',2400)}
+const editing=()=>S.scope==='event'?S.designs.event:S.designs.types[S.scope];
+const effective=tid=>S.designs.types[tid]||S.designs.event;
+const shownDesign=()=>S.scope==='event'?S.designs.event:(S.designs.types[S.scope]||S.designs.event);
+const selEl=()=>{const d=editing();return d&&d.els.find(e=>e.id===S.sel)};
+
+/* ═════════ Dibujo ═════════ */
+const color=(c,th)=>!c?'transparent':c[0]==='@'?th[c.slice(1)]:c;
+function fieldVal(f,sid,tid){
+  if(S.long&&LONG[f])return LONG[f];
+  const s=SESSIONS.find(x=>x.id===sid),t=TYPES.find(x=>x.id===tid);
+  return ({'event.title':DATA.event.title,'session.date':s.date,'session.venue':s.venue,'type.name':t.name,'type.price':t.price,'type.entry':t.entry,'buyer.name':DATA.buyer.name,'ticket.code':DATA.ticket.code,'org.name':DATA.org.name})[f]||'';
+}
+function rng(seed){let h=0;for(const c of seed)h=(h*31+c.charCodeAt(0))>>>0;return()=>{h^=h<<13;h>>>=0;h^=h>>17;h^=h<<5;h>>>=0;return h/4294967296}}
+function qrSVG(seed){
+  const N=29,rnd=rng(seed),m=[...Array(N)].map(()=>[...Array(N)].map(()=>rnd()>.52));
+  const finder=(r,c)=>{for(let i=-1;i<8;i++)for(let j=-1;j<8;j++){const y=r+i,x=c+j;if(y<0||x<0||y>=N||x>=N)continue;m[y][x]=(i>=0&&i<=6&&(j===0||j===6))||(j>=0&&j<=6&&(i===0||i===6))||(i>=2&&i<=4&&j>=2&&j<=4)}};
+  finder(0,0);finder(0,N-7);finder(N-7,0);
+  let p='';for(let y=0;y<N;y++)for(let x=0;x<N;x++)if(m[y][x])p+=`M${x} ${y}h1v1h-1z`;
+  return `<svg viewBox="-1 -1 ${N+2} ${N+2}" width="100%" height="100%" shape-rendering="crispEdges" preserveAspectRatio="xMidYMid meet"><path d="${p}" fill="#0b0f1a"/></svg>`;
+}
+function barSVG(seed){
+  const rnd=rng(seed+'b');let x=0,p='';const guard=[1,1,1];
+  const bar=(w)=>{p+=`M${x} 0h${w}v1h-${w}z`;x+=w};
+  guard.forEach((w,i)=>{bar(w);x+=1});x+=2;
+  for(let i=0;i<46;i++){bar(1+Math.floor(rnd()*3));x+=1+Math.floor(rnd()*2)}
+  x+=1;guard.forEach(w=>{bar(w);x+=1});
+  return `<svg viewBox="0 0 ${x} 1" width="100%" height="100%" preserveAspectRatio="none" shape-rendering="crispEdges"><path d="${p}" fill="#0b0f1a"/></svg>`;
+}
+const nfcIcon=c=>`<svg viewBox="0 0 64 64" width="44%" height="44%" fill="none" stroke="${c}" stroke-width="4.5" stroke-linecap="round"><path d="M22 20c6 7 6 17 0 24"/><path d="M31 14c10 11 10 25 0 36"/><path d="M40 8c14 15 14 33 0 48"/></svg>`;
+function codeHTML(e,th,base,op,sh){
+  const mode=e.mode||'qr',p=Math.round(Math.min(e.w,e.h)*.07);
+  const shadow=sh?'box-shadow:0 8px 24px rgba(0,0,0,.35);':'';
+  const ring=e.ring&&mode!=='nfc'?`<div style="position:absolute;left:0;bottom:0;height:5px;background:#ad468d;animation:drain 30s linear infinite;border-radius:0 3px 3px 0"></div>`:'';
+  const code=DATA.ticket.code;
+  if(mode==='nfc')return `<div class="el" style="${base}background:${color(e.fill||'@primary',th)};border-radius:${e.radius||0}px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:${color('@text',th)};${shadow}${op}">${nfcIcon(color('@text',th))}<span style="font-size:${Math.max(10,Math.min(14,e.w/14))}px;font-weight:700;text-align:center;padding:0 8px;line-height:1.2">Acerca tu entrada al lector</span></div>`;
+  let inner;
+  if(mode==='qr')inner=`<div style="width:100%;height:100%">${qrSVG(code)}</div>`;
+  else if(mode==='bar')inner=`<div style="display:flex;flex-direction:column;height:100%;gap:4px"><div style="flex:1;min-height:0">${barSVG(code)}</div>${e.showText!==false?`<div style="font:600 ${Math.max(9,Math.min(13,e.h*.14))}px Barlow,monospace;text-align:center;color:#0b0f1a;letter-spacing:2px;flex:none">${esc(code)}</div>`:''}</div>`;
+  else inner=`<div style="display:flex;flex-direction:column;align-items:center;height:100%;gap:6px"><div style="flex:1;min-height:0;aspect-ratio:1;max-width:100%">${qrSVG(code)}</div><div style="height:26%;width:100%;flex:none">${barSVG(code)}</div></div>`;
+  return `<div class="el" style="${base}background:#fff;border-radius:${e.radius||0}px;padding:${p}px;${shadow}${op}">${inner}${ring}</div>`;
+}
+function elHTML(e,d,sid,tid){
+  if(e.visible===false)return '';
+  const th=d.theme,rot=e.rot?`transform:rotate(${e.rot}deg);`:'';
+  const base=`left:${e.x}px;top:${e.y}px;width:${e.w}px;height:${e.h}px;${rot}`;
+  const op=e.opacity!=null?`opacity:${e.opacity};`:'';
+  const sh=e.shadow?'box-shadow:0 8px 24px rgba(0,0,0,.35);':'';
+  const bd=e.bw?`border:${e.bw}px ${e.bs||'solid'} ${color(e.bc||'@text',th)};`:'';
+  if(e.kind==='code')return codeHTML(e,th,base,op,e.shadow);
+  if(e.kind==='shape'){
+    const sht=e.sh||'rect';
+    if(sht==='dash')return `<div class="el" style="${base}border-top:2px dashed ${color(e.bc||'@text',th)};height:0;${op}"></div>`;
+    const bg=e.fill2?`linear-gradient(${e.ang??135}deg,${color(e.fill,th)},${color(e.fill2,th)})`:color(e.fill,th);
+    return `<div class="el" style="${base}background:${bg};border-radius:${sht==='circle'?'50%':(e.radius||0)+'px'};${bd}${sh}${op}"></div>`;
+  }
+  if(e.kind==='image')return `<div class="el" style="${base}border-radius:${e.radius||0}px;${bd}${sh}${op}"><img src="${e.src}" style="width:100%;height:100%;object-fit:${e.fit||'cover'};display:block"></div>`;
+  const txt=e.kind==='field'?fieldVal(e.field,sid,tid):e.text;
+  const jc=e.align==='center'?'center':e.align==='right'?'flex-end':'flex-start';
+  const ls=(e.ls||0)+(e.upper?.6:0)+(e.mono?1.5:0);
+  return `<div class="el flex" data-eid="${e.id}" style="${base}justify-content:${jc};text-align:${e.align||'left'};font-family:'${e.font||'Poppins'}',sans-serif;font-size:${e.size}px;font-weight:${e.weight};font-style:${e.italic?'italic':'normal'};color:${color(e.color,th)};${e.fill?`background:${color(e.fill,th)};`:''}border-radius:${e.radius||0}px;${e.pad?`padding:0 ${e.pad}px;`:''}${e.upper?'text-transform:uppercase;':''}letter-spacing:${ls}px;line-height:${e.lh||1.15};${e.tshadow?'text-shadow:0 2px 8px rgba(0,0,0,.55);':''}${op}"><span style="display:block;max-width:100%">${esc(txt)}</span></div>`;
+}
+function bgHTML(d){
+  const b=d.bg,{w,h}=dim(d);let css=b.type==='gradient'?`background:linear-gradient(${b.angle}deg,${b.c1},${b.c2})`:`background:${b.c1}`;
+  let out=`<div style="position:absolute;inset:0;${css}"></div>`;
+  if(b.type==='image'&&b.image)out+=`<img src="${b.image}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;${b.blur?`filter:blur(${b.blur}px);transform:scale(1.1);`:''}"><div style="position:absolute;inset:0;background:rgba(0,0,0,${b.overlay})"></div>`;
+  const pat={dots:'radial-gradient(rgba(255,255,255,1) 1.4px,transparent 1.6px)',lines:'repeating-linear-gradient(45deg,rgba(255,255,255,1) 0 1px,transparent 1px 10px)',grid:'linear-gradient(rgba(255,255,255,1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,1) 1px,transparent 1px)'}[b.pattern];
+  if(pat)out+=`<div style="position:absolute;inset:0;opacity:${b.patOp};background-image:${pat};background-size:${b.pattern==='dots'?'16px 16px':b.pattern==='grid'?'22px 22px':'auto'}"></div>`;
+  return out;
+}
+function shapePath(d){
+  const {w:W,h:H}=dim(d),s=d.shape||{kind:'round',r:24};
+  const f=n=>+(+n).toFixed(2),r=Math.min(s.r??24,W/2,H/2);
+  if(s.kind==='chamfer'){const c=s.c||22;return `M${c} 0H${W-c}L${W} ${c}V${H-c}L${W-c} ${H}H${c}L0 ${H-c}V${c}Z`}
+  if(s.kind==='scallop'){
+    const n=Math.max(4,Math.round(W/(s.sc||22))),w=W/n;let p='M0 0';
+    for(let i=1;i<=n;i++)p+=`A${f(w/2)} ${f(w/2)} 0 0 0 ${f(i*w)} 0`;
+    p+=`V${H}`;
+    for(let i=1;i<=n;i++)p+=`A${f(w/2)} ${f(w/2)} 0 0 0 ${f(W-i*w)} ${H}`;
+    return p+'Z';
+  }
+  const notch=s.kind==='notch'||s.kind==='stub',nr=s.nr||14,ny=Math.min(Math.max(s.ny||H*.8,nr+r),H-nr-r);
+  let p=`M${r} 0H${W-r}A${r} ${r} 0 0 1 ${W} ${r}`;
+  if(notch)p+=`V${f(ny-nr)}A${nr} ${nr} 0 0 0 ${W} ${f(ny+nr)}`;
+  p+=`V${H-r}A${r} ${r} 0 0 1 ${W-r} ${H}H${r}A${r} ${r} 0 0 1 0 ${H-r}`;
+  if(notch)p+=`V${f(ny+nr)}A${nr} ${nr} 0 0 0 0 ${f(ny-nr)}`;
+  return p+`V${r}A${r} ${r} 0 0 1 ${r} 0Z`;
+}
+function decorHTML(d){
+  const {w:W,h:H}=dim(d),s=d.shape||{},th=d.theme,path=shapePath(d);let out='';
+  if(s.kind==='stub'){
+    const nr=s.nr||14,ny=Math.min(Math.max(s.ny||H*.8,nr+(s.r||0)),H-nr-(s.r||0));
+    if(s.stub)out+=`<div style="position:absolute;left:0;right:0;top:${ny}px;bottom:0;background:${color(s.stubC,th)};opacity:.22"></div>`;
+    out+=`<div style="position:absolute;left:${nr+6}px;right:${nr+6}px;top:${ny}px;border-top:2px dashed ${color('@text',th)};opacity:.55"></div>`;
+  }
+  if(s.bw)out+=`<svg width="${W}" height="${H}" style="position:absolute;inset:0;pointer-events:none"><path d="${path}" fill="none" stroke="${color(s.bc,th)}" stroke-width="${s.bw*2}"/></svg>`;
+  return out;
+}
+function ticketInner(d,sid,tid){return bgHTML(d)+decorHTML(d)+d.els.map(e=>elHTML(e,d,sid,tid)).join('')}
+function mountTicket(host,d,sid,tid,scale){
+  const {w,h}=dim(d);host.style.width=w*scale+'px';host.style.height=h*scale+'px';
+  host.innerHTML=`<div class="ticket" style="width:${w}px;height:${h}px;transform:scale(${scale});clip-path:path('${shapePath(d)}')">${ticketInner(d,sid,tid)}</div>`;
+}
+
+/* ═════════ Revisión del código de acceso ═════════ */
+const lum=hex=>{const m=hex.replace('#','').match(/.{2}/g).map(h=>parseInt(h,16)/255).map(v=>v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4));return .2126*m[0]+.7152*m[1]+.0722*m[2]};
+const ratio=(a,b)=>{const l1=lum(a),l2=lum(b);return (Math.max(l1,l2)+.05)/(Math.min(l1,l2)+.05)};
+const mix=(a,b)=>{const p=h=>h.replace('#','').match(/.{2}/g).map(x=>parseInt(x,16)),A=p(a),B=p(b);return '#'+A.map((v,i)=>Math.round((v+B[i])/2).toString(16).padStart(2,'0')).join('')};
+function review(d){
+  const out=[],{w:W,h:H}=dim(d),c=d.els.find(e=>e.kind==='code');
+  if(!c||c.visible===false)out.push(['bad','Falta el código de acceso o está oculto.']);
+  else{
+    const mode=c.mode||'qr',[mw,mh]=CODE_MIN[mode];
+    if(mode==='nfc')out.push(['warn','Solo NFC: el comprador necesita una pulsera o tarjeta. No hay código que leer con cámara.']);
+    else if(c.w<mw||c.h<mh)out.push(['bad',`${CODE_LABEL[mode]}: mide ${Math.round(c.w)}×${Math.round(c.h)} px y el mínimo es ${mw}×${mh}.`]);
+    else out.push(['ok',`${CODE_LABEL[mode]} de ${Math.round(c.w)}×${Math.round(c.h)} px (mínimo ${mw}×${mh}).`]);
+    const over=d.els.filter(e=>e.id!==c.id&&e.visible!==false&&e.kind!=='shape'&&!(e.x>=c.x+c.w||e.x+e.w<=c.x||e.y>=c.y+c.h||e.y+e.h<=c.y));
+    out.push(over.length?['bad',`"${over[0].name}" tapa el código. Muévelo.`]:['ok','Nada tapa el código.']);
+    if(c.x<0||c.y<0||c.x+c.w>W||c.y+c.h>H)out.push(['bad','El código se sale de la entrada.']);
+    const sp=d.shape||{};if(sp.kind==='notch'||sp.kind==='stub'){const nr=sp.nr||14,ny=sp.ny||H*.8;if(c.y<ny+nr&&c.y+c.h>ny-nr&&(c.x<nr||c.x+c.w>W-nr))out.push(['warn','Una muesca del borde está muy cerca del código.'])}
+    if(mode!=='nfc')out.push(['ok','Lleva marco blanco propio: se lee sobre cualquier fondo.']);
+  }
+  const bgc=d.bg.type==='image'?'#555555':d.bg.type==='gradient'?mix(d.bg.c1,d.bg.c2):d.bg.c1;
+  const low=d.els.filter(e=>e.visible!==false&&(e.kind==='text'||e.kind==='field')).filter(e=>{
+    const fg=color(e.color,d.theme),under=d.els.some(s=>s.kind==='shape'&&s.sh!=='dash'&&s.visible!==false&&e.x>=s.x&&e.y>=s.y&&e.x+e.w<=s.x+s.w&&e.y+e.h<=s.y+s.h);
+    const b=e.fill?color(e.fill,d.theme):(under?'#ffffff':bgc);return ratio(fg,b)<3});
+  out.push(low.length?['warn',`Poco contraste: "${low[0].name}"${low.length>1?` y ${low.length-1} más`:''}.`]:['ok','Los textos se leen bien sobre el fondo.']);
+  const out2=d.els.filter(e=>e.visible!==false&&(e.x+e.w>W||e.y+e.h>H));
+  if(out2.length)out.push(['warn',`"${out2[0].name}" se sale del borde de la entrada.`]);
+  return out;
+}
+const overflowing=()=>[...document.querySelectorAll('#view .ticket [data-eid]')].filter(n=>n.firstChild&&(n.firstChild.offsetHeight>n.clientHeight+1||n.firstChild.scrollWidth>n.clientWidth+1)).map(n=>n.dataset.eid);
+
+/* ═════════ Pantalla ═════════ */
+function scaleFor(d){const v=$('#view'),{w,h}=dim(d);if(S.zoom!=='fit')return +S.zoom;return Math.max(.45,Math.min(1.1,(v.clientHeight-130)/(h+30)))}
+function renderScope(){
+  const sc=$('#scope');
+  sc.innerHTML=`<label>Diseñando para:</label><button class="pill ${S.scope==='event'?'on':''}" data-sc="event">Todo el evento</button>`+
+   TYPES.map(t=>`<button class="pill ${S.scope===t.id?'on':''}" data-sc="${t.id}">${t.name}${S.designs.types[t.id]?'<i title="Tiene diseño propio"></i>':''}</button>`).join('')+
+   `<span class="note">${S.scope==='event'?'Se aplica a las 3 noches y a los tipos sin diseño propio.':S.designs.types[S.scope]?'Diseño propio de este tipo (las 3 noches).':'Este tipo usa el diseño del evento.'}</span>`;
+  sc.querySelectorAll('[data-sc]').forEach(b=>b.onclick=()=>{S.scope=b.dataset.sc;S.sel=null;if(S.scope!=='event')S.type=S.scope;commit()});
+}
+function renderTabs(){
+  const T=[['phone','Entrada en el celular'],['all','Todas las noches y tipos'],['mail','Correo'],['json','Datos del diseño']];
+  $('#tabs').innerHTML=T.map(([k,l])=>`<button class="pill ${S.view===k?'on':''}" data-v="${k}">${l}</button>`).join('')+
+   `<select id="selSes" title="Noche de la vista previa">${SESSIONS.map(s=>`<option value="${s.id}" ${S.session===s.id?'selected':''}>${s.label}</option>`).join('')}</select>`+
+   `<select id="selTyp" title="Tipo de la vista previa">${TYPES.map(t=>`<option value="${t.id}" ${S.type===t.id?'selected':''}>${t.name}</option>`).join('')}</select>`;
+  $('#tabs').querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{S.view=b.dataset.v;commit()});
+  $('#selSes').onchange=e=>{S.session=e.target.value;commit()};$('#selTyp').onchange=e=>{S.type=e.target.value;commit()};
+  $('#tools').innerHTML=`<label><input type="checkbox" id="tGrid" ${S.grid?'checked':''}> Cuadrícula</label><label><input type="checkbox" id="tSnap" ${S.snap?'checked':''}> Imán a la cuadrícula</label><label><input type="checkbox" id="tSafe" ${S.safe?'checked':''}> Márgenes</label><label><input type="checkbox" id="tLong" ${S.long?'checked':''}> Probar con texto largo</label>
+   <select id="tZoom">${[['fit','Ajustar'],['0.75','75 %'],['1','100 %'],['1.25','125 %']].map(([v,l])=>`<option value="${v}" ${String(S.zoom)===v?'selected':''}>${l}</option>`).join('')}</select>`;
+  $('#tGrid').onchange=e=>{S.grid=e.target.checked;commit()};$('#tSnap').onchange=e=>{S.snap=e.target.checked;commit(false)};$('#tSafe').onchange=e=>{S.safe=e.target.checked;commit()};$('#tLong').onchange=e=>{S.long=e.target.checked;commit()};$('#tZoom').onchange=e=>{S.zoom=e.target.value;commit()};
+}
+function renderView(){
+  const v=$('#view'),mode=S.view,show=shownDesign(),inherited=S.scope!=='event'&&!S.designs.types[S.scope];
+  if(mode==='phone'){
+    const sc=scaleFor(show),{w,h}=dim(show);
+    v.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center"><div class="phone"><div class="canvaswrap" id="cw"></div></div><div class="checks" id="checks"></div></div>`;
+    const cw=$('#cw');mountTicket(cw,show,S.session,S.type,sc);
+    if(!inherited){
+      const ov=document.createElement('div');ov.className='overlay';ov.style.cssText=`width:${w}px;height:${h}px;transform:scale(${sc})`;cw.appendChild(ov);
+      const d=editing();
+      ov.innerHTML=(S.grid?'<div class="gridov"></div>':'')+(S.safe?'<div class="safeov"></div>':'')+
+        d.els.map(e=>`<div class="hit ${S.sel===e.id?'sel':''} ${e.locked?'lockd':''}" data-id="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.w}px;height:${e.kind==='shape'&&e.sh==='dash'?10:e.h}px;${e.rot?`transform:rotate(${e.rot}deg);`:''}${e.visible===false?'display:none':''}"></div>`).join('')+
+        guides.map(g=>g.v?`<div class="guide" style="left:${g.p}px;top:0;width:1px;height:${h}px"></div>`:`<div class="guide" style="top:${g.p}px;left:0;height:1px;width:${w}px"></div>`).join('');
+      const s=selEl();
+      if(s&&s.visible!==false&&!s.locked){
+        const hh=s.kind==='shape'&&s.sh==='dash'?0:s.h;
+        ov.insertAdjacentHTML('beforeend',[['nw',s.x,s.y],['ne',s.x+s.w,s.y],['sw',s.x,s.y+hh],['se',s.x+s.w,s.y+hh]].map(([k,x,y])=>`<div class="hnd" data-h="${k}" style="left:${x-6}px;top:${y-6}px;cursor:${k==='nw'||k==='se'?'nwse-resize':'nesw-resize'}"></div>`).join(''));
+      }
+      bindCanvas(ov,sc,d);
+    }
+    const items=review(show),cut=overflowing();
+    if(cut.length)items.push(['warn',`${cut.length} texto(s) no caben y se cortan. Agranda el cuadro o baja la letra.`]);
+    $('#checks').innerHTML=(inherited?`<div class="chk warn"><b>ℹ</b><span>Vista del diseño heredado del evento. Pulsa «Personalizar este tipo» para editarlo.</span></div>`:'')+items.map(([k,t])=>`<div class="chk ${k}"><b>${k==='ok'?'✓':k==='warn'?'!':'✕'}</b><span>${t}</span></div>`).join('');
+  }else if(mode==='all'){
+    v.innerHTML=`<div style="width:100%"><p style="text-align:center;color:var(--muted);margin:4px 0 14px;font-size:12.5px">Así queda la entrada de <b>${SESSIONS.find(s=>s.id===S.session).label}</b>. Cambia la noche arriba: el diseño es el mismo en todas, solo cambian los datos.</p><div class="grid3" id="g3"></div></div>`;
+    TYPES.forEach(t=>{const own=!!S.designs.types[t.id],c=document.createElement('div');c.className='card3';
+      c.innerHTML=`<div class="phone" style="padding:8px"><div class="canvaswrap"></div></div><span class="tagx ${own?'o':''}">${t.name} · ${own?'diseño propio':'usa el del evento'}</span>`;
+      $('#g3').appendChild(c);mountTicket(c.querySelector('.canvaswrap'),effective(t.id),S.session,t.id,.5)});
+  }else if(mode==='mail'){
+    const d=effective(S.type),sc=.9;
+    v.innerHTML=`<div class="mail"><div class="mh"><b>i</b>Pass</div><div class="mb"><h3 style="font-size:18px">1 entrada para ${esc(DATA.event.title)}</h3><p>${esc(SESSIONS.find(s=>s.id===S.session).date)} · ${esc(DATA.org.name)}</p><div class="hero" id="hero"></div>
+      <div class="qrbox"><div style="font-size:12px;color:#60718b;text-transform:uppercase;letter-spacing:1px">Entrada 1 de 1</div>${qrSVG(DATA.ticket.code)}<div style="font-weight:700;margin-top:6px">${DATA.ticket.code}</div></div><span class="mbtn">Abrir mi entrada</span>
+      <p>El encabezado con tu diseño es una <b>imagen</b> hecha en el servidor. Los correos no permiten posiciones libres: el código y el botón van aparte, como hoy.</p></div></div>`;
+    const hero=$('#hero');hero.style.height='240px';hero.innerHTML=`<div style="position:absolute;left:50%;top:0;transform:translateX(-50%)"></div>`;mountTicket(hero.firstChild,d,S.session,S.type,sc);
+  }else{
+    const d=editing()||effective(S.type);
+    v.innerHTML=`<div class="jsonwrap"><div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap"><button class="btn sm" id="jcopy">Copiar</button><button class="btn sm" id="jdl">Descargar .json</button><button class="btn sm" id="jimp">Importar .json</button><span class="hint" style="align-self:center">Esto es lo que se guardaría en la base de datos. Se puede editar a mano.</span></div><textarea class="json" id="jta" spellcheck="false">${esc(JSON.stringify(d,null,1))}</textarea><div style="margin-top:10px"><button class="btn pri sm" id="japply">Aplicar cambios del texto</button></div></div>`;
+    $('#jcopy').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText($('#jta').value);toast('Copiado')};
+    $('#jdl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([$('#jta').value],{type:'application/json'}));a.download='diseno-entrada.json';a.click()};
+    $('#jimp').onclick=()=>{const f=$('#file');f.accept='.json,application/json';f.value='';f.onchange=()=>{const r=new FileReader();r.onload=()=>{$('#jta').value=r.result;toast('Cargado: pulsa «Aplicar»')};r.readAsText(f.files[0]);f.accept='image/*'};f.click()};
+    $('#japply').onclick=()=>{try{const nd=JSON.parse($('#jta').value);if(!Array.isArray(nd.els)||!nd.theme||!nd.bg)throw 0;snapshot();if(S.scope==='event')S.designs.event=nd;else S.designs.types[S.scope]=nd;commit();toast('Diseño aplicado')}catch(e){toast('El texto no es un diseño válido')}};
+  }
+}
+function bindCanvas(ov,sc,d){
+  ov.querySelectorAll('.hit').forEach(n=>n.addEventListener('pointerdown',ev=>{
+    ev.preventDefault();const el=d.els.find(e=>e.id===n.dataset.id);S.sel=el.id;S.pt='el';
+    renderLayers();renderProps();ov.querySelectorAll('.hit').forEach(h=>h.classList.toggle('sel',h.dataset.id===el.id));
+    if(el.locked)return;snapshot();startDrag(ev,el,sc,'move',d);
+  }));
+  ov.querySelectorAll('.hnd').forEach(h=>h.addEventListener('pointerdown',ev=>{ev.preventDefault();ev.stopPropagation();const el=selEl();if(!el)return;snapshot();startDrag(ev,el,sc,h.dataset.h,d)}));
+}
+function minSize(e){if(e.kind==='code')return CODE_MIN[e.mode||'qr'];return [14,e.kind==='shape'&&e.sh==='dash'?0:14]}
+function startDrag(ev,el,sc,mode,d){
+  const {w:W,h:H}=dim(d),x0=ev.clientX,y0=ev.clientY,o={x:el.x,y:el.y,w:el.w,h:el.h},sq=el.kind==='code'&&(el.mode||'qr')==='qr',dash=el.kind==='shape'&&el.sh==='dash';
+  const grid=v=>S.snap?Math.round(v/10)*10:v;
+  const move=e=>{
+    const dx=(e.clientX-x0)/sc,dy=(e.clientY-y0)/sc;guides=[];
+    if(mode==='move'){
+      let nx=grid(o.x+dx),ny=grid(o.y+dy);const cx=nx+el.w/2,cy=ny+el.h/2,T=5;
+      if(Math.abs(cx-W/2)<T){nx=W/2-el.w/2;guides.push({v:true,p:W/2})}
+      if(Math.abs(nx)<T){nx=0;guides.push({v:true,p:0})}
+      if(Math.abs(nx+el.w-W)<T){nx=W-el.w;guides.push({v:true,p:W})}
+      if(Math.abs(cy-H/2)<T){ny=H/2-el.h/2;guides.push({v:false,p:H/2})}
+      if(el.kind==='code'){nx=Math.min(Math.max(nx,0),W-el.w);ny=Math.min(Math.max(ny,0),H-el.h)}
+      el.x=Math.round(nx);el.y=Math.round(ny);
+    }else{
+      let nx=o.x,ny=o.y,nw=o.w,nh=o.h;
+      if(mode.includes('e'))nw=o.w+dx;if(mode.includes('s'))nh=o.h+dy;
+      if(mode.includes('w')){nw=o.w-dx;nx=o.x+dx}if(mode.includes('n')){nh=o.h-dy;ny=o.y+dy}
+      if(sq){const s=Math.max(nw,nh);nw=nh=s;if(mode.includes('w'))nx=o.x+o.w-s;if(mode.includes('n'))ny=o.y+o.h-s}
+      const [mw,mh]=minSize(el);
+      if(nw<mw){if(mode.includes('w'))nx=o.x+o.w-mw;nw=mw}
+      if(!dash&&nh<mh){if(mode.includes('n'))ny=o.y+o.h-mh;nh=mh}
+      if(el.kind==='code'){nx=Math.max(0,nx);ny=Math.max(0,ny);nw=Math.min(nw,W-nx);nh=Math.min(nh,H-ny)}
+      el.x=Math.round(nx);el.y=Math.round(ny);el.w=Math.round(nw);el.h=dash?0:Math.round(nh);
+    }
+    persist();renderView();renderProps(true);
+  };
+  const up=()=>{removeEventListener('pointermove',move);removeEventListener('pointerup',up);guides=[];renderView();renderProps()};
+  addEventListener('pointermove',move);addEventListener('pointerup',up);
+}
+
+/* ═════════ Capas ═════════ */
+function renderLayers(){
+  const d=editing();
+  if(!d){$('#layers').innerHTML=`<div class="empty" style="padding:14px">Este tipo usa el diseño del evento.</div>`;return}
+  const KIND={text:'Texto',field:'Dato',shape:'Forma',image:'Imagen',code:'Código'};
+  $('#layers').innerHTML=[...d.els].reverse().map(e=>`<div class="layer ${S.sel===e.id?'sel':''} ${e.visible===false?'hid':''}" data-id="${e.id}"><span class="k">${KIND[e.kind]}</span><span class="t">${esc(e.name)}</span>${e.prot?'<span title="Protegido: no se puede borrar ni ocultar">🔒</span>':`<button data-eye="${e.id}" title="Mostrar u ocultar">${e.visible===false?'🙈':'👁'}</button>`}</div>`).join('');
+  $('#layers').querySelectorAll('.layer').forEach(n=>n.onclick=ev=>{if(ev.target.closest('[data-eye]'))return;S.sel=n.dataset.id;S.pt='el';commit()});
+  $('#layers').querySelectorAll('[data-eye]').forEach(b=>b.onclick=ev=>{ev.stopPropagation();const e=d.els.find(x=>x.id===b.dataset.eye);snapshot();e.visible=e.visible===false;commit()});
+}
+
+/* ═════════ Panel derecho ═════════ */
+const R=(l,inner)=>`<div class="row"><label>${l}</label>${inner}</div>`;
+const rng_=(k,min,max,step,val,suf='')=>`<input type="range" min="${min}" max="${max}" step="${step}" data-p="${k}" value="${val}"><output>${val}${suf}</output>`;
+const opt=(list,cur)=>list.map(x=>Array.isArray(x)?`<option value="${x[0]}" ${String(cur)===String(x[0])?'selected':''}>${x[1]}</option>`:`<option ${String(cur)===String(x)?'selected':''}>${x}</option>`).join('');
+function swatches(d,key,cur,none,attr='data'){
+  const th=d.theme,roles=[['@text','Texto'],['@primary','Principal'],['@secondary','Secundario'],['@ink','Oscuro']];
+  return `<div class="sw">${roles.map(([r,l])=>`<button title="${l}" data-sw="${key}" data-v="${r}" class="${cur===r?'on':''}" style="background:${th[r.slice(1)]}"></button>`).join('')}<input type="color" data-col="${key}" value="${cur&&cur[0]!=='@'?cur:'#ffffff'}" title="Color propio" style="width:26px;height:26px;border:0;background:none;padding:0">${none?`<button data-sw="${key}" data-v="" title="Ninguno" class="${!cur?'on':''}" style="background:repeating-conic-gradient(#555 0 25%,#333 0 50%) 50%/10px 10px"></button>`:''}</div>`;
+}
+const shapeIcon=k=>{const P={round:'M6 2H34A6 6 0 0 1 40 8V26A6 6 0 0 1 34 32H6A6 6 0 0 1 0 26V8A6 6 0 0 1 6 2Z',notch:'M4 2H36A4 4 0 0 1 40 6V12A5 5 0 0 0 40 22V28A4 4 0 0 1 36 32H4A4 4 0 0 1 0 28V22A5 5 0 0 0 0 12V6A4 4 0 0 1 4 2Z',stub:'M4 2H36A4 4 0 0 1 40 6V19A5 5 0 0 0 40 25V28A4 4 0 0 1 36 32H4A4 4 0 0 1 0 28V25A5 5 0 0 0 0 19V6A4 4 0 0 1 4 2Z',chamfer:'M8 2H32L40 10V24L32 32H8L0 24V10Z',scallop:'M0 2A3 3 0 0 0 6 2A3 3 0 0 0 12 2A3 3 0 0 0 18 2A3 3 0 0 0 24 2A3 3 0 0 0 30 2A3 3 0 0 0 36 2L40 2V32A3 3 0 0 0 34 32A3 3 0 0 0 28 32A3 3 0 0 0 22 32A3 3 0 0 0 16 32A3 3 0 0 0 10 32A3 3 0 0 0 4 32Z'};
+  return `<svg width="40" height="34" viewBox="0 0 40 34"><path d="${P[k]}" fill="currentColor" opacity=".85"/>${k==='stub'?'<line x1="6" y1="22" x2="34" y2="22" stroke="#141d30" stroke-dasharray="3 2"/>':''}</svg>`};
+function renderProps(light){
+  const box=$('#props'),d=editing();
+  document.querySelectorAll('.ptabs button').forEach(b=>b.classList.toggle('on',b.dataset.pt===S.pt));
+  if(light&&S.pt==='el'){const e=selEl();if(e)['x','y','w','h'].forEach(k=>{const i=box.querySelector(`[data-p="${k}"]`);if(i)i.value=Math.round(e[k])});return}
+  if(!d){
+    box.innerHTML=`<div class="banner">Este tipo de entrada <b>usa el diseño del evento</b>. Si lo personalizas, solo este tipo cambia en todas las noches.<br><button class="btn pri sm" id="own">Personalizar este tipo</button></div>`;
+    $('#own').onclick=()=>{snapshot();S.designs.types[S.scope]=clone(S.designs.event);S.designs.types[S.scope].els.forEach(e=>e.id=nid());S.sel=null;commit();toast('Ahora este tipo tiene su propio diseño')};return;
+  }
+  if(S.pt==='design'){designPanel(box,d);return}
+  elementPanel(box,d);
+}
+function designPanel(box,d){
+  const b=d.bg,s=d.shape,{h}=dim(d);
+  box.innerHTML=`${S.scope!=='event'?`<div class="banner" style="margin:0;border-radius:0">Diseño propio de <b>${TYPES.find(t=>t.id===S.scope).name}</b>.<br><button class="btn sm" id="drop">Volver al del evento</button> <button class="btn sm" id="push">Usar este para todo el evento</button></div>`:''}
+  <div class="sec"><div class="st">Forma de la entrada</div>
+    <div class="shapes">${[['round','Redondeada'],['notch','Con muescas'],['stub','Con talón'],['chamfer','Esq. cortadas'],['scallop','Ondulada']].map(([k,l])=>`<button class="shp ${s.kind===k?'on':''}" data-kind="${k}">${shapeIcon(k)}${l}</button>`).join('')}</div>
+    ${R('Alto',`<select data-size>${opt(Object.entries(SIZES).map(([k,v])=>[k,`${v.l} (${v.w}×${v.h})`]),d.size||'std')}</select>`)}
+    ${['round','notch','stub'].includes(s.kind)?R('Esquinas',`<input type="range" min="0" max="60" data-shape="r" value="${s.r}"><output>${s.r}</output>`):''}
+    ${['notch','stub'].includes(s.kind)?R('Muesca',`<input type="range" min="6" max="30" data-shape="nr" value="${s.nr}"><output>${s.nr}</output>`)+R('Posición',`<input type="range" min="80" max="${h-40}" data-shape="ny" value="${s.ny}"><output>${s.ny}</output>`):''}
+    ${s.kind==='chamfer'?R('Corte',`<input type="range" min="8" max="60" data-shape="c" value="${s.c}"><output>${s.c}</output>`):''}
+    ${s.kind==='scallop'?R('Tamaño',`<input type="range" min="12" max="40" data-shape="sc" value="${s.sc}"><output>${s.sc}</output>`):''}
+    ${s.kind==='stub'?R('Tinte talón',`<input type="checkbox" data-shape="stub" ${s.stub?'checked':''}>`):''}
+    ${R('Borde',`<input type="range" min="0" max="8" data-shape="bw" value="${s.bw}"><output>${s.bw}</output>`)}
+    ${s.bw?R('Color borde',swatches(d,'shapebc',s.bc)):''}
+    <div class="hint">${s.kind==='stub'?'El talón se separa con una línea de corte punteada. Mueve «Posición» para cambiar su tamaño.':'La forma recorta toda la entrada, también en la imagen descargable.'}</div></div>
+  <div class="sec"><div class="st">Temas</div><div class="themes">${Object.entries(THEMES).map(([k,t])=>`<button class="theme ${d.theme.key===k?'on':''}" data-theme="${k}"><div class="bars"><i style="background:${t.bg1}"></i><i style="background:${t.primary}"></i><i style="background:${t.secondary}"></i></div>${t.name}</button>`).join('')}</div></div>
+  <div class="sec"><div class="st">Colores del tema</div>
+    ${[['primary','Principal'],['secondary','Secundario'],['text','Texto'],['ink','Oscuro']].map(([k,l])=>R(l,`<input type="color" data-theme-color="${k}" value="${d.theme[k]}"><span style="color:var(--dim);font-size:11.5px">${d.theme[k]}</span>`)).join('')}
+    <div class="hint">Los elementos que usan un color del tema se actualizan solos.</div></div>
+  <div class="sec"><div class="st">Fondo</div>
+    <div class="row"><div class="seg">${[['color','Color'],['gradient','Degradado'],['image','Imagen']].map(([k,l])=>`<button data-bt="${k}" class="${b.type===k?'on':''}">${l}</button>`).join('')}</div></div>
+    ${b.type!=='image'?R('Color 1',`<input type="color" data-bg="c1" value="${b.c1}">`):''}
+    ${b.type==='gradient'?R('Color 2',`<input type="color" data-bg="c2" value="${b.c2}">`)+R('Ángulo',`<input type="range" min="0" max="360" value="${b.angle}" data-bg="angle"><output>${b.angle}°</output>`):''}
+    ${b.type==='image'?`<div class="row"><button class="btn sm" id="bgimg">${b.image?'Cambiar imagen':'Subir imagen'}</button>${b.image?'<button class="btn sm" id="bgclr">Quitar</button>':''}</div>${R('Oscurecer',`<input type="range" min="0" max="85" value="${Math.round(b.overlay*100)}" data-bg="overlay"><output>${Math.round(b.overlay*100)}%</output>`)}${R('Desenfoque',`<input type="range" min="0" max="30" value="${b.blur}" data-bg="blur"><output>${b.blur}</output>`)}<div class="hint">Oscurece la imagen para que el texto se lea. JPG o PNG de hasta 5 MB (aquí no se sube a ningún lado).</div>`:''}
+    ${R('Textura',`<select data-bg="pattern">${opt([['none','Ninguna'],['dots','Puntos'],['lines','Rayas'],['grid','Cuadrícula']],b.pattern||'none')}</select>`)}
+    ${b.pattern&&b.pattern!=='none'?R('Intensidad',`<input type="range" min="2" max="40" value="${Math.round(b.patOp*100)}" data-bg="patOp"><output>${Math.round(b.patOp*100)}%</output>`):''}
+  </div>`;
+  const q=x=>box.querySelectorAll(x);
+  const dr=$('#drop');if(dr)dr.onclick=()=>{snapshot();S.designs.types[S.scope]=null;S.sel=null;commit();toast('Este tipo vuelve a usar el diseño del evento')};
+  const pu=$('#push');if(pu)pu.onclick=()=>{snapshot();S.designs.event=clone(d);S.designs.types={gen:null,ter:null,vip:null};S.scope='event';commit();toast('Ahora todo el evento usa este diseño')};
+  q('[data-kind]').forEach(x=>x.onclick=()=>{snapshot();s.kind=x.dataset.kind;commit()});
+  const sz=box.querySelector('[data-size]');sz.onchange=()=>{snapshot();d.size=sz.value;const hh=dim(d).h;s.ny=Math.min(s.ny,hh-60);commit()};
+  q('[data-shape]').forEach(x=>{const k=x.dataset.shape;x.oninput=()=>{s[k]=x.type==='checkbox'?x.checked:+x.value;persist();renderView();const o=x.parentElement.querySelector('output');if(o)o.textContent=x.value};x.onchange=()=>{snapshot();if(x.type==='checkbox')commit()}});
+  q('[data-sw="shapebc"]').forEach(x=>x.onclick=()=>{snapshot();s.bc=x.dataset.v;commit()});q('[data-col="shapebc"]').forEach(x=>x.onchange=()=>{snapshot();s.bc=x.value;commit()});
+  q('[data-theme]').forEach(x=>x.onclick=()=>{snapshot();const t=THEMES[x.dataset.theme];d.theme={key:x.dataset.theme,primary:t.primary,secondary:t.secondary,text:t.text,ink:t.ink};if(d.bg.type!=='image'){d.bg.c1=t.bg1;d.bg.c2=t.bg2;if(d.bg.type==='color')d.bg.type='gradient'}commit()});
+  q('[data-theme-color]').forEach(x=>x.onchange=()=>{snapshot();d.theme[x.dataset.themeColor]=x.value;d.theme.key='custom';commit()});
+  q('[data-bt]').forEach(x=>x.onclick=()=>{snapshot();d.bg.type=x.dataset.bt;commit()});
+  q('[data-bg]').forEach(x=>{const k=x.dataset.bg;x.oninput=()=>{d.bg[k]=x.type==='range'?(k==='overlay'||k==='patOp'?x.value/100:+x.value):x.value;persist();renderView();const o=x.parentElement.querySelector('output');if(o)o.textContent=(k==='overlay'||k==='patOp')?x.value+'%':k==='angle'?x.value+'°':x.value};x.onchange=()=>{snapshot();if(k==='pattern')commit()}});
+  const bi=$('#bgimg');if(bi)bi.onclick=()=>pickImage(src=>{snapshot();d.bg.image=src;commit()});
+  const bc=$('#bgclr');if(bc)bc.onclick=()=>{snapshot();d.bg.image=null;commit()};
+}
+function elementPanel(box,d){
+  const e=selEl(),{w:W,h:H}=dim(d);
+  if(!e){box.innerHTML=`<div class="empty">Toca un elemento de la entrada para editarlo.<br><br>Arrástralo, cambia su tamaño con las esquinas y muévelo con las flechas del teclado. El código de acceso también se puede mover.</div>`;return}
+  const isTxt=e.kind==='text'||e.kind==='field',isShape=e.kind==='shape',isCode=e.kind==='code',isImg=e.kind==='image';
+  const mode=e.mode||'qr';
+  box.innerHTML=`
+  ${isCode?`<div class="sec"><div class="st">Código de acceso ${'🔒'}</div>
+    <div class="row"><div class="seg">${Object.entries(CODE_LABEL).map(([k,l])=>`<button data-mode="${k}" class="${mode===k?'on':''}">${l.replace('Código de ','').replace('Código ','')}</button>`).join('')}</div></div>
+    ${mode!=='nfc'?R('Barra de tiempo',`<input type="checkbox" data-p="ring" ${e.ring?'checked':''}>`):''}
+    ${mode==='bar'?R('Mostrar número',`<input type="checkbox" data-p="showText" ${e.showText!==false?'checked':''}>`):''}
+    ${mode==='nfc'?R('Color',swatches(d,'fill',e.fill||'@primary')):''}
+    <div class="hint">${{qr:'QR cuadrado. Mínimo 150×150 px.',bar:'Código de barras. Mínimo 220×70 px.',both:'QR arriba y barras abajo. Mínimo 170×230 px.',nfc:'Para entradas que se leen con pulsera o tarjeta NFC. Mínimo 90×90 px.'}[mode]} El tipo de lectura debe coincidir con los métodos de acceso del tipo de entrada. «Barra de tiempo» es para el QR dinámico, que cambia cada 30 s.</div></div>`:''}
+  <div class="sec"><div class="st">${esc(e.name)}</div>
+    ${R('Nombre',`<input type="text" data-p="name" value="${esc(e.name)}">`)}
+    ${e.kind==='text'?R('Texto',`<input type="text" data-p="text" value="${esc(e.text)}">`):''}
+    ${e.kind==='field'?R('Dato',`<select data-p="field">${opt(Object.entries(FIELDS),e.field)}</select>`)+`<div class="hint" style="margin:-4px 0 8px">Se completa solo con cada noche y cada comprador.</div>`:''}
+    ${isTxt?R('Letra',`<select data-p="font">${opt(FONTS,e.font)}</select>`)+R('Tamaño',rng_('size',8,72,.5,e.size))+R('Grosor',`<select data-p="weight">${opt([400,500,600,700,800],e.weight)}</select>`)+
+      R('Alineación',`<div class="seg">${[['left','◧ Izq.'],['center','▥ Centro'],['right','◨ Der.']].map(([k,l])=>`<button data-al="${k}" class="${e.align===k?'on':''}">${l}</button>`).join('')}</div>`)+
+      R('Espaciado',rng_('ls',-2,12,.5,e.ls||0))+R('Interlineado',rng_('lh',.9,2,.05,e.lh||1.15))+
+      R('Estilo',`<label style="width:auto;display:flex;gap:4px;align-items:center"><input type="checkbox" data-p="upper" ${e.upper?'checked':''}> MAYÚS</label><label style="width:auto;display:flex;gap:4px;align-items:center"><input type="checkbox" data-p="italic" ${e.italic?'checked':''}> Cursiva</label><label style="width:auto;display:flex;gap:4px;align-items:center"><input type="checkbox" data-p="tshadow" ${e.tshadow?'checked':''}> Sombra</label>`)+
+      `<div class="row" style="align-items:flex-start"><label>Color</label>${swatches(d,'color',e.color)}</div>`:''}
+    ${isImg?R('Ajuste',`<select data-p="fit">${opt([['cover','Rellenar'],['contain','Completa']],e.fit||'cover')}</select>`):''}
+    ${e.kind==='shape'&&e.sh==='dash'?`<div class="row" style="align-items:flex-start"><label>Color</label>${swatches(d,'bc',e.bc||'@text')}</div>`:''}
+  </div>
+  ${(isTxt||isShape&&e.sh!=='dash')?`<div class="sec"><div class="st">${isShape?'Relleno':'Fondo del texto'}</div>
+    <div class="row" style="align-items:flex-start"><label>Color</label>${swatches(d,'fill',e.fill,!isShape)}</div>
+    ${isShape?`<div class="row" style="align-items:flex-start"><label>Degradado</label>${swatches(d,'fill2',e.fill2,true)}</div>${e.fill2?R('Ángulo',rng_('ang',0,360,5,e.ang??135,'°')):''}`:''}
+    ${R('Redondeo',rng_('radius',0,80,1,e.radius||0))}${isTxt&&e.fill?R('Margen',rng_('pad',0,40,1,e.pad||0)):''}</div>`:''}
+  ${(isShape&&e.sh!=='dash'||isImg||isCode)?`<div class="sec"><div class="st">Borde y efectos</div>
+    ${!isCode?R('Borde',rng_('bw',0,10,1,e.bw||0)):''}${!isCode&&e.bw?`<div class="row" style="align-items:flex-start"><label>Color borde</label>${swatches(d,'bc',e.bc||'@text')}</div>`:''}
+    ${(isImg||isCode)?R('Redondeo',rng_('radius',0,80,1,e.radius||0)):''}
+    ${R('Sombra',`<input type="checkbox" data-p="shadow" ${e.shadow?'checked':''}>`)}</div>`:''}
+  <div class="sec"><div class="st">Posición y tamaño</div>
+    ${R('X',`<input type="number" data-p="x" value="${Math.round(e.x)}" ${e.locked?'disabled':''}><label style="width:18px">Y</label><input type="number" data-p="y" value="${Math.round(e.y)}" ${e.locked?'disabled':''}>`)}
+    ${R('Ancho',`<input type="number" data-p="w" value="${Math.round(e.w)}"><label style="width:34px">Alto</label><input type="number" data-p="h" value="${Math.round(e.h)}" ${mode==='qr'&&isCode||(isShape&&e.sh==='dash')?'disabled':''}>`)}
+    ${!isCode?R('Giro',rng_('rot',-180,180,1,e.rot||0,'°')):''}
+    ${e.kind!=='code'?R('Opacidad',`<input type="range" min="10" max="100" data-p="opacity" value="${Math.round((e.opacity??1)*100)}"><output>${Math.round((e.opacity??1)*100)}%</output>`):''}
+    <div class="row"><label>Alinear</label><div class="seg">${[['l','⇤'],['c','↔'],['r','⇥'],['t','⤒'],['m','↕'],['b','⤓']].map(([k,l])=>`<button data-aln="${k}" title="${{l:'Izquierda',c:'Centro',r:'Derecha',t:'Arriba',m:'Medio',b:'Abajo'}[k]} de la entrada">${l}</button>`).join('')}</div></div>
+  </div>
+  <div class="sec"><div class="st">Capa</div>
+    ${!isCode?R('Bloquear',`<input type="checkbox" data-p="locked" ${e.locked?'checked':''}>`):''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" id="fwd">Traer adelante</button><button class="btn sm" id="bwd">Enviar atrás</button>${!e.prot?`<button class="btn sm" id="dup">Duplicar</button><button class="btn sm" id="del" style="color:var(--red)">Eliminar</button>`:''}</div>
+    ${isCode?'<div class="hint">El código de acceso es obligatorio: no se puede borrar ni ocultar.</div>':''}</div>`;
+  box.querySelectorAll('[data-p]').forEach(x=>{
+    const k=x.dataset.p;
+    const apply=()=>{let v=x.type==='checkbox'?x.checked:(x.type==='range'||x.type==='number')?+x.value:x.value;
+      if(k==='opacity')v=v/100;
+      if(isCode&&k==='w'){v=Math.max(CODE_MIN[mode][0],v);if(mode==='qr')e.h=v}
+      if(isCode&&k==='h')v=Math.max(CODE_MIN[mode][1],v);
+      e[k]=v;persist();renderView();renderLayers();const o=x.parentElement.querySelector('output');if(o)o.textContent=k==='opacity'?x.value+'%':x.value+(['rot','ang'].includes(k)?'°':'')};
+    x.addEventListener('input',apply);x.addEventListener('change',()=>{snapshot();apply();if(['SELECT'].includes(x.tagName)||x.type==='checkbox')renderProps()});
+  });
+  box.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{snapshot();const m=b.dataset.mode;e.mode=m;const cx=e.x+e.w/2;
+    const SZ={qr:[200,200],bar:[280,90],both:[240,300],nfc:[200,200]}[m];e.w=SZ[0];e.h=SZ[1];e.x=Math.round(Math.min(Math.max(0,cx-e.w/2),W-e.w));e.y=Math.min(e.y,H-e.h);commit()});
+  box.querySelectorAll('[data-al]').forEach(b=>b.onclick=()=>{snapshot();e.align=b.dataset.al;commit()});
+  box.querySelectorAll('[data-sw]').forEach(b=>b.onclick=()=>{snapshot();e[b.dataset.sw]=b.dataset.v||null;commit()});
+  box.querySelectorAll('[data-col]').forEach(i=>i.onchange=()=>{snapshot();e[i.dataset.col]=i.value;commit()});
+  box.querySelectorAll('[data-aln]').forEach(b=>b.onclick=()=>{snapshot();const k=b.dataset.aln;if(k==='l')e.x=0;if(k==='c')e.x=Math.round((W-e.w)/2);if(k==='r')e.x=W-e.w;if(k==='t')e.y=0;if(k==='m')e.y=Math.round((H-e.h)/2);if(k==='b')e.y=H-e.h;commit()});
+  const i=d.els.indexOf(e);
+  $('#fwd').onclick=()=>{if(i<d.els.length-1){snapshot();[d.els[i],d.els[i+1]]=[d.els[i+1],d.els[i]];commit()}};
+  $('#bwd').onclick=()=>{if(i>0){snapshot();[d.els[i],d.els[i-1]]=[d.els[i-1],d.els[i]];commit()}};
+  const du=$('#dup');if(du)du.onclick=duplicate;const de=$('#del');if(de)de.onclick=remove;
+}
+function duplicate(){const d=editing(),e=selEl();if(!d||!e||e.prot)return;snapshot();const c=clone(e);c.id=nid();c.x+=12;c.y+=12;c.locked=false;c.name=e.name+' (copia)';d.els.push(c);S.sel=c.id;commit()}
+function remove(){const d=editing(),e=selEl();if(!d||!e||e.prot||e.locked)return;snapshot();d.els=d.els.filter(x=>x.id!==e.id);S.sel=null;commit()}
+function pickImage(cb){const f=$('#file');f.accept='image/*';f.value='';f.onchange=()=>{const file=f.files[0];if(!file)return;if(file.size>5*1024*1024){toast('La imagen pesa más de 5 MB');return}const r=new FileReader();r.onload=()=>cb(r.result);r.readAsDataURL(file)};f.click()}
+
+/* ═════════ Acciones ═════════ */
+document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{
+  const d=editing();if(!d){toast('Primero personaliza este tipo de entrada');return}
+  const k=b.dataset.add,base={id:nid(),x:40,y:300,visible:true},add=e=>{snapshot();d.els.push(e);S.sel=e.id;S.pt='el';commit()};
+  if(k==='text')add({...base,kind:'text',name:'Texto nuevo',text:'Escribe aquí',w:200,h:30,size:18,weight:700,font:'Poppins',color:'@text',align:'left'});
+  if(k==='field')add({...base,kind:'field',name:'Dato nuevo',field:'org.name',w:200,h:28,size:16,weight:600,font:'Poppins',color:'@text',align:'left'});
+  if(k==='shape')add({...base,kind:'shape',sh:'rect',name:'Forma nueva',w:120,h:60,fill:'@primary',radius:14});
+  if(k==='circle')add({...base,kind:'shape',sh:'circle',name:'Círculo',w:80,h:80,fill:'@secondary'});
+  if(k==='dash')add({...base,kind:'shape',sh:'dash',name:'Línea de corte',w:312,h:0,x:24,bc:'@text',opacity:.6});
+  if(k==='image')pickImage(src=>add({...base,kind:'image',name:'Imagen',src,w:120,h:120,radius:12}));
+});
+$('#undo').onclick=()=>{if(!past.length)return;future.push(JSON.stringify(S.designs));S.designs=JSON.parse(past.pop());commit()};
+$('#redo').onclick=()=>{if(!future.length)return;past.push(JSON.stringify(S.designs));S.designs=JSON.parse(future.pop());commit()};
+document.querySelectorAll('.ptabs button').forEach(b=>b.onclick=()=>{S.pt=b.dataset.pt;renderProps()});
+$('#reset').onclick=()=>openModal(`<h3>Restablecer el diseño</h3><p style="color:var(--muted);line-height:1.6">Vuelve al diseño original de iPass y quita los diseños propios de cada tipo. El historial de versiones se conserva.</p><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn pri" id="ok">Restablecer</button></div>`,()=>{$('#ok').onclick=()=>{snapshot();S.designs={event:defaultDesign('ipass'),types:{gen:null,ter:null,vip:null}};S.scope='event';S.sel=null;closeModal();commit();toast('Diseño restablecido')}});
+$('#publish').onclick=()=>{
+  const all=[S.designs.event,...Object.values(S.designs.types).filter(Boolean)];
+  if(all.some(d=>review(d).some(r=>r[0]==='bad'))){openModal(`<h3>No se puede publicar</h3><p style="color:var(--muted);line-height:1.6">Hay un problema con el código de acceso (tamaño, algo encima o fuera de la entrada). Corrígelo: una entrada que no se lee no entra.</p><div style="text-align:right;margin-top:16px"><button class="btn pri" onclick="closeModal()">Entendido</button></div>`);return}
+  S.versions.unshift({ts:new Date().toLocaleString('es-BO'),snap:JSON.stringify(S.designs)});persist();toast(`Publicado (versión ${S.versions.length}) · se aplica a las 3 noches`);
+};
+$('#hist').onclick=()=>openModal(`<h3>Historial de versiones</h3>${S.versions.length?S.versions.map((v,i)=>`<div class="ver"><span>Versión ${S.versions.length-i} · ${v.ts}</span><button class="btn sm" data-rs="${i}">Restaurar</button></div>`).join(''):'<p style="color:var(--muted)">Todavía no publicaste ninguna versión.</p>'}<div style="text-align:right;margin-top:14px"><button class="btn" onclick="closeModal()">Cerrar</button></div>`,()=>{document.querySelectorAll('[data-rs]').forEach(b=>b.onclick=()=>{snapshot();S.designs=JSON.parse(S.versions[+b.dataset.rs].snap);closeModal();commit();toast('Versión restaurada (sin publicar)')})});
+$('#test').onclick=()=>{
+  const d=shownDesign(),r=review(d),bad=r.filter(x=>x[0]==='bad');
+  openModal(`<h3>Prueba de lectura del código</h3><div class="checks" style="margin:0 0 14px">${r.map(([k,t])=>`<div class="chk ${k}"><b>${k==='ok'?'✓':k==='warn'?'!':'✕'}</b><span>${t}</span></div>`).join('')}</div><p style="font-size:14px;font-weight:700;color:${bad.length?'var(--red)':'var(--green)'}">${bad.length?'✕ Este diseño puede no leerse en la puerta.':'✓ El código se leería sin problema.'}</p><p class="hint" style="margin-top:8px">En el sistema real esta prueba dibuja el código y lo lee con un lector, igual que la cámara de la puerta.</p><div style="text-align:right;margin-top:14px"><button class="btn pri" onclick="closeModal()">Cerrar</button></div>`);
+};
+function openModal(html,after){$('#box').innerHTML=html;$('#modal').classList.add('open');if(after)after()}
+function closeModal(){$('#modal').classList.remove('open')}
+$('#modal').onclick=e=>{if(e.target.id==='modal')closeModal()};
+addEventListener('keydown',e=>{
+  if(e.target.matches('input,select,textarea'))return;
+  const el=selEl();
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();$('#undo').click();return}
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault();$('#redo').click();return}
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='d'){e.preventDefault();duplicate();return}
+  if((e.key==='Delete'||e.key==='Backspace')&&el){e.preventDefault();remove();return}
+  if(el&&!el.locked&&e.key.startsWith('Arrow')){e.preventDefault();snapshot();const s=e.shiftKey?10:1;
+    if(e.key==='ArrowLeft')el.x-=s;if(e.key==='ArrowRight')el.x+=s;if(e.key==='ArrowUp')el.y-=s;if(e.key==='ArrowDown')el.y+=s;commit()}
+});
+addEventListener('resize',()=>renderView());
+function renderAll(){renderScope();renderTabs();renderLayers();renderProps();renderView();$('#undo').disabled=!past.length;$('#redo').disabled=!future.length}
+renderAll();
+</script>
+</body>
+</html>
