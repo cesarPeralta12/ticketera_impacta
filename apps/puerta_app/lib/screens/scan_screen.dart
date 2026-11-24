@@ -7,10 +7,12 @@ import 'package:nfc_manager/nfc_manager.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../app_services.dart';
+import '../code_tracker.dart';
 import '../door_service.dart';
 import '../feedback.dart';
 import '../models.dart';
 import '../nfc_reader.dart';
+import '../nfc_uid.dart';
 import '../scan_cooldown.dart';
 import '../settings.dart';
 import '../ui/tokens.dart';
@@ -21,16 +23,18 @@ import 'consult_sheet.dart';
 import 'result_overlay.dart';
 import 'scan_widgets.dart';
 
-/// Pantalla de lectura: cámara (QR), código de barras o NFC, según lo elegido en el inicio.
+/// Pantalla de lectura. Una sola pantalla para todo: la cámara lee QR y códigos de barras a la vez y, si la función admite
+/// NFC, también queda atento a una pulsera o tarjeta, sin que el portero tenga que cambiar de modo.
 class ScanScreen extends StatefulWidget {
-  const ScanScreen({super.key, required this.service, required this.meta, required this.method, required this.assignment, this.previewOverride});
+  const ScanScreen({super.key, required this.service, required this.meta, required this.methods, required this.assignment, this.previewOverride});
 
   /// Solo para pruebas visuales: en lugar de la cámara y del NFC (que necesitan el teléfono), se dibuja esto.
   final Widget? previewOverride;
 
   final DoorService service;
   final SessionMeta meta;
-  final AccessMethod method;
+  /// Métodos que admite la función: según ellos se activan la cámara (QR, barras) y el NFC.
+  final List<AccessMethod> methods;
   final Assignment assignment;
 
   @override
@@ -39,18 +43,24 @@ class ScanScreen extends StatefulWidget {
 
 class _ScanScreenState extends State<ScanScreen> {
   bool get _testing => widget.previewOverride != null;
-  bool get _useCamera => widget.method != AccessMethod.nfc;
+  bool get _hasQr => widget.methods.contains(AccessMethod.qr);
+  bool get _hasBarcode => widget.methods.contains(AccessMethod.barcode);
+  bool get _hasNfc => widget.methods.contains(AccessMethod.nfc);
+  bool get _useCamera => _hasQr || _hasBarcode;
 
-  late final MobileScannerController? _camera = widget.method == AccessMethod.nfc || _testing
+  late final MobileScannerController? _camera = !_useCamera || _testing
       ? null
       : MobileScannerController(
-          formats: widget.method == AccessMethod.qr
-              ? const [BarcodeFormat.qrCode]
-              : const [BarcodeFormat.code128, BarcodeFormat.code39, BarcodeFormat.ean13, BarcodeFormat.ean8],
+          formats: [
+            if (_hasQr) BarcodeFormat.qrCode,
+            if (_hasBarcode) ...const [BarcodeFormat.code128, BarcodeFormat.code39, BarcodeFormat.ean13, BarcodeFormat.ean8],
+          ],
           // "noDuplicates" no vuelve a leer el mismo QR hasta que la cámara vea otro: había que salir y volver a entrar a la
           // pantalla. Con "normal" sigue leyendo; las repeticiones las filtra la pausa por entrada (ScanCooldown).
           detectionSpeed: DetectionSpeed.normal,
-          detectionTimeoutMs: 400,
+          // Más seguido que antes para que el marco siga al código con fluidez; las repeticiones las filtra la pausa por
+          // entrada (ScanCooldown), no esta cadencia.
+          detectionTimeoutMs: 150,
         );
 
   late AppSettings _settings;
@@ -67,9 +77,12 @@ class _ScanScreenState extends State<ScanScreen> {
 
   /// Entradas recién procesadas: la cámara no las vuelve a leer sola (ver ScanCooldown).
   final ScanCooldown _cooldown = ScanCooldown();
-  ({int total, int used, int inside}) _counts = (total: 0, used: 0, inside: 0);
   String? _nfcMessage;
   Timer? _syncTimer;
+
+  /// Dónde está en la pantalla el código que ve la cámara (el marco lo sigue). Nulo: marco fijo en el centro.
+  Rect? _target;
+  Timer? _targetTimer;
 
   Gate? get _gate => widget.meta.gate;
 
@@ -94,9 +107,8 @@ class _ScanScreenState extends State<ScanScreen> {
   @override
   void initState() {
     super.initState();
-    _refreshCounts();
     if (_testing) return;
-    if (widget.method == AccessMethod.nfc) _startNfc();
+    if (_hasNfc) _startNfc();
     // Mientras se lee, sube las lecturas en cuanto hay internet.
     _syncTimer = Timer.periodic(const Duration(seconds: 15), (_) => widget.service.sync(widget.meta.sessionId).catchError((_) => false));
   }
@@ -104,17 +116,38 @@ class _ScanScreenState extends State<ScanScreen> {
   @override
   void dispose() {
     _clearTimer?.cancel();
+    _targetTimer?.cancel();
     _syncTimer?.cancel();
     _settings.removeListener(_applyWakelock);
     WakelockPlus.disable().catchError((_) {});
     _camera?.dispose();
-    if (widget.method == AccessMethod.nfc && !_testing) NfcManager.instance.stopSession().catchError((_) {});
+    if (_hasNfc && !_testing) NfcManager.instance.stopSession().catchError((_) {});
     super.dispose();
   }
 
-  Future<void> _refreshCounts() async {
-    final c = await widget.service.gateCounts(widget.meta.sessionId);
-    if (mounted) setState(() => _counts = c);
+  /// El marco sigue al código que ve la cámara: se ubica con sus esquinas y, si deja de verse un momento, vuelve al centro.
+  void _track(BarcodeCapture capture) {
+    if (_outcome != null || _locked) return;
+    final screen = MediaQuery.sizeOf(context);
+    final image = uprightImageSize(capture.size, screen);
+    // Con varios códigos a la vista, el más cercano al centro (es el que el portero está apuntando).
+    Rect? best;
+    var bestDistance = double.infinity;
+    for (final b in capture.barcodes) {
+      final rect = codeRectOnScreen(corners: b.corners, image: image, screen: screen);
+      if (rect == null) continue;
+      final distance = (rect.center - screen.center(Offset.zero)).distance;
+      if (distance < bestDistance) {
+        best = rect;
+        bestDistance = distance;
+      }
+    }
+    _targetTimer?.cancel();
+    if (best == null) return;
+    setState(() => _target = best);
+    _targetTimer = Timer(const Duration(milliseconds: 450), () {
+      if (mounted) setState(() => _target = null);
+    });
   }
 
   void _dismiss() {
@@ -237,7 +270,6 @@ class _ScanScreenState extends State<ScanScreen> {
       }
       _feedback.outcome(shown);
       _show(shown);
-      await _refreshCounts();
     } finally {
       _busy = false;
       if (mounted && _outcome == null && _locked) setState(() => _locked = false);
@@ -257,16 +289,23 @@ class _ScanScreenState extends State<ScanScreen> {
     await NfcManager.instance.startSession(
       pollingOptions: {NfcPollingOption.iso14443, NfcPollingOption.iso15693},
       onDiscovered: (tag) async {
-        final code = codeFromTag(tag);
+        // 1) Tarjeta vinculada en el canje: se reconoce por su número de serie (sin leer ni escribir nada en ella).
+        // 2) Pulsera grabada con el código de la entrada (la forma anterior): el código viaja en su texto.
+        final uid = uidOf(tag);
+        final linked = uid == null ? null : await widget.service.ticketByNfcUid(widget.meta.sessionId, uid);
+        final code = linked?.code ?? codeFromTag(tag);
         if (code == null) {
           if (mounted) {
-            final bad = const ScanOutcome(verdict: ScanVerdict.invalid, detail: 'La etiqueta no tiene una entrada.');
+            final bad = ScanOutcome(
+              verdict: ScanVerdict.invalid,
+              detail: uid != null ? 'Esta tarjeta no está vinculada a ninguna entrada. Actualiza los datos si se canjeó hace poco.' : 'La etiqueta no tiene una entrada.',
+            );
             _feedback.outcome(bad);
             _show(bad);
           }
-          return;
+        } else {
+          await _handle(code, AccessMethod.nfc);
         }
-        await _handle(code, AccessMethod.nfc);
         // En iPhone cada lectura cierra la sesión: se vuelve a abrir para la siguiente.
         if (defaultTargetPlatform == TargetPlatform.iOS && mounted) {
           await NfcManager.instance.stopSession();
@@ -276,9 +315,15 @@ class _ScanScreenState extends State<ScanScreen> {
     );
   }
 
-  Future<void> _manualEntry() async {
-    final code = await showManualEntry(context);
-    if (code != null && code.trim().isNotEmpty) await _handle(code, null);
+  /// Código escrito en el campo de la pantalla (respaldo si el lector falla). Siempre se atiende.
+  Future<void> _typedCode(String code) async {
+    if (code.trim().isNotEmpty) await _handle(code.trim(), null);
+  }
+
+  /// Qué debe hacer el portero, según lo que admite la función.
+  String get _hint {
+    final what = [if (_hasQr) 'al QR', if (_hasBarcode) 'al código de barras'].join(' o ');
+    return _hasNfc ? 'Apunta $what\no acerca la pulsera o tarjeta' : 'Apunta $what de la entrada';
   }
 
   Color get _gateColor => switch (_gate?.direction ?? GateDirection.inward) {
@@ -298,12 +343,12 @@ class _ScanScreenState extends State<ScanScreen> {
   Widget build(BuildContext context) {
     final style = _outcome == null ? null : OutcomeStyle.of(_outcome!);
     final frameColor = style?.color ?? (_locked ? Brand.highlight : Colors.white);
-    final used = _counts.used;
-    final total = _counts.total;
     final zoneLabel = (_outcome?.verdict.ok ?? false) && (_gate?.zoneId != null) && _outcome?.movement != Movement.exit ? (_gate?.zoneName ?? _gate?.name) : null;
 
     return Scaffold(
       backgroundColor: Colors.black,
+      // El teclado sube el campo del código; no encoge la cámara.
+      resizeToAvoidBottomInset: false,
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -314,8 +359,10 @@ class _ScanScreenState extends State<ScanScreen> {
             MobileScanner(
               controller: _camera,
               onDetect: (capture) {
-                final raw = capture.barcodes.map((b) => b.rawValue).whereType<String>().firstOrNull;
-                if (raw != null) _handle(raw, widget.method);
+                _track(capture);
+                // El tipo de código decide el método: un QR es «QR»; cualquier código de barras, «Código de barras».
+                final read = capture.barcodes.where((b) => b.rawValue != null).firstOrNull;
+                if (read != null) _handle(read.rawValue!, read.format == BarcodeFormat.qrCode ? AccessMethod.qr : AccessMethod.barcode);
               },
               errorBuilder: (context, error) => Center(
                 child: Padding(
@@ -342,13 +389,13 @@ class _ScanScreenState extends State<ScanScreen> {
               children: [
                 Container(height: 190, decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black.withValues(alpha: 0.82), Colors.transparent]))),
                 const Spacer(),
-                Container(height: 230, decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black.withValues(alpha: 0.9), Colors.transparent]))),
+                Container(height: 150, decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black.withValues(alpha: 0.9), Colors.transparent]))),
               ],
             ),
           ),
 
           // 3. Visor
-          if (_useCamera) ScanFrame(color: frameColor, locked: _locked || _outcome != null),
+          if (_useCamera) ScanFrame(color: frameColor, locked: _locked || _outcome != null, target: _outcome == null ? _target : null),
 
           // 4. Barra superior
           SafeArea(
@@ -376,6 +423,7 @@ class _ScanScreenState extends State<ScanScreen> {
                                 listenable: _settings,
                                 builder: (context, _) => _settings.autoAccept && !_consultOnly ? const Pill('Ingreso rápido', icon: Icons.bolt_rounded, color: Brand.highlight, small: true) : const SizedBox.shrink(),
                               ),
+                              if (_hasNfc && _useCamera) Pill(_nfcMessage == null ? 'NFC activo' : 'NFC no disponible', icon: Icons.nfc_rounded, color: _nfcMessage == null ? Brand.violet : Brand.amber, small: true),
                               if (_consultOnly) const Pill('Solo consulta', icon: Icons.visibility_outlined, color: Brand.violet, small: true),
                             ],
                           ),
@@ -421,74 +469,34 @@ class _ScanScreenState extends State<ScanScreen> {
             Align(
               alignment: const Alignment(0, 0.52),
               child: IgnorePointer(
-                child: Text(
-                  widget.method == AccessMethod.qr ? 'Apunta al QR de la entrada' : 'Apunta al código de barras',
-                  style: Type.body.copyWith(color: Colors.white70, fontWeight: FontWeight.w600),
-                ),
+                child: Text(_hint, textAlign: TextAlign.center, style: Type.body.copyWith(color: Colors.white70, fontWeight: FontWeight.w600)),
               ),
             ),
 
-          // 6. Panel inferior: aforo y acciones
+          // 6. Campo para escribir el código y últimas lecturas (los ingresos y el aforo no se muestran aquí: están en los
+          // ajustes, con contraseña)
           Align(
             alignment: Alignment.bottomCenter,
-            child: SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                  decoration: BoxDecoration(color: Brand.surface.withValues(alpha: 0.94), borderRadius: BorderRadius.circular(26), border: Border.all(color: Brand.stroke)),
+            child: AnimatedPadding(
+              duration: const Duration(milliseconds: 150),
+              padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   child: Row(
                     children: [
-                      RingGauge(
-                        value: total == 0 ? 0 : used / total,
-                        size: 62,
-                        stroke: 7,
-                        child: Text(total == 0 ? '0%' : '${(used / total * 100).round()}%', style: Type.muted.copyWith(fontSize: 12.5, fontWeight: FontWeight.w800, color: Brand.text)),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.baseline,
-                                textBaseline: TextBaseline.alphabetic,
-                                children: [
-                                  AnimatedNumber(value: used, style: Type.number.copyWith(fontSize: 30), duration: const Duration(milliseconds: 450)),
-                                  Text(' / $total', style: Type.muted.copyWith(fontSize: 17, fontWeight: FontWeight.w700)),
-                                ],
-                              ),
-                            ),
-                            Text('${_counts.inside} adentro', style: Type.muted.copyWith(fontSize: 12.5), maxLines: 1, overflow: TextOverflow.ellipsis),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      PressScale(
-                        onTap: () => showRecentScans(context, () => widget.service.recentScans(widget.meta.sessionId)),
-                        child: Container(
-                          width: 52,
-                          height: 52,
-                          decoration: BoxDecoration(color: Brand.surface3, borderRadius: BorderRadius.circular(16), border: Border.all(color: Brand.stroke)),
-                          child: const Icon(Icons.history_rounded, color: Brand.text),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
+                      Expanded(child: _CodeField(onSubmit: _typedCode)),
+                      const SizedBox(width: 10),
                       Tooltip(
-                        message: 'Escribir el código',
+                        message: 'Últimas lecturas',
                         child: PressScale(
-                          onTap: _manualEntry,
+                          onTap: () => showRecentScans(context, () => widget.service.recentScans(widget.meta.sessionId)),
                           child: Container(
-                            width: 52,
-                            height: 52,
-                            decoration: BoxDecoration(color: Brand.accent, borderRadius: BorderRadius.circular(16)),
-                            child: const Icon(Icons.keyboard_alt_outlined, color: Brand.accentInk),
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(color: Brand.surface.withValues(alpha: 0.92), borderRadius: BorderRadius.circular(18), border: Border.all(color: Brand.stroke)),
+                            child: const Icon(Icons.history_rounded, color: Brand.text),
                           ),
                         ),
                       ),
@@ -510,6 +518,84 @@ class _ScanScreenState extends State<ScanScreen> {
                 onDismiss: _dismiss,
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Campo para escribir el código de la entrada, siempre a la vista en la pantalla del escáner (respaldo si el lector
+/// falla o la entrada está dañada). Acepta el código con o sin guion y en minúsculas.
+class _CodeField extends StatefulWidget {
+  const _CodeField({required this.onSubmit});
+
+  final Future<void> Function(String code) onSubmit;
+
+  @override
+  State<_CodeField> createState() => _CodeFieldState();
+}
+
+class _CodeFieldState extends State<_CodeField> {
+  final _controller = TextEditingController();
+  final _focus = FocusNode();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final code = _controller.text.trim();
+    if (code.isEmpty) return;
+    _controller.clear();
+    _focus.unfocus();
+    await widget.onSubmit(code);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 56,
+      decoration: BoxDecoration(color: Brand.surface.withValues(alpha: 0.94), borderRadius: BorderRadius.circular(18), border: Border.all(color: Brand.stroke)),
+      child: Row(
+        children: [
+          const Padding(padding: EdgeInsets.only(left: 14, right: 10), child: Icon(Icons.keyboard_alt_outlined, color: Brand.muted, size: 21)),
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              focusNode: _focus,
+              textCapitalization: TextCapitalization.characters,
+              textInputAction: TextInputAction.send,
+              autocorrect: false,
+              enableSuggestions: false,
+              style: Type.body.copyWith(fontWeight: FontWeight.w700, letterSpacing: 1.2),
+              decoration: InputDecoration(
+                hintText: 'Escribir el código',
+                hintStyle: Type.muted.copyWith(fontSize: 15),
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                filled: false,
+                isDense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+              onSubmitted: (_) => _send(),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(6),
+            child: PressScale(
+              onTap: _send,
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(color: Brand.accent, borderRadius: BorderRadius.circular(14)),
+                child: const Icon(Icons.arrow_forward_rounded, color: Brand.accentInk),
+              ),
+            ),
+          ),
         ],
       ),
     );

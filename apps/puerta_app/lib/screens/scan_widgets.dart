@@ -10,14 +10,18 @@ import 'result_overlay.dart';
 
 // ───────────────────────── Visor de la cámara ─────────────────────────
 
-/// Marco de lectura: cuatro esquinas que laten y una línea de luz que recorre el cuadro. Al detectar un código
-/// las esquinas se cierran sobre él y toman el color del resultado.
+/// Marco de lectura: cuatro esquinas que laten y una línea de luz que recorre el cuadro. Cuando la cámara ve un código
+/// ([target], su posición en pantalla) las esquinas se ajustan y lo siguen; al detectarlo y resolverlo toman el color del
+/// resultado. Sin código a la vista, vuelven al cuadro fijo del centro.
 class ScanFrame extends StatefulWidget {
-  const ScanFrame({super.key, this.color = Colors.white, this.locked = false, this.size = 270});
+  const ScanFrame({super.key, this.color = Colors.white, this.locked = false, this.size = 270, this.target});
 
   final Color color;
   final bool locked;
   final double size;
+
+  /// Rectángulo en pantalla del código que ve la cámara (ver code_tracker.dart). Nulo: marco fijo en el centro.
+  final Rect? target;
 
   @override
   State<ScanFrame> createState() => _ScanFrameState();
@@ -35,46 +39,63 @@ class _ScanFrameState extends State<ScanFrame> with SingleTickerProviderStateMix
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
-      child: Center(
-        child: TweenAnimationBuilder<double>(
-          tween: Tween(begin: 1, end: widget.locked ? 0.9 : 1),
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutBack,
-          builder: (context, scale, _) => Transform.scale(
-            scale: scale,
-            child: SizedBox(
-              width: widget.size,
-              height: widget.size,
-              child: AnimatedBuilder(
-                animation: _c,
-                builder: (context, _) => CustomPaint(painter: _FramePainter(widget.color, _c.value, widget.locked)),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final fixed = Rect.fromCenter(center: constraints.biggest.center(Offset.zero), width: widget.size, height: widget.size);
+          final rect = widget.target ?? fixed;
+          final tracking = widget.target != null;
+          return Stack(
+            children: [
+              // Las esquinas se deslizan hacia el código (y vuelven al centro cuando se retira).
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 130),
+                curve: Curves.easeOut,
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 1, end: widget.locked ? 0.9 : 1),
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutBack,
+                  builder: (context, scale, child) => Transform.scale(scale: scale, child: child),
+                  child: AnimatedBuilder(
+                    animation: _c,
+                    builder: (context, _) => CustomPaint(painter: _FramePainter(widget.color, _c.value, widget.locked, tracking)),
+                  ),
+                ),
               ),
-            ),
-          ),
-        ),
+            ],
+          );
+        },
       ),
     );
   }
 }
 
 class _FramePainter extends CustomPainter {
-  _FramePainter(this.color, this.t, this.locked);
+  _FramePainter(this.color, this.t, this.locked, this.tracking);
 
   final Color color;
   final double t;
   final bool locked;
 
+  /// Sigue a un código: las esquinas no laten y no hay línea de luz (el marco ya está sobre el código).
+  final bool tracking;
+
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
-    final pulse = locked ? 1.0 : 0.82 + 0.18 * math.sin(t * math.pi * 2);
-    final len = size.width * 0.17;
+    final steady = locked || tracking;
+    final pulse = steady ? 1.0 : 0.82 + 0.18 * math.sin(t * math.pi * 2);
+    final side = math.min(size.width, size.height);
+    final len = side * 0.17 < 22 ? 22.0 : (side * 0.17 > 46 ? 46.0 : side * 0.17);
+    final r = math.min(26.0, len * 0.6);
     final corner = Paint()
       ..color = color.withValues(alpha: pulse)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 5
       ..strokeCap = StrokeCap.round;
-    const r = 26.0;
     final path = Path()
       // arriba-izquierda
       ..moveTo(rect.left, rect.top + len)
@@ -98,7 +119,7 @@ class _FramePainter extends CustomPainter {
       ..lineTo(rect.left, rect.bottom - len);
     canvas.drawPath(path, corner);
 
-    if (!locked) {
+    if (!locked && !tracking) {
       // Línea de luz que sube y baja.
       final p = t < 0.5 ? t * 2 : (1 - t) * 2;
       final y = rect.top + 14 + (size.height - 28) * Curves.easeInOut.transform(p);
@@ -112,7 +133,7 @@ class _FramePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_FramePainter old) => old.t != t || old.color != color || old.locked != locked;
+  bool shouldRepaint(_FramePainter old) => old.t != t || old.color != color || old.locked != locked || old.tracking != tracking;
 }
 
 // ───────────────────────── Espera de NFC ─────────────────────────

@@ -10,10 +10,10 @@ import '../ui/tokens.dart';
 import '../ui/widgets.dart';
 import 'account_sheet.dart';
 import 'bar_screen.dart';
+import 'attendance_screen.dart';
 import 'bracelet_screen.dart';
+import 'password_gate.dart';
 import 'scan_screen.dart';
-
-typedef Counts = ({int total, int used, int inside});
 
 /// Después del login: elige la función y la puerta, descarga los datos y elige cómo leer
 /// (solo aparecen los métodos que admiten las entradas de esa función).
@@ -35,7 +35,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Assignment? _selected;
   String? _gateId;
   SessionMeta? _meta;
-  Counts _counts = (total: 0, used: 0, inside: 0);
   Timer? _timer;
 
   @override
@@ -84,7 +83,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _meta = a == null ? null : await _s.meta(a.sessionId);
     // Si ya descargó esta función, vuelve a su puerta; si no, propone la primera/única.
     _gateId = _meta?.gateId ?? a?.gates.firstOrNull?.id;
-    if (a != null && _meta != null) _counts = await _s.gateCounts(a.sessionId);
     if (a != null) await _s.refreshCounters(a.sessionId);
     if (mounted) setState(() {});
     // Cuenta de una sola puerta: si todavía no hay datos de esta puerta, se descargan solos.
@@ -98,7 +96,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     try {
       await _s.sync(a.sessionId);
       _meta = await _s.meta(a.sessionId);
-      _counts = await _s.gateCounts(a.sessionId);
       if (mounted) setState(() {});
     } on ApiException {
       // Se reintenta en el próximo ciclo.
@@ -117,7 +114,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // Antes de reemplazar la lista se suben las lecturas pendientes, para no perder ninguna.
       if (_meta != null) await _s.sync(a.sessionId);
       _meta = await _s.download(a, gate);
-      _counts = await _s.gateCounts(a.sessionId);
       if (mounted) AppServices.of(context).feedback.done();
     } on ApiException catch (e) {
       _error = e.offline ? 'Sin conexión. Conéctate a internet para descargar los datos.' : e.message;
@@ -138,7 +134,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _openAccount() async {
-    await showAccountSheet(context, service: _s, pending: _selected == null ? 0 : _s.pendingCount);
+    final a = _selected;
+    final meta = _meta;
+    await showAccountSheet(
+      context,
+      service: _s,
+      pending: a == null ? 0 : _s.pendingCount,
+      onShowAttendance: a == null || meta == null ? null : () => _openAttendance(meta),
+    );
+  }
+
+  /// Los ingresos y las personas dentro no están a la vista: se abren desde los ajustes y piden la contraseña.
+  Future<void> _openAttendance(SessionMeta meta) async {
+    final ok = await askPassword(context, _s, reason: 'Estos datos son reservados. Escribe tu contraseña para verlos.');
+    if (!ok || !mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => AttendanceScreen(service: _s, meta: meta)));
   }
 
   Future<void> _pickSession() async {
@@ -185,12 +195,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (chosen != null) await _select(chosen);
   }
 
-  void _openScan(Assignment a, SessionMeta meta, AccessMethod m) {
+  void _openScan(Assignment a, SessionMeta meta) {
     Navigator.of(context)
         .push(PageRouteBuilder<void>(
           transitionDuration: const Duration(milliseconds: 380),
           reverseTransitionDuration: const Duration(milliseconds: 260),
-          pageBuilder: (_, _, _) => ScanScreen(service: _s, meta: meta, method: m, assignment: a),
+          pageBuilder: (_, _, _) => ScanScreen(service: _s, meta: meta, methods: a.methods, assignment: a),
           transitionsBuilder: (_, animation, _, child) => FadeTransition(
             opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
             child: ScaleTransition(scale: Tween(begin: 0.96, end: 1.0).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)), child: child),
@@ -236,8 +246,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Brand.pink, Brand.accent]),
-                            boxShadow: [BoxShadow(color: Brand.accent.withValues(alpha: 0.3), blurRadius: 14)],
+                            color: Brand.accent,
                           ),
                           child: Text(first.isEmpty ? 'P' : first.characters.first.toUpperCase(), style: const TextStyle(fontFamily: Fonts.display, fontSize: 19, fontWeight: FontWeight.w700, color: Brand.accentInk)),
                         ),
@@ -262,7 +271,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: Text('Hola, $first', style: Type.title.copyWith(fontSize: 24)),
               ),
               const SizedBox(height: 2),
-              const StaggerIn(index: 1, child: Text('Esto es lo que tienes para hoy.', style: Type.muted)),
+              const StaggerIn(index: 1, child: Text('Tu evento de hoy.', style: Type.muted)),
               const SizedBox(height: 20),
               if (_error != null) ...[
                 StaggerIn(
@@ -309,7 +318,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   index: 4,
                   child: _DataCard(
                     meta: gateChanged ? null : meta,
-                    counts: _counts,
                     downloading: _downloading,
                     pending: _s.pendingCount,
                     conflicts: _s.conflictCount,
@@ -326,15 +334,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   )
                 else if (a.methods.isEmpty)
                   Text('Las entradas de esta función no tienen un método de lectura configurado.', style: Type.body.copyWith(color: Brand.red))
-                else ...[
-                  const StaggerIn(index: 5, child: SectionLabel('Empezar a leer')),
-                  const SizedBox(height: 10),
-                  for (final (i, m) in a.methods.indexed)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: StaggerIn(index: 6 + i, child: _MethodTile(method: m, onTap: () => _openScan(a, meta, m))),
-                    ),
-                ],
+                else
+                  StaggerIn(
+                    index: 5,
+                    child: _StartReading(methods: a.methods, onTap: () => _openScan(a, meta)),
+                  ),
                 if (_s.canUseBar) ...[
                   const SizedBox(height: 4),
                   StaggerIn(
@@ -429,17 +433,9 @@ class _EventHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Brand.accent.withValues(alpha: 0.28)),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Brand.accent.withValues(alpha: 0.16), const Color(0xFF12161C)],
-        ),
-      ),
+    return SoftCard(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+      color: Brand.surface,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -447,7 +443,7 @@ class _EventHero extends StatelessWidget {
             children: [
               const PulseDot(color: Brand.green, size: 8),
               const SizedBox(width: 4),
-              Text('EVENTO EN CURSO', style: Type.label.copyWith(color: Brand.highlight)),
+              Text('EVENTO', style: Type.label.copyWith(color: Brand.highlight)),
               const Spacer(),
               if (canChange)
                 PressScale(
@@ -457,20 +453,31 @@ class _EventHero extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          Text(assignment.title, style: Type.hero, maxLines: 3, overflow: TextOverflow.ellipsis),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              Pill(dateLabel, icon: Icons.schedule_rounded, color: Brand.text),
-              Pill(assignment.venue, icon: Icons.place_outlined, color: Brand.text),
-            ],
-          ),
+          Text(assignment.title, style: Type.title.copyWith(fontSize: 22), maxLines: 3, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 12),
+          _InfoLine(icon: Icons.schedule_rounded, text: dateLabel),
+          const SizedBox(height: 6),
+          _InfoLine(icon: Icons.place_outlined, text: assignment.venue),
         ],
       ),
     );
   }
+}
+
+class _InfoLine extends StatelessWidget {
+  const _InfoLine({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          Icon(icon, size: 17, color: Brand.muted),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: Type.muted.copyWith(fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis)),
+        ],
+      );
 }
 
 class _GatePicker extends StatelessWidget {
@@ -546,10 +553,10 @@ class _GatePicker extends StatelessWidget {
   }
 }
 
+/// Estado de los datos descargados. A propósito no muestra cuántas personas ingresaron ni cuántas se esperan.
 class _DataCard extends StatelessWidget {
   const _DataCard({
     required this.meta,
-    required this.counts,
     required this.downloading,
     required this.pending,
     required this.conflicts,
@@ -559,7 +566,6 @@ class _DataCard extends StatelessWidget {
   });
 
   final SessionMeta? meta;
-  final Counts counts;
   final bool downloading;
   final int pending;
   final int conflicts;
@@ -569,73 +575,36 @@ class _DataCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final total = counts.total;
-    final ratio = total == 0 ? 0.0 : counts.used / total;
+    final ready = meta != null;
     return SoftCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (meta == null)
-            Row(
-              children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(color: Brand.surface3, borderRadius: BorderRadius.circular(14)),
-                  child: const Icon(Icons.cloud_download_outlined, color: Brand.accent),
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(color: (ready ? Brand.green : Brand.accent).withValues(alpha: 0.14), borderRadius: BorderRadius.circular(14)),
+                child: Icon(ready ? Icons.cloud_done_outlined : Icons.cloud_download_outlined, color: ready ? Brand.green : Brand.accent),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(ready ? 'Datos descargados' : 'Datos sin descargar', style: Type.heading.copyWith(fontSize: 16.5)),
+                    const SizedBox(height: 2),
+                    Text(
+                      ready ? (syncedAt == null ? 'Listos para leer sin internet.' : 'Actualizado a las $syncedAt') : 'Se guardan en el teléfono para leer sin internet.',
+                      style: Type.muted,
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Datos sin descargar', style: Type.heading),
-                      SizedBox(height: 2),
-                      Text('Se guardan en el teléfono para leer sin internet.', style: Type.muted),
-                    ],
-                  ),
-                ),
-              ],
-            )
-          else
-            Row(
-              children: [
-                RingGauge(
-                  value: ratio,
-                  size: 112,
-                  stroke: 11,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AnimatedNumber(value: counts.used, style: Type.number.copyWith(fontSize: 30)),
-                      Text('de $total', style: Type.muted.copyWith(fontSize: 12.5)),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _Stat(icon: Icons.login_rounded, color: Brand.green, label: 'Adentro ahora', value: counts.inside),
-                      const SizedBox(height: 12),
-                      _Stat(icon: Icons.confirmation_number_outlined, color: Brand.accent, label: 'Tus entradas', value: total),
-                      if (syncedAt != null) ...[
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            PulseDot(color: pending > 0 ? Brand.amber : Brand.green, size: 7, pulsing: pending > 0 || downloading),
-                            const SizedBox(width: 2),
-                            Text('Actualizado $syncedAt', style: Type.muted.copyWith(fontSize: 12.5)),
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
+          ),
           if (pending > 0 || conflicts > 0) ...[
             const SizedBox(height: 14),
             Wrap(
@@ -651,39 +620,6 @@ class _DataCard extends StatelessWidget {
           _SyncButton(downloading: downloading, refresh: refresh, onTap: onDownload),
         ],
       ),
-    );
-  }
-}
-
-class _Stat extends StatelessWidget {
-  const _Stat({required this.icon, required this.color, required this.label, required this.value});
-
-  final IconData icon;
-  final Color color;
-  final String label;
-  final int value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(color: color.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(10)),
-          child: Icon(icon, size: 17, color: color),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AnimatedNumber(value: value, style: Type.number.copyWith(fontSize: 22, height: 1)),
-              Text(label, style: Type.muted.copyWith(fontSize: 12.5), maxLines: 1, overflow: TextOverflow.ellipsis),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }
@@ -749,56 +685,38 @@ class _SyncButtonState extends State<_SyncButton> with SingleTickerProviderState
   }
 }
 
-class _MethodTile extends StatelessWidget {
-  const _MethodTile({required this.method, required this.onTap});
+/// Un solo botón para empezar: la lectura detecta sola si es QR, código de barras o NFC.
+class _StartReading extends StatelessWidget {
+  const _StartReading({required this.methods, required this.onTap});
 
-  final AccessMethod method;
+  final List<AccessMethod> methods;
   final VoidCallback onTap;
-
-  Color get _color => switch (method) {
-        AccessMethod.qr => Brand.accent,
-        AccessMethod.barcode => Brand.blue,
-        AccessMethod.nfc => Brand.violet,
-      };
-
-  /// Sobre el magenta el ícono va en blanco; sobre los tonos claros, en azul noche.
-  Color get _iconColor => method == AccessMethod.qr ? Brand.accentInk : Brand.ink;
 
   @override
   Widget build(BuildContext context) {
-    return PressScale(
-      onTap: onTap,
-      scale: 0.97,
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: _color.withValues(alpha: 0.4)),
-          gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [_color.withValues(alpha: 0.18), _color.withValues(alpha: 0.04)]),
-        ),
-        child: Row(
+    return Column(
+      children: [
+        PrimaryButton(label: 'Empezar a leer', icon: Icons.qr_code_scanner_rounded, onPressed: onTap),
+        const SizedBox(height: 12),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 14,
+          runSpacing: 6,
           children: [
-            Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(color: _color, borderRadius: BorderRadius.circular(18), boxShadow: [BoxShadow(color: _color.withValues(alpha: 0.35), blurRadius: 18, offset: const Offset(0, 6))]),
-              child: Icon(method.icon, size: 32, color: _iconColor),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            for (final m in methods)
+              Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(method.label, style: Type.title.copyWith(fontSize: 19)),
-                  const SizedBox(height: 2),
-                  Text(method.hint, style: Type.muted.copyWith(fontSize: 14)),
+                  Icon(m.icon, size: 16, color: Brand.muted),
+                  const SizedBox(width: 5),
+                  Text(m == AccessMethod.qr ? 'QR' : m.label, style: Type.muted.copyWith(fontSize: 13)),
                 ],
               ),
-            ),
-            Icon(Icons.arrow_forward_rounded, color: _color),
           ],
         ),
-      ),
+        const SizedBox(height: 4),
+        Text('Detecta solo el tipo de entrada.', style: Type.muted.copyWith(fontSize: 12.5, color: Brand.faint)),
+      ],
     );
   }
 }

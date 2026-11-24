@@ -15,20 +15,24 @@ String roleLabel(String? role) => switch (role) {
     };
 
 /// Hoja de la cuenta: sonido, vibración, ingreso rápido, pantalla encendida y cerrar sesión.
-Future<void> showAccountSheet(BuildContext context, {required DoorService service, int pending = 0}) {
+///
+/// [onShowAttendance]: si hay una función lista, agrega «Ver ingresos y personas dentro» (el que llama pide la
+/// contraseña y abre la pantalla).
+Future<void> showAccountSheet(BuildContext context, {required DoorService service, int pending = 0, VoidCallback? onShowAttendance}) {
   return showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
-    builder: (context) => _AccountSheet(service: service, pending: pending),
+    builder: (context) => _AccountSheet(service: service, pending: pending, onShowAttendance: onShowAttendance),
   );
 }
 
 class _AccountSheet extends StatelessWidget {
-  const _AccountSheet({required this.service, required this.pending});
+  const _AccountSheet({required this.service, required this.pending, this.onShowAttendance});
 
   final DoorService service;
   final int pending;
+  final VoidCallback? onShowAttendance;
 
   Future<void> _logout(BuildContext context) async {
     final ok = await showDialog<bool>(
@@ -130,6 +134,42 @@ class _AccountSheet extends StatelessWidget {
                 value: settings.keepAwake,
                 onChanged: settings.setKeepAwake,
               ),
+              if (onShowAttendance != null) ...[
+                const SizedBox(height: 14),
+                const SectionLabel('Datos reservados'),
+                const SizedBox(height: 8),
+                PressScale(
+                  onTap: () {
+                    Navigator.pop(context);
+                    onShowAttendance!();
+                  },
+                  child: SoftCard(
+                    padding: const EdgeInsets.all(14),
+                    radius: 18,
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(color: Brand.surface3, borderRadius: BorderRadius.circular(14)),
+                          child: const Icon(Icons.lock_outline_rounded, color: Brand.muted, size: 22),
+                        ),
+                        const SizedBox(width: 14),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Ver ingresos y personas dentro', style: Type.body),
+                              Text('Pide tu contraseña.', style: Type.muted),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right_rounded, color: Brand.faint),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 14),
               SoftCard(
                 padding: const EdgeInsets.all(14),

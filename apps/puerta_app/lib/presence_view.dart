@@ -3,6 +3,7 @@
 library;
 
 import 'models.dart';
+import 'validator.dart' show lastReadNote;
 
 /// Estado de presencia de la entrada.
 enum PresenceState {
@@ -25,6 +26,7 @@ class PresenceView {
     this.thisZone,
     this.entriesLine,
     this.ifScannedHere,
+    this.lastLine,
   });
 
   final PresenceState state;
@@ -46,11 +48,14 @@ class PresenceView {
 
   /// Qué haría la lectura en esta puerta ("INGRESO", "SALIDA", "Esta entrada no abre esta zona"…).
   final String? ifScannedHere;
+
+  /// Última lectura aceptada: cuánto hace, por qué puerta y qué operador («Hace 5 min · Puerta 2 · por Ana»).
+  final String? lastLine;
 }
 
 /// Describe el estado de [ticket] frente a la puerta de [meta]. [outcome] es lo que decidiría el validador para esa
 /// lectura (sin haberla registrado).
-PresenceView describePresence(TicketRow ticket, SessionMeta meta, ScanOutcome outcome) {
+PresenceView describePresence(TicketRow ticket, SessionMeta meta, ScanOutcome outcome, {DateTime? now}) {
   final inside = ticket.isInside;
   final state = inside
       ? PresenceState.inside
@@ -83,6 +88,8 @@ PresenceView describePresence(TicketRow ticket, SessionMeta meta, ScanOutcome ou
     opens: meta.zonesIncluded(ticket.zoneIds),
     thisZone: gateZone == null ? null : (inside && ticket.zoneId == gateZone),
     entriesLine: entriesLine,
-    ifScannedHere: outcome.detail == null ? what : '$what · ${outcome.detail}',
+    // El detalle puede traer la línea de «quién y cuándo» (segunda línea): en la consulta va aparte, no repetida.
+    ifScannedHere: outcome.detail == null ? what : '$what · ${outcome.detail!.split('\n').first}',
+    lastLine: ticket.hasEntered ? lastReadNote(ticket, now ?? DateTime.now()) : null,
   );
 }

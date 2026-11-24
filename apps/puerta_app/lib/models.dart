@@ -159,6 +159,11 @@ class TicketRow {
     this.zoneId,
     this.externalKey,
     this.externalCode,
+    this.nfcUid,
+    this.lastAt,
+    this.lastBy,
+    this.lastGate,
+    this.lastMove,
   });
 
   final String code;
@@ -205,6 +210,17 @@ class TicketRow {
   /// …y el código tal como vino del proveedor, para mostrarlo en la pantalla del resultado (solo en las de esta puerta).
   final String? externalCode;
 
+  /// Número de serie de la tarjeta o manilla NFC vinculada en el canje (normalizado): con él la puerta encuentra la entrada
+  /// al leer la tarjeta, sin internet.
+  final String? nfcUid;
+
+  /// Última lectura aceptada de la entrada, de cualquier teléfono (la manda el servidor; en este teléfono se actualiza al
+  /// leerla): cuándo, qué operador, por qué puerta y qué movimiento fue (ENTRY, EXIT…). Para «Ya utilizada» y la consulta.
+  final DateTime? lastAt;
+  final String? lastBy;
+  final String? lastGate;
+  final String? lastMove;
+
   bool get isInside => inside ?? status == TicketStatus.used;
   int get entryCount => entries ?? (status == TicketStatus.used ? 1 : 0);
 
@@ -234,9 +250,14 @@ class TicketRow {
         zoneId: json['zoneId'] as String?,
         externalKey: json['externalKey'] as String?,
         externalCode: json['externalCode'] as String?,
+        nfcUid: json['nfcUid'] as String?,
+        lastAt: DateTime.tryParse('${(json['lastRead'] as Map?)?['at'] ?? ''}'),
+        lastBy: (json['lastRead'] as Map?)?['by'] as String?,
+        lastGate: (json['lastRead'] as Map?)?['gate'] as String?,
+        lastMove: (json['lastRead'] as Map?)?['movement'] as String?,
       );
 
-  TicketRow copyWith({TicketStatus? status, DateTime? usedAt, bool? inside, int? entries, String? zoneId}) => TicketRow(
+  TicketRow copyWith({TicketStatus? status, DateTime? usedAt, bool? inside, int? entries, String? zoneId, String? nfcUid}) => TicketRow(
         code: code,
         status: status ?? this.status,
         sectionId: sectionId,
@@ -256,6 +277,11 @@ class TicketRow {
         zoneId: zoneId ?? this.zoneId,
         externalKey: externalKey,
         externalCode: externalCode,
+        nfcUid: nfcUid ?? this.nfcUid,
+        lastAt: lastAt,
+        lastBy: lastBy,
+        lastGate: lastGate,
+        lastMove: lastMove,
       );
 }
 

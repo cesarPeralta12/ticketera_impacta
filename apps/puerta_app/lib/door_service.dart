@@ -112,6 +112,21 @@ class DoorService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Comprueba la contraseña de la cuenta que tiene la sesión abierta (para ver datos reservados, como los ingresos).
+  /// Vuelve a iniciar sesión con el mismo email; el servidor reemplaza el token de este teléfono por uno nuevo y la
+  /// app lo adopta, así que no cambia nada de lo descargado. Devuelve false si la contraseña no es correcta.
+  Future<bool> confirmPassword(String password) async {
+    final email = await sessionStore.email;
+    if (email == null || email.isEmpty) return false;
+    try {
+      await login(server: serverUrl, email: email, password: password);
+      return true;
+    } on ApiException catch (e) {
+      if (e.unauthorized) return false;
+      rethrow;
+    }
+  }
+
   Future<void> changePassword({required String current, required String next}) async {
     await _guard((api) => api.changePassword(current: current, next: next));
     mustChangePassword = false;
@@ -287,6 +302,9 @@ class DoorService extends ChangeNotifier {
 
   Future<SessionMeta?> meta(String sessionId) => db.meta(sessionId);
 
+  /// Entrada a la que se vinculó una tarjeta NFC (por su número de serie normalizado), o null si no está registrada.
+  Future<TicketRow?> ticketByNfcUid(String sessionId, String uid) => db.findByNfcUid(sessionId, uid);
+
   // ── Pulseras NFC ──
 
   Future<List<TicketRow>> searchBraceletCandidates(String sessionId, String query) => db.searchNfcCandidates(sessionId, query);
@@ -430,7 +448,7 @@ class DoorService extends ChangeNotifier {
       }
     }
     final ticket = outcome.ticket;
-    return (outcome, ticket == null ? null : describePresence(ticket, current, outcome));
+    return (outcome, ticket == null ? null : describePresence(ticket, current, outcome, now: serverNow));
   }
 
   /// El portero dijo que NO es una salida: es una entrada que ya se usó. Queda registrada como rechazo.
@@ -461,7 +479,7 @@ class DoorService extends ChangeNotifier {
       final movement = outcome.movement ?? Movement.entry;
       // La zona en la que queda la persona: la de la puerta por la que pasó (una salida la deja afuera).
       final zoneId = movement == Movement.exit ? null : meta.gate?.zoneId;
-      await db.applyMovement(meta.sessionId, code, movement, now, zoneId: zoneId);
+      await db.applyMovement(meta.sessionId, code, movement, now, zoneId: zoneId, by: staffName, gate: meta.gate?.name);
       await _record(meta, raw, method, ScanVerdict.accepted, at: now, code: code, movement: movement, zoneId: zoneId);
     } else {
       await _record(meta, raw, method, outcome.verdict, code: outcome.ticket?.code);

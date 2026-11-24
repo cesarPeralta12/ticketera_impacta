@@ -42,6 +42,7 @@ class _ConsultSheet extends StatelessWidget {
       if (v.opens != null) (Icons.layers_outlined, 'Abre', v.opens!),
       if (v.thisZone != null) (Icons.stars_rounded, 'En ${zoneName ?? 'esta zona'}', v.thisZone! ? 'Sí, está adentro' : 'No está ahí ahora'),
       if (v.entriesLine != null) (Icons.repeat_rounded, 'Ingresos', v.entriesLine!),
+      if (v.lastLine != null) (Icons.history_rounded, 'Última lectura', v.lastLine!),
       if (v.ifScannedHere != null) (Icons.qr_code_scanner_rounded, 'Aquí ${gateName == null ? '' : '($gateName) '}pasaría', v.ifScannedHere!),
     ];
     return _frame(

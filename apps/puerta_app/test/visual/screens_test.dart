@@ -213,11 +213,11 @@ void main() {
 
   final preview = Container(decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF3A3F4B), Color(0xFF14171D)])));
 
-  Future<void> scan(WidgetTester tester, AccessMethod method, String name) async {
+  Future<void> scan(WidgetTester tester, List<AccessMethod> methods, String name) async {
     final service = _FakeService();
     await _pump(
       tester,
-      ScanScreen(service: service, meta: service.fakeMeta, method: method, assignment: (await (() async {
+      ScanScreen(service: service, meta: service.fakeMeta, methods: methods, assignment: (await (() async {
         await service.loadAssignments();
         return service.assignments.first;
       })()), previewOverride: preview),
@@ -225,8 +225,17 @@ void main() {
     await _shotOf(tester, name);
   }
 
-  testWidgets('lectura con cámara', (tester) => scan(tester, AccessMethod.qr, '08-lectura-qr'));
-  testWidgets('lectura con NFC', (tester) => scan(tester, AccessMethod.nfc, '09-lectura-nfc'));
+  testWidgets('lectura con cámara', (tester) => scan(tester, [AccessMethod.qr, AccessMethod.barcode, AccessMethod.nfc], '08-lectura-todo'));
+  testWidgets('lectura con NFC', (tester) => scan(tester, [AccessMethod.nfc], '09-lectura-nfc'));
+
+  testWidgets('el marco sigue al código', (tester) async {
+    await _pump(
+      tester,
+      Stack(fit: StackFit.expand, children: [preview, const Align(alignment: Alignment(-0.3, 0.1), child: SizedBox(width: 150, height: 150, child: ColoredBox(color: Colors.white))), const ScanFrame(target: Rect.fromLTWH(60, 330, 190, 190))]),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await _shotOf(tester, '08b-marco-sigue-al-codigo');
+  });
 
   Future<void> overlay(WidgetTester tester, String name, ScanOutcome outcome, {String? zone}) async {
     await _pump(tester, Scaffold(body: ResultOverlay(outcome: outcome, onDismiss: () {}, duration: const Duration(seconds: 3), zoneLabel: zone)));
@@ -237,7 +246,7 @@ void main() {
   testWidgets('resultado: reingreso', (tester) => overlay(tester, '11-ok-reingreso', ScanOutcome(verdict: ScanVerdict.accepted, movement: Movement.reentry, ticket: _ana.copyWith(entries: 1))));
   testWidgets('resultado: salida', (tester) => overlay(tester, '12-ok-salida', const ScanOutcome(verdict: ScanVerdict.accepted, movement: Movement.exit, ticket: _ana)));
   testWidgets('resultado: zona', (tester) => overlay(tester, '13-ok-zona', const ScanOutcome(verdict: ScanVerdict.accepted, movement: Movement.zoneChange, ticket: _ana), zone: 'Acceso VIP'));
-  testWidgets('resultado: ya utilizada', (tester) => overlay(tester, '14-aviso-ya-usada', const ScanOutcome(verdict: ScanVerdict.alreadyUsed, ticket: _ana, detail: 'Ingresó a las 22:14 y no salió.')));
+  testWidgets('resultado: ya utilizada', (tester) => overlay(tester, '14-aviso-ya-usada', const ScanOutcome(verdict: ScanVerdict.alreadyUsed, ticket: _ana, detail: 'Ingresó a las 22:14 y no salió.\nHace 5 min · Puerta 2 · por Ana')));
   testWidgets('resultado: no existe', (tester) => overlay(tester, '15-rechazo', const ScanOutcome(verdict: ScanVerdict.notFound, detail: 'No está en la lista descargada. Actualiza los datos si se vendió hace poco.')));
   testWidgets('resultado: impresa sin vender', (tester) => overlay(tester, '16-rechazo-impresa', const ScanOutcome(verdict: ScanVerdict.cancelled, ticket: _ana, detail: 'Si es una entrada impresa, puede que todavía no esté marcada como vendida.')));
 

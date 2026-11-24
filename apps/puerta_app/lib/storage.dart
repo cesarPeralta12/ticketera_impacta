@@ -103,7 +103,7 @@ class DoorDb implements TicketLookup, VoucherLookup {
   static Future<DoorDb> open(Uint8List key) async {
     final db = await openDatabase(
       p.join(await getDatabasesPath(), 'puerta.db'),
-      version: 6,
+      version: 8,
       onUpgrade: (db, oldVersion, _) async {
         if (oldVersion < 2) await db.execute('ALTER TABLE tickets ADD COLUMN document TEXT');
         if (oldVersion < 3) {
@@ -141,6 +141,18 @@ class DoorDb implements TicketLookup, VoucherLookup {
           await db.execute('ALTER TABLE tickets ADD COLUMN external_code TEXT');
           await db.execute('CREATE INDEX tickets_external ON tickets (session_id, external_key)');
         }
+        if (oldVersion < 7) {
+          // Tarjetas NFC vinculadas en el canje: el número de serie para encontrar la entrada al leer la tarjeta.
+          await db.execute('ALTER TABLE tickets ADD COLUMN nfc_uid TEXT');
+          await db.execute('CREATE INDEX tickets_nfc ON tickets (session_id, nfc_uid)');
+        }
+        if (oldVersion < 8) {
+          // Última lectura aceptada de cada entrada (cuándo, quién, por qué puerta) para «Ya utilizada» y la consulta.
+          await db.execute('ALTER TABLE tickets ADD COLUMN last_at INTEGER');
+          await db.execute('ALTER TABLE tickets ADD COLUMN last_by TEXT');
+          await db.execute('ALTER TABLE tickets ADD COLUMN last_gate TEXT');
+          await db.execute('ALTER TABLE tickets ADD COLUMN last_move TEXT');
+        }
       },
       onCreate: (db, _) async {
         await db.execute('''
@@ -149,10 +161,12 @@ class DoorDb implements TicketLookup, VoucherLookup {
             mine INTEGER NOT NULL, holder TEXT, document TEXT, type TEXT, seat TEXT, methods TEXT NOT NULL DEFAULT '',
             used_at INTEGER, qr_dynamic INTEGER NOT NULL DEFAULT 0, qr_key TEXT,
             inside INTEGER, entries INTEGER, max_entries INTEGER NOT NULL DEFAULT 1, zone_ids TEXT NOT NULL DEFAULT '', zone_id TEXT,
-            external_key TEXT, external_code TEXT,
+            external_key TEXT, external_code TEXT, nfc_uid TEXT,
+            last_at INTEGER, last_by TEXT, last_gate TEXT, last_move TEXT,
             PRIMARY KEY (session_id, code)
           )''');
         await db.execute('CREATE INDEX tickets_external ON tickets (session_id, external_key)');
+        await db.execute('CREATE INDEX tickets_nfc ON tickets (session_id, nfc_uid)');
         await db.execute('''
           CREATE TABLE scans (
             id TEXT PRIMARY KEY, session_id TEXT NOT NULL, gate_id TEXT, code TEXT, raw TEXT NOT NULL,
@@ -206,6 +220,11 @@ class DoorDb implements TicketLookup, VoucherLookup {
         'zone_id': t.zoneId,
         'external_key': t.externalKey,
         'external_code': t.externalCode,
+        'nfc_uid': t.nfcUid,
+        'last_at': t.lastAt?.millisecondsSinceEpoch,
+        'last_by': t.lastBy,
+        'last_gate': t.lastGate,
+        'last_move': t.lastMove,
       };
 
   static TicketRow _fromRow(Map<String, Object?> r) => TicketRow(
@@ -227,6 +246,11 @@ class DoorDb implements TicketLookup, VoucherLookup {
         zoneId: r['zone_id'] as String?,
         externalKey: r['external_key'] as String?,
         externalCode: r['external_code'] as String?,
+        nfcUid: r['nfc_uid'] as String?,
+        lastAt: r['last_at'] == null ? null : DateTime.fromMillisecondsSinceEpoch(r['last_at'] as int),
+        lastBy: r['last_by'] as String?,
+        lastGate: r['last_gate'] as String?,
+        lastMove: r['last_move'] as String?,
       );
 
   // ── Datos sueltos (por ejemplo, la última lista de funciones, para abrir la app sin internet) ──
@@ -327,6 +351,18 @@ class DoorDb implements TicketLookup, VoucherLookup {
     return rows.isEmpty ? null : _fromRow(rows.first);
   }
 
+  /// Entrada a la que se vinculó una tarjeta NFC (por su número de serie normalizado), o null si no está registrada.
+  Future<TicketRow?> findByNfcUid(String sessionId, String uid) async {
+    final rows = await _db.query('tickets', where: 'session_id = ? AND nfc_uid = ?', whereArgs: [sessionId, uid], limit: 1);
+    return rows.isEmpty ? null : _fromRow(rows.first);
+  }
+
+  /// Anota en este teléfono la tarjeta que se acaba de vincular (el servidor ya la tiene; así no hay que descargar de nuevo).
+  Future<void> setNfcUid(String sessionId, String code, String uid) async {
+    await _db.update('tickets', {'nfc_uid': null}, where: 'session_id = ? AND nfc_uid = ? AND code <> ?', whereArgs: [sessionId, uid, code]);
+    await _db.update('tickets', {'nfc_uid': uid}, where: 'session_id = ? AND code = ?', whereArgs: [sessionId, code]);
+  }
+
   @override
   Future<Uint8List?> keyFor(String sessionId, String code) async {
     final rows = await _db.query('tickets', columns: ['qr_key'], where: 'session_id = ? AND code = ?', whereArgs: [sessionId, code]);
@@ -350,14 +386,15 @@ class DoorDb implements TicketLookup, VoucherLookup {
   }
 
   /// Aplica a una entrada lo que pasó con ella en este teléfono: entró, salió, reingresó o cambió de zona.
-  Future<void> applyMovement(String sessionId, String code, Movement movement, DateTime at, {String? zoneId}) =>
-      _applyMovement(_db, sessionId, code, movement, at, zoneId);
+  Future<void> applyMovement(String sessionId, String code, Movement movement, DateTime at, {String? zoneId, String? by, String? gate}) =>
+      _applyMovement(_db, sessionId, code, movement, at, zoneId, by: by, gate: gate);
 
-  Future<void> _applyMovement(DatabaseExecutor db, String sessionId, String code, Movement movement, DateTime at, String? zoneId) async {
+  Future<void> _applyMovement(DatabaseExecutor db, String sessionId, String code, Movement movement, DateTime at, String? zoneId, {String? by, String? gate}) async {
     final rows = await db.query('tickets', where: 'session_id = ? AND code = ?', whereArgs: [sessionId, code]);
     if (rows.isEmpty) return;
     final t = _fromRow(rows.first);
-    final values = <String, Object?>{};
+    // Quién y cuándo hizo esta lectura (se muestra en «Ya utilizada» y en la consulta).
+    final values = <String, Object?>{'last_at': at.millisecondsSinceEpoch, 'last_by': by, 'last_gate': gate, 'last_move': movement.api};
     switch (movement) {
       case Movement.entry:
       case Movement.reentry:

@@ -66,6 +66,34 @@ String _hhmm(DateTime t) {
   return '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
 }
 
+/// «hace unos segundos», «hace 5 min», «hace 2 h 10 min», «hace 3 días».
+String agoLabel(Duration d) {
+  if (d < const Duration(seconds: 45)) return 'hace unos segundos';
+  final minutes = d.inMinutes < 1 ? 1 : d.inMinutes;
+  if (minutes < 60) return 'hace $minutes min';
+  if (d.inHours < 24) {
+    final rest = minutes % 60;
+    return rest == 0 ? 'hace ${d.inHours} h' : 'hace ${d.inHours} h $rest min';
+  }
+  return d.inDays == 1 ? 'hace 1 día' : 'hace ${d.inDays} días';
+}
+
+/// Cuánto hace, por qué puerta y qué operador registró la última lectura de la entrada: «Hace 5 min · Puerta 2 · por
+/// Ana». Si fue una salida o un cambio de zona, lo dice al principio. Nulo si no se sabe nada de esa lectura.
+String? lastReadNote(TicketRow t, DateTime now) {
+  final at = t.lastAt ?? t.usedAt;
+  final move = Movement.fromApi(t.lastMove);
+  final parts = [
+    if (move != null && move != Movement.entry) move.label,
+    if (at != null) agoLabel(now.difference(at)),
+    if (t.lastGate != null && t.lastGate!.isNotEmpty) t.lastGate!,
+    if (t.lastBy != null && t.lastBy!.isNotEmpty) 'por ${t.lastBy}',
+  ];
+  if (parts.isEmpty) return null;
+  final line = parts.join(' · ');
+  return line[0].toUpperCase() + line.substring(1);
+}
+
 /// Decide qué pasa con una lectura, en este orden (como el servidor):
 /// ¿es un código válido? ¿existe? ¿es de otra puerta? ¿la prueba del QR dinámico es vigente? ¿se puede leer
 /// con este método? ¿está anulada? ¿ya entró?
@@ -79,6 +107,7 @@ Future<ScanOutcome> validateScan({
   required AccessMethod? method,
   DateTime? now,
 }) async {
+  final readNow = now ?? DateTime.now();
   final code = extractTicketCode(raw);
   // Una entrada de iPass se busca por su código. Si lo leído no es de iPass (o no está), puede ser el QR o el código de
   // una entrada de otro proveedor: se limpia con las reglas del evento y se busca por su clave.
@@ -177,10 +206,11 @@ Future<ScanOutcome> validateScan({
       return ScanOutcome(verdict: ScanVerdict.accepted, ticket: ticket, movement: Movement.zoneChange, gateName: gate?.name, includes: includes);
     }
     final at = ticket.usedAt;
+    final note = lastReadNote(ticket, readNow);
     return ScanOutcome(
       verdict: ScanVerdict.alreadyUsed,
       ticket: ticket,
-      detail: at == null ? 'Ya está adentro.' : 'Ingresó a las ${_hhmm(at)} y no salió.',
+      detail: '${at == null ? 'Ya está adentro.' : 'Ingresó a las ${_hhmm(at)} y no salió.'}${note == null ? '' : '\n$note'}',
     );
   }
   if (ticket.hasEntered) {
@@ -189,15 +219,21 @@ Future<ScanOutcome> validateScan({
       return ScanOutcome(verdict: ScanVerdict.accepted, ticket: ticket, movement: Movement.reentry, gateName: gate?.name, includes: includes);
     }
     final n = ticket.entryCount;
+    final note = lastReadNote(ticket, readNow);
     return ScanOutcome(
       verdict: ScanVerdict.alreadyUsed,
       ticket: ticket,
-      detail: ticket.maxEntries == 1 ? 'Ya ingresó y su entrada es de un solo ingreso.' : 'Ya usó sus $n ingreso(s).',
+      detail: '${ticket.maxEntries == 1 ? 'Ya ingresó y su entrada es de un solo ingreso.' : 'Ya usó sus $n ingreso(s).'}${note == null ? '' : '\n$note'}',
     );
   }
   if (ticket.status == TicketStatus.used) {
     final at = ticket.usedAt;
-    return ScanOutcome(verdict: ScanVerdict.alreadyUsed, ticket: ticket, detail: at == null ? 'Ya ingresó antes.' : 'Ingresó a las ${_hhmm(at)}');
+    final note = lastReadNote(ticket, readNow);
+    return ScanOutcome(
+      verdict: ScanVerdict.alreadyUsed,
+      ticket: ticket,
+      detail: '${at == null ? 'Ya ingresó antes.' : 'Ingresó a las ${_hhmm(at)}'}${note == null ? '' : '\n$note'}',
+    );
   }
   return ScanOutcome(verdict: ScanVerdict.accepted, ticket: ticket, movement: Movement.entry, gateName: gate?.name, includes: includes);
 }
