@@ -140,7 +140,7 @@ export async function toggleSalesAssignment(organizationId: string, assignmentId
 }
 
 /** Cambia el alcance de un cajero (todo o solo lo asignado) y los métodos de cobro que puede usar. */
-export async function updateSalesSettings(input: { organizationId: string; userId: string; salesScope?: SalesScope; posMethods?: string[] }) {
+export async function updateSalesSettings(input: { organizationId: string; userId: string; salesScope?: SalesScope; posMethods?: string[]; canRedeemNfc?: boolean }) {
   const membership = await prisma.membership.findFirst({ where: { userId: input.userId, organizationId: input.organizationId } });
   if (!membership || (membership.role !== "CASHIER" && membership.role !== "PROMOTER" && membership.role !== "BAR")) throw new DomainError("NOT_FOUND", "Cuenta de venta no encontrada.");
   const methods = input.posMethods?.filter((m) => (POS_METHODS as readonly string[]).includes(m));
@@ -148,6 +148,7 @@ export async function updateSalesSettings(input: { organizationId: string; userI
     where: { id: membership.id },
     data: {
       ...(input.salesScope && membership.role === "CASHIER" ? { salesScope: input.salesScope } : {}),
+      ...(input.canRedeemNfc !== undefined && membership.role === "CASHIER" ? { canRedeemNfc: input.canRedeemNfc } : {}),
       // Todos marcados se guarda como "todos" (vacío): un método nuevo no queda bloqueado sin querer.
       ...(methods ? { posMethods: methods.length === POS_METHODS.length ? [] : methods } : {}),
     },

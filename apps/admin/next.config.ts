@@ -52,6 +52,9 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
+      // El canje por tarjeta NFC lee el QR de la entrada con la cámara del teléfono: solo esa pantalla puede pedirla.
+      // La segunda regla pisa la primera en esa ruta (por eso se entra con una carga completa, no con navegación interna).
+      { source: "/boleteria/canje/:sessionId", headers: [{ key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(), payment=(), usb=()" }] },
       // El plano de fondo puede ser un SVG subido: aislado (sandbox, sin scripts) aunque se abra directo.
       // La segunda regla pisa la CSP de la primera en esa ruta.
       {

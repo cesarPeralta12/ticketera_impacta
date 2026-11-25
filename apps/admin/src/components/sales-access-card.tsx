@@ -23,7 +23,7 @@ export async function SalesAccessCard({
 }) {
   const now = new Date();
   const [membership, assignments, events] = await Promise.all([
-    prisma.membership.findFirstOrThrow({ where: { userId, organizationId }, select: { salesScope: true, posMethods: true } }),
+    prisma.membership.findFirstOrThrow({ where: { userId, organizationId }, select: { salesScope: true, posMethods: true, canRedeemNfc: true } }),
     listSalesAssignments(userId, organizationId),
     pickerEvents(organizationId, now),
   ]);
@@ -66,6 +66,12 @@ export async function SalesAccessCard({
               </label>
             ))}
           </div>
+        </fieldset>
+        <fieldset className="label">
+          <legend className="mb-1.5">Tarjetas y manillas NFC</legend>
+          <label className="flex items-center gap-1.5 text-sm text-[var(--ink)]">
+            <input type="checkbox" name="canRedeemNfc" defaultChecked={membership.canRedeemNfc} className="accent-[var(--accent)]" /> Puede canjear entradas por una tarjeta NFC
+          </label>
         </fieldset>
         <button type="submit" className="btn">
           Guardar

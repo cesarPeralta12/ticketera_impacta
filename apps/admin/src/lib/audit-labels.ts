@@ -13,6 +13,9 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   "ticket.key_issued": "Entrada de QR dinámico abierta en un celular",
   "ticket.nfc_linked": "Tarjeta NFC vinculada a una entrada",
   "ticket.nfc_replaced": "Tarjeta NFC de una entrada reemplazada",
+  "wristband.batch_create": "Lote de manillas creado",
+  "wristband.batch_confirm": "Lote de manillas confirmado",
+  "wristband.batch_discard": "Lote de manillas descartado",
   "scan.batch": "Lecturas en puerta",
   "staff.create": "Cuenta creada",
   "staff.activate": "Cuenta activada",
@@ -61,6 +64,12 @@ export function describeData(action: string, data: unknown): string {
       return `entrada ${typeof d.code === "string" ? d.code : ""} abierta desde ${d.devices ?? "varios"} aparatos distintos en 24 h`;
     case "ticket.key_issued":
       return typeof d.code === "string" ? `entrada ${d.code}` : "";
+    case "wristband.batch_create":
+      return typeof d.name === "string" ? d.name : "";
+    case "wristband.batch_confirm":
+      return `${typeof d.name === "string" ? `${d.name} · ` : ""}${d.quantity ?? 0} manilla(s), serie ${typeof d.prefix === "string" ? d.prefix : ""}`;
+    case "wristband.batch_discard":
+      return `${typeof d.name === "string" ? `${d.name} · ` : ""}${d.reads ?? 0} lectura(s) borradas`;
     case "ticket.nfc_linked":
     case "ticket.nfc_replaced":
       return `entrada ${typeof d.code === "string" ? d.code : ""}${typeof d.model === "string" ? ` · ${d.model}` : ""}`;

@@ -1,11 +1,8 @@
 import { Prisma } from "../generated/prisma/client";
 import { normalizeNfcUid, sanitizeNfcCard, type NfcCardInfo } from "@ticketera/core";
 import { prisma } from "../client";
-import { canControlSession, type DoorStaff } from "./mobile";
+import { canRedeemSession, type RedeemStaff } from "./nfc-redeem";
 import { recordAuditSafely, type AuditContext } from "./security";
-
-/** Quién puede vincular tarjetas: el dueño y los administradores (igual que grabar pulseras). */
-export const NFC_LINK_ROLES = ["OWNER", "ADMIN"] as const;
 
 export type LinkNfcCardResult =
   | { ok: true; code: string; uid: string; replaced: boolean; previousUid: string | null; card: NfcCardInfo }
@@ -25,7 +22,7 @@ export type LinkNfcCardResult =
 
 /**
  * Vincula una tarjeta o manilla NFC a una entrada: guarda su número de serie (con el que la puerta la encuentra) y la
- * huella que leyó la app. No escribe nada en la tarjeta.
+ * huella que leyó la app o el panel. No escribe nada en la tarjeta. Quién puede: ver canRedeemSession.
  *
  * - La entrada tiene que ser de esa función, estar vigente y su tipo tener NFC activado (si no, la puerta rechazaría la
  *   tarjeta al leerla).
@@ -34,13 +31,12 @@ export type LinkNfcCardResult =
  *   y deja de abrir la puerta.
  */
 export async function linkNfcCard(
-  staff: DoorStaff,
+  staff: RedeemStaff,
   input: { sessionId: string; code: string; uid: string; card?: unknown; replace?: boolean },
   context: AuditContext = {},
   now = new Date(),
 ): Promise<LinkNfcCardResult> {
-  if (!(NFC_LINK_ROLES as readonly string[]).includes(staff.role)) return { ok: false, reason: "FORBIDDEN" };
-  if (!(await canControlSession(staff, input.sessionId))) return { ok: false, reason: "FORBIDDEN" };
+  if (!(await canRedeemSession(staff, input.sessionId))) return { ok: false, reason: "FORBIDDEN" };
 
   const uid = normalizeNfcUid(input.uid);
   if (!uid) return { ok: false, reason: "INVALID_UID" };

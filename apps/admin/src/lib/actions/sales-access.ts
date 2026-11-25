@@ -22,7 +22,7 @@ async function assignable(organizationId: string, userId: string) {
   return prisma.membership.findFirst({ where: { organizationId, userId, role: { in: ["CASHIER", "BAR"] } } });
 }
 
-/** Qué vende un cajero (todo, o solo lo asignado) y con qué medios puede cobrar. */
+/** Qué vende un cajero (todo, o solo lo asignado), con qué medios cobra y si puede canjear entradas por tarjetas NFC. */
 export async function updateSalesSettingsAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireEditor(ROLES.users);
   const userId = String(formData.get("userId") ?? "");
@@ -31,8 +31,9 @@ export async function updateSalesSettingsAction(_prev: FormState, formData: Form
   const salesScope = formData.get("salesScope") === "ASSIGNED" ? "ASSIGNED" : "ALL";
   const posMethods = formData.getAll("posMethods").map(String).filter((m) => (POS_METHODS as readonly string[]).includes(m));
   if (posMethods.length === 0) return { fieldErrors: { posMethods: "Deja al menos un medio de cobro." } };
-  await updateSalesSettings({ organizationId, userId, salesScope, posMethods });
-  await audit(staff.id, "sales.settings", userId, { salesScope, posMethods });
+  const canRedeemNfc = formData.get("canRedeemNfc") === "on";
+  await updateSalesSettings({ organizationId, userId, salesScope, posMethods, canRedeemNfc });
+  await audit(staff.id, "sales.settings", userId, { salesScope, posMethods, canRedeemNfc });
   revalidatePath(`/usuarios/${userId}`);
   return { ok: true, message: "Guardado." };
 }

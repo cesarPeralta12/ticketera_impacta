@@ -10,7 +10,7 @@ import {
   utcToZonedInput,
   zonedDateTimeToUtc,
 } from "@ticketera/core";
-import { BOX_OFFICE_HOURS_AFTER_START, prisma, salesAccess, salesCutoff, sellableSessionsWhere, type SalesAccess } from "@ticketera/db";
+import { BOX_OFFICE_HOURS_AFTER_START, prisma, redeemSessions, salesAccess, salesCutoff, sellableSessionsWhere, type SalesAccess } from "@ticketera/db";
 import { ROLES, isNightlife, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Boletería" };
@@ -64,7 +64,11 @@ export default async function BoxOfficePage() {
   await connection();
   const staff = await requireStaff(ROLES.pos);
   const access = await salesAccess(prisma, staff.id, staff.organization.id);
-  const [sessions, day] = await Promise.all([sessionsOnSale(staff.organization.id, access), myDay(staff.id)]);
+  const [sessions, day, redeemable] = await Promise.all([
+    sessionsOnSale(staff.organization.id, access),
+    myDay(staff.id),
+    staff.readOnly ? [] : redeemSessions({ id: staff.id, role: staff.role, organizationId: staff.organization.id }),
+  ]);
   const currency = staff.organization.currency;
 
   return (
@@ -101,6 +105,37 @@ export default async function BoxOfficePage() {
           </ul>
         )}
       </section>
+
+      {redeemable.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="eyebrow">Canjea tu entrada por un NFC</h2>
+          <p className="text-sm text-[var(--ink-muted)]">
+            Una a una: lee la entrada del cliente y vincúlale su tarjeta. Carga masiva: lee muchas manillas nuevas seguidas.
+          </p>
+          <ul className="grid gap-3 md:grid-cols-2">
+            {redeemable.map((s) => (
+              <li key={s.id} className="card space-y-3 p-5">
+                <div>
+                  <p className="font-medium">{s.event.title}</p>
+                  <p className="text-sm text-[var(--ink-muted)]">
+                    {formatDateTime(s.startsAt, s.venue.timezone)} · {s.venue.name}
+                  </p>
+                  {s.event.status !== "PUBLISHED" && <span className="badge mt-2 bg-[var(--surface-2)] text-[var(--ink-muted)]">Sin publicar</span>}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {/* Carga completa (no Link): la pantalla de canje es la única con permiso de cámara. */}
+                  <a href={`/boleteria/canje/${s.id}`} className="btn btn-primary">
+                    Canjear una a una
+                  </a>
+                  <Link href={`/boleteria/lotes/${s.id}`} className="btn">
+                    Carga masiva
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="card p-5">
         <h2 className="eyebrow mb-3">Mi caja de hoy</h2>

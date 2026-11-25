@@ -90,7 +90,7 @@ export async function externalCodeRules(eventId: string) {
  * limpia con las reglas de los lotes del evento y se busca primero en esta función y después en las otras del evento
  * (para decir "función equivocada" en vez de "no existe"). Solo se usa cuando la lectura no es una entrada de iPass.
  */
-async function findExternalTicket(sessionId: string, raw: string) {
+export async function findExternalTicket(sessionId: string, raw: string) {
   const session = await prisma.eventSession.findUnique({ where: { id: sessionId }, select: { eventId: true } });
   if (!session) return null;
   const rules = await externalCodeRules(session.eventId);

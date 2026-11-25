@@ -117,6 +117,7 @@ model StaffUser {
   commissionPayouts CommissionPayout[]      @relation("PayoutPromoter")
   payoutsMade       CommissionPayout[]      @relation("PayoutStaff")
   voidedOrders      Order[]                 @relation("VoidedOrders")
+  wristbandBatches  WristbandBatch[]
 }
 
 /// Funciones (y opcionalmente una puerta) que un portero puede descargar y controlar
@@ -274,6 +275,8 @@ model Membership {
   salesScope     SalesScope @default(ALL)
   /// Métodos de cobro de boletería que puede usar ("EFECTIVO", "QR", "TARJETA"). Vacío: todos.
   posMethods     String[]   @default([])
+  /// Cajero habilitado para canjear entradas por una tarjeta o manilla NFC (panel de boletería).
+  canRedeemNfc   Boolean    @default(false)
   createdAt      DateTime   @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -559,6 +562,7 @@ model EventSession {
   queue            QueueEntry[]
   seatHolds        SeatHold[]
   printBatches     PrintBatch[]
+  wristbandBatches WristbandBatch[]
 
   @@index([eventId, startsAt])
 }
@@ -615,14 +619,15 @@ model TicketType {
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt
 
-  session      EventSession        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  section      Section?            @relation(fields: [sectionId], references: [id])
+  session          EventSession        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  section          Section?            @relation(fields: [sectionId], references: [id])
   /// Zonas que abre. Vacío: las de siempre (según las secciones de cada puerta).
-  zones        AccessZone[]        @relation("TicketTypeZones")
-  orderItems   OrderItem[]
-  tickets      Ticket[]
-  credits      ConsumptionCredit[]
-  printBatches PrintBatch[]
+  zones            AccessZone[]        @relation("TicketTypeZones")
+  orderItems       OrderItem[]
+  tickets          Ticket[]
+  credits          ConsumptionCredit[]
+  printBatches     PrintBatch[]
+  wristbandBatches WristbandBatch[]
 
   @@index([sessionId])
 }
@@ -853,18 +858,18 @@ model Ticket {
   // (sessionId, seatId) WHERE status <> 'CANCELLED' mediante SQL en la migración:
   // es la última barrera contra la doble venta.
   /// Entrada que ya existía fuera de iPass (importada de un tercero): su código tal como vino en el archivo…
-  externalCode   String?
+  externalCode  String?
   /// …y la clave con la que se compara una lectura (packages/core/src/external-codes.ts). Única por función; al
   /// deshacer la importación se libera, para poder volver a cargar el archivo corregido.
-  externalKey    String?
+  externalKey   String?
   /// Tarjeta o manilla NFC vinculada en el canje: su número de serie (UID) normalizado (packages/core/src/nfc-uid.ts).
   /// Es la clave con la que la puerta encuentra la entrada al leer la tarjeta. Único por función.
-  nfcUid         String?
+  nfcUid        String?
   /// Huella completa de la tarjeta tal como la leyó la app de canje (tipo de etiqueta, modelo, tecnologías, UID).
-  nfcCard        Json?
-  nfcLinkedAt    DateTime?
+  nfcCard       Json?
+  nfcLinkedAt   DateTime?
   /// Quién la vinculó (usuario del panel).
-  nfcLinkedById  String?
+  nfcLinkedById String?
 
   @@unique([sessionId, serial])
   @@unique([sessionId, externalKey])
@@ -1245,17 +1250,69 @@ model PrintBatch {
   createdById  String
   createdAt    DateTime  @default(now())
 
-  session     EventSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  ticketType  TicketType        @relation(fields: [ticketTypeId], references: [id])
-  createdBy   StaffUser         @relation(fields: [createdById], references: [id])
-  art         TicketArt?        @relation(fields: [artId], references: [id], onDelete: SetNull)
-  tickets     Ticket[]
-  settlements PrintSettlement[]
+  session        EventSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  ticketType     TicketType        @relation(fields: [ticketTypeId], references: [id])
+  createdBy      StaffUser         @relation(fields: [createdById], references: [id])
+  art            TicketArt?        @relation(fields: [artId], references: [id], onDelete: SetNull)
+  tickets        Ticket[]
+  settlements    PrintSettlement[]
+  wristbandBatch WristbandBatch?
 
   @@index([sessionId])
 }
 
 /// Rendición de un vendedor: cuántas vendió y devolvió, cuánto debía entregar y cuánto entregó.
+/// Carga masiva de manillas NFC: se leen todas seguidas en un lote y recién al confirmar existen sus entradas.
+model WristbandBatch {
+  id           String               @id @default(cuid())
+  sessionId    String
+  ticketTypeId String
+  name         String
+  /// Si la manilla abre la puerta apenas se confirma o recién al marcarla vendida (como las entradas impresas).
+  mode         PrintMode            @default(VALID_ON_PRINT)
+  /// Prefijo de la numeración; vacío: el siguiente libre de la función.
+  prefix       String?
+  /// Cuántas se piensa cargar (solo para mostrar el avance).
+  expected     Int?
+  status       WristbandBatchStatus @default(OPEN)
+  createdById  String
+  createdAt    DateTime             @default(now())
+  confirmedAt  DateTime?
+  /// El lote de entradas impresas que se creó al confirmar.
+  printBatchId String?              @unique
+
+  session    EventSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  ticketType TicketType      @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+  createdBy  StaffUser       @relation(fields: [createdById], references: [id])
+  printBatch PrintBatch?     @relation(fields: [printBatchId], references: [id], onDelete: SetNull)
+  items      WristbandItem[]
+
+  @@index([sessionId])
+}
+
+enum WristbandBatchStatus {
+  OPEN
+  CONFIRMED
+  DISCARDED
+}
+
+/// Una manilla leída en un lote (su número de serie). El orden de lectura define su número.
+model WristbandItem {
+  id       String   @id @default(cuid())
+  batchId  String
+  uid      String
+  card     Json?
+  position Int
+  readById String
+  readAt   DateTime @default(now())
+
+  batch WristbandBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, uid])
+  @@unique([batchId, position])
+  @@index([uid])
+}
+
 model PrintSettlement {
   id             String   @id @default(cuid())
   batchId        String

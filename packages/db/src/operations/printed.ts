@@ -22,7 +22,7 @@ import {
 } from "@ticketera/core";
 import { prisma } from "../client";
 import type { PrintMode } from "../generated/prisma/client";
-import { DomainError, TX_OPTIONS, audit, loadInventory, lockInventory } from "./shared";
+import { DomainError, TX_OPTIONS, audit, loadInventory, lockInventory, type Tx } from "./shared";
 
 /** Correo de relleno de las órdenes de entradas impresas (no tienen comprador con cuenta). */
 export const PRINTED_BUYER_EMAIL = "impresas@impacta.invalid";
@@ -31,7 +31,11 @@ export const PRINTED_BUYER_EMAIL = "impresas@impacta.invalid";
  * Crea un lote de N entradas impresas numeradas (A-0001…). Respeta el cupo del tipo y el aforo de su sección.
  * Solo entradas generales: una impresa no elige butaca ni es una mesa.
  */
-export async function createPrintBatch(input: {
+export async function createPrintBatch(input: PrintBatchInput) {
+  return prisma.$transaction((tx) => createPrintBatchTx(tx, input), { timeout: 120_000, maxWait: 10_000 });
+}
+
+export type PrintBatchInput = {
   sessionId: string;
   ticketTypeId: string;
   quantity: number;
@@ -41,9 +45,14 @@ export async function createPrintBatch(input: {
   unitAmount?: number;
   note?: string;
   artId?: string | null;
+  /** Cómo se llama cada entrada en la puerta y en las listas: «Entrada impresa A-0001» o «Manilla A-0001». */
+  label?: string;
   staffId: string;
   now?: Date;
-}) {
+};
+
+/** Lo mismo que createPrintBatch dentro de una transacción que ya existe (la carga masiva de manillas). */
+export async function createPrintBatchTx(tx: Tx, input: PrintBatchInput) {
   const now = input.now ?? new Date();
   if (!Number.isInteger(input.quantity) || input.quantity < 1 || input.quantity > MAX_PRINT_BATCH) {
     throw new DomainError("INVALID_ITEMS", `La cantidad va de 1 a ${MAX_PRINT_BATCH}.`);
@@ -51,97 +60,93 @@ export async function createPrintBatch(input: {
   const wantedPrefix = input.prefix?.trim() ? normalizePrefix(input.prefix) : null;
   if (input.prefix?.trim() && !wantedPrefix) throw new DomainError("INVALID_ITEMS", "El prefijo lleva de 1 a 4 letras o números (ej. A o VIP).");
 
-  return prisma.$transaction(
-    async (tx) => {
-      await lockInventory(tx, [input.ticketTypeId]);
-      const type = await tx.ticketType.findUnique({
-        where: { id: input.ticketTypeId },
-        include: { section: true, session: { include: { event: true } } },
-      });
-      if (!type || type.sessionId !== input.sessionId) throw new DomainError("INVALID_ITEMS", "Tipo de entrada no encontrado.");
-      if (type.session.cancelledAt || type.session.event.status === "CANCELLED") throw new DomainError("NOT_ON_SALE", "La función está cancelada.");
-      if (type.section?.seatingMode === "RESERVED") {
-        throw new DomainError("INVALID_ITEMS", "Las entradas impresas son para entradas generales, no para butacas numeradas.");
-      }
-      if (type.kind === "TABLE") throw new DomainError("INVALID_ITEMS", "Las mesas no se imprimen en lote: véndelas en boletería.");
-      if (type.qrMode === "DYNAMIC") throw new DomainError("INVALID_ITEMS", "Una entrada de QR dinámico no se puede imprimir (el QR cambia cada 30 s).");
+  await lockInventory(tx, [input.ticketTypeId]);
+  const type = await tx.ticketType.findUnique({
+    where: { id: input.ticketTypeId },
+    include: { section: true, session: { include: { event: true } } },
+  });
+  if (!type || type.sessionId !== input.sessionId) throw new DomainError("INVALID_ITEMS", "Tipo de entrada no encontrado.");
+  if (type.session.cancelledAt || type.session.event.status === "CANCELLED") throw new DomainError("NOT_ON_SALE", "La función está cancelada.");
+  if (type.section?.seatingMode === "RESERVED") {
+    throw new DomainError("INVALID_ITEMS", "Las entradas impresas son para entradas generales, no para butacas numeradas.");
+  }
+  if (type.kind === "TABLE") throw new DomainError("INVALID_ITEMS", "Las mesas no se imprimen en lote: véndelas en boletería.");
+  if (type.qrMode === "DYNAMIC") throw new DomainError("INVALID_ITEMS", "Una entrada de QR dinámico no se puede imprimir (el QR cambia cada 30 s).");
 
-      const shortage = findShortage(await loadInventory(tx, type.sessionId, now), [{ ticketTypeId: type.id, quantity: input.quantity }]);
-      if (shortage) throw new DomainError("SOLD_OUT", `Solo quedan ${shortage.available} lugares en "${type.name}".`);
+  const shortage = findShortage(await loadInventory(tx, type.sessionId, now), [{ ticketTypeId: type.id, quantity: input.quantity }]);
+  if (shortage) throw new DomainError("SOLD_OUT", `Solo quedan ${shortage.available} lugares en "${type.name}".`);
 
-      const previous = await tx.printBatch.findMany({ where: { sessionId: type.sessionId }, select: { prefix: true, firstNumber: true, quantity: true } });
-      const prefix = wantedPrefix ?? nextPrefix(previous.map((b) => b.prefix));
-      // El mismo prefijo sigue la numeración (A-0101 después de A-0001…A-0100): la serie nunca se repite.
-      const firstNumber = Math.max(0, ...previous.filter((b) => b.prefix === prefix).map((b) => b.firstNumber + b.quantity - 1)) + 1;
+  const previous = await tx.printBatch.findMany({ where: { sessionId: type.sessionId }, select: { prefix: true, firstNumber: true, quantity: true } });
+  const prefix = wantedPrefix ?? nextPrefix(previous.map((b) => b.prefix));
+  // El mismo prefijo sigue la numeración (A-0101 después de A-0001…A-0100): la serie nunca se repite.
+  const firstNumber = Math.max(0, ...previous.filter((b) => b.prefix === prefix).map((b) => b.firstNumber + b.quantity - 1)) + 1;
 
-      if (input.artId) {
-        const art = await tx.ticketArt.findFirst({ where: { id: input.artId, organizationId: type.session.event.organizationId } });
-        if (!art) throw new DomainError("INVALID_ITEMS", "Diseño de entrada no encontrado.");
-      }
+  if (input.artId) {
+    const art = await tx.ticketArt.findFirst({ where: { id: input.artId, organizationId: type.session.event.organizationId } });
+    if (!art) throw new DomainError("INVALID_ITEMS", "Diseño de entrada no encontrado.");
+  }
 
-      const batch = await tx.printBatch.create({
-        data: {
-          sessionId: type.sessionId,
-          ticketTypeId: type.id,
-          prefix,
-          firstNumber,
-          quantity: input.quantity,
-          mode: input.mode,
-          unitAmount: input.unitAmount ?? type.unitAmount,
-          currency: type.currency,
-          note: input.note?.trim() || null,
-          artId: input.artId ?? null,
-          createdById: input.staffId,
-        },
-      });
-      const serials = Array.from({ length: input.quantity }, (_, i) => formatSerial(prefix, firstNumber + i));
-      const orders = await tx.order.createManyAndReturn({
-        data: serials.map((serial) => ({
-          code: randomCode(),
-          channel: "PRINTED" as const,
-          issuedById: input.staffId,
-          buyerName: `Entrada impresa ${serial}`,
-          buyerEmail: PRINTED_BUYER_EMAIL,
-          status: "PAID" as const,
-          currency: type.currency,
-          subtotalAmount: 0,
-          feeAmount: 0,
-          totalAmount: 0,
-          expiresAt: now,
-          // Sin fecha de pago hasta que se venda: no aparece como venta.
-          paidAt: null,
-        })),
-        select: { id: true, buyerName: true },
-      });
-      const items = await tx.orderItem.createManyAndReturn({
-        data: orders.map((o) => ({ orderId: o.id, ticketTypeId: type.id, quantity: 1, unitAmount: 0, name: type.name })),
-        select: { id: true, orderId: true },
-      });
-      const itemByOrder = new Map(items.map((i) => [i.orderId, i.id]));
-      await tx.ticket.createMany({
-        data: orders.map((o) => ({
-          code: randomCode(),
-          orderId: o.id,
-          orderItemId: itemByOrder.get(o.id)!,
-          ticketTypeId: type.id,
-          sessionId: type.sessionId,
-          serial: o.buyerName.replace("Entrada impresa ", ""),
-          printBatchId: batch.id,
-          printState: "STOCK" as const,
-        })),
-      });
-      await audit(tx, {
-        actorType: "staff",
-        actorId: input.staffId,
-        action: "print.batch.create",
-        entity: "PrintBatch",
-        entityId: batch.id,
-        data: { quantity: input.quantity, prefix, firstNumber, mode: input.mode },
-      });
-      return batch;
+  const batch = await tx.printBatch.create({
+    data: {
+      sessionId: type.sessionId,
+      ticketTypeId: type.id,
+      prefix,
+      firstNumber,
+      quantity: input.quantity,
+      mode: input.mode,
+      unitAmount: input.unitAmount ?? type.unitAmount,
+      currency: type.currency,
+      note: input.note?.trim() || null,
+      artId: input.artId ?? null,
+      createdById: input.staffId,
     },
-    { timeout: 120_000, maxWait: 10_000 },
-  );
+  });
+  const label = input.label ?? "Entrada impresa";
+  const serials = Array.from({ length: input.quantity }, (_, i) => formatSerial(prefix, firstNumber + i));
+  const orders = await tx.order.createManyAndReturn({
+    data: serials.map((serial) => ({
+      code: randomCode(),
+      channel: "PRINTED" as const,
+      issuedById: input.staffId,
+      buyerName: `${label} ${serial}`,
+      buyerEmail: PRINTED_BUYER_EMAIL,
+      status: "PAID" as const,
+      currency: type.currency,
+      subtotalAmount: 0,
+      feeAmount: 0,
+      totalAmount: 0,
+      expiresAt: now,
+      // Sin fecha de pago hasta que se venda: no aparece como venta.
+      paidAt: null,
+    })),
+    select: { id: true, buyerName: true },
+  });
+  const items = await tx.orderItem.createManyAndReturn({
+    data: orders.map((o) => ({ orderId: o.id, ticketTypeId: type.id, quantity: 1, unitAmount: 0, name: type.name })),
+    select: { id: true, orderId: true },
+  });
+  const itemByOrder = new Map(items.map((i) => [i.orderId, i.id]));
+  await tx.ticket.createMany({
+    data: orders.map((o) => ({
+      code: randomCode(),
+      orderId: o.id,
+      orderItemId: itemByOrder.get(o.id)!,
+      ticketTypeId: type.id,
+      sessionId: type.sessionId,
+      serial: o.buyerName.slice(label.length + 1),
+      printBatchId: batch.id,
+      printState: "STOCK" as const,
+    })),
+  });
+  await audit(tx, {
+    actorType: "staff",
+    actorId: input.staffId,
+    action: "print.batch.create",
+    entity: "PrintBatch",
+    entityId: batch.id,
+    data: { quantity: input.quantity, prefix, firstNumber, mode: input.mode },
+  });
+  return batch;
 }
 
 export type PrintAction =

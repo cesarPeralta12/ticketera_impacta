@@ -65,3 +65,17 @@ export function sanitizeNfcCard(uid: string, raw: unknown): NfcCardInfo {
   if (sak) info.sak = sak;
   return info;
 }
+
+/** Orden de los bytes que entrega un lector USB: como el teléfono, o del último al primero (algunos modelos). */
+export type ReaderByteOrder = "NORMAL" | "REVERSED";
+
+/**
+ * Número de serie que «escribe» un lector USB de computadora (funciona como un teclado). Tiene que venir en
+ * hexadecimal; si el lector entrega los bytes al revés que el teléfono, se invierten para que la puerta (que lee con el
+ * teléfono) encuentre la tarjeta. Un lector configurado en decimal no sirve: devuelve null.
+ */
+export function parseReaderUid(raw: string, order: ReaderByteOrder = "NORMAL"): string | null {
+  const uid = normalizeNfcUid(raw.trim());
+  if (!uid || order === "NORMAL") return uid;
+  return normalizeNfcUid(uid.match(/../g)!.reverse().join(""));
+}

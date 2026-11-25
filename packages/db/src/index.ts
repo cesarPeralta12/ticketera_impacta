@@ -12,6 +12,8 @@ export * from "./operations/email-tokens";
 export * from "./operations/live";
 export * from "./operations/mobile";
 export * from "./operations/nfc-cards";
+export * from "./operations/nfc-redeem";
+export * from "./operations/wristbands";
 export * from "./operations/nightlife";
 export * from "./operations/orders";
 export * from "./operations/printed";
