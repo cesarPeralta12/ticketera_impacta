@@ -14,6 +14,15 @@ export const RESERVATION_MINUTES = 10;
 /** Máximo absoluto de entradas por orden, sin importar el tipo. */
 export const MAX_TICKETS_PER_ORDER = 10;
 
+/**
+ * Cuántas unidades de un tipo entran en una compra. El «máximo por compra» frena a quien compra online; en boletería
+ * el cajero vende las mesas que pida el cliente (hasta el máximo de la orden), aunque el tipo diga 1 o 2 por compra.
+ */
+export function perOrderLimit(type: { kind?: string | null; maxPerOrder: number }, channel: string): number {
+  if (channel === "POS" && type.kind === "TABLE") return MAX_TICKETS_PER_ORDER;
+  return Math.min(type.maxPerOrder, MAX_TICKETS_PER_ORDER);
+}
+
 export const checkoutSchema = z.object({
   sessionId: z.string().min(1),
   items: z

@@ -6,6 +6,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { parseWholeTables, randomCode, tableName } from "@ticketera/core";
 import { prisma } from "../src/client";
 import { createStaffUser } from "../src/operations/accounts";
+import { createPendingOrder } from "../src/operations/orders";
 import { sellAtBoxOffice } from "../src/operations/sales";
 
 afterAll(() => prisma.$disconnect());
@@ -18,7 +19,7 @@ async function setup() {
     prefix: "Mesa",
     shape: "round",
     people: 10,
-    tables: [1, 2, 3].map((n) => ({ number: n, x: 100 + n * 120, y: 200 })),
+    tables: [1, 2, 3, 4].map((n) => ({ number: n, x: 100 + n * 120, y: 200 })),
   });
   if (!parsed.ok) throw new Error(parsed.error);
   const venue = await prisma.venue.create({ data: { organizationId: org.id, name: "Salón", timezone: "America/La_Paz", accessPoints: { create: [{ name: "Puerta" }] } } });
@@ -44,7 +45,7 @@ async function setup() {
           venueId: venue.id,
           startsAt: new Date(Date.now() + 10 * 86_400_000),
           ticketTypes: {
-            create: { name: "Mesa", sectionId: section.id, unitAmount: 200_000, currency: "BOB", capacity: 3, maxPerOrder: 2, kind: "TABLE", peoplePerUnit: 10, consumptionAmount: 50_000 },
+            create: { name: "Mesa", sectionId: section.id, unitAmount: 200_000, currency: "BOB", capacity: 4, maxPerOrder: 2, kind: "TABLE", peoplePerUnit: 10, consumptionAmount: 50_000 },
           },
         },
       },
@@ -75,5 +76,25 @@ describe("mesas que se venden completas", () => {
         { staffId: staff.id, method: "EFECTIVO" },
       ),
     ).rejects.toMatchObject({ code: "SEAT_TAKEN" });
+  });
+
+  it("en boletería se venden las mesas que pida el cliente; online sigue el máximo por compra", async () => {
+    const { staff, session, type, seats } = await setup();
+    const customer = await prisma.customer.create({
+      data: { email: `c-${randomCode(8).toLowerCase()}@prueba.test`, name: "Ana", passwordHash: "!", emailVerified: true, documentId: String(7_000_000 + Math.floor(Math.random() * 999_999)) },
+    });
+    await expect(
+      createPendingOrder(
+        { sessionId: session.id, items: [{ ticketTypeId: type.id, quantity: 3, seatIds: seats.slice(0, 3).map((s) => s.id) }], buyer: { name: customer.name, email: customer.email, document: customer.documentId! } },
+        { customerId: customer.id },
+      ),
+    ).rejects.toThrow("Máximo 2 mesas");
+
+    const sale = await sellAtBoxOffice(
+      { sessionId: session.id, items: [{ ticketTypeId: type.id, quantity: 3, seatIds: seats.slice(0, 3).map((s) => s.id) }], buyer: { name: "Grupo", email: "", document: "7654323" } },
+      { staffId: staff.id, method: "EFECTIVO" },
+    );
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: sale.id }, include: { _count: { select: { tickets: true } } } });
+    expect([order.totalAmount, order._count.tickets]).toEqual([600_000, 30]);
   });
 });

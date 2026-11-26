@@ -1,4 +1,4 @@
-import { MAX_TICKETS_PER_ORDER, currentPrice, discountLabel, formatDateTime, isSeatedTablesLayout, isTablesLayout, saleState, withPhases } from "@ticketera/core";
+import { currentPrice, perOrderLimit, discountLabel, formatDateTime, isSeatedTablesLayout, isTablesLayout, saleState, withPhases } from "@ticketera/core";
 import { getSessionStock, getTakenSeatIds, listSeatHolds, type Prisma } from "@ticketera/db";
 import type { PosGeneralType, PosSeatedType } from "@/app/(panel)/boleteria/[sessionId]/pos-form";
 
@@ -43,7 +43,8 @@ export async function posOffer(session: PosSession, options: { promoter?: boolea
       listAmount: currentPrice(t, now).discountPercent ? t.unitAmount : null,
       discountLabel: discountLabel(t, now, session.venue.timezone),
       currency: t.currency,
-      max: Math.min(remaining.get(t.id) ?? 0, t.maxPerOrder, MAX_TICKETS_PER_ORDER),
+      // En boletería las mesas no tienen el tope «por compra» del comprador online: las que pida el cliente.
+      max: Math.min(remaining.get(t.id) ?? 0, perOrderLimit(t, "POS")),
       // El cajero también vende el consumo extra (solo en mesas o entradas con consumo).
       extraOptions: t.kind === "TABLE" || (t.consumptionAmount ?? 0) > 0 ? t.extraConsumptionOptions : [],
     }));
@@ -58,7 +59,7 @@ export async function posOffer(session: PosSession, options: { promoter?: boolea
       discountPercent: currentPrice(t, now).discountPercent,
       currency: t.currency,
       presale: t.presale,
-      maxPerOrder: Math.min(t.maxPerOrder, MAX_TICKETS_PER_ORDER),
+      maxPerOrder: perOrderLimit(t, "POS"),
       table: isTablesLayout(t.section!.layout) ? { radius: t.section!.layout.radius, shape: t.section!.layout.shape } : null,
       wholeTable:
         isSeatedTablesLayout(t.section!.layout) && t.section!.layout.mode === "WHOLE"

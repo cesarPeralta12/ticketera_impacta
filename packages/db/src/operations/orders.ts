@@ -1,4 +1,5 @@
 import {
+  perOrderLimit,
   RESERVATION_MINUTES,
   checkTableSelection,
   checkoutSchema,
@@ -251,8 +252,8 @@ export async function createPendingOrder(
           seated ? `Elige tus butacas para "${type.name}" en el mapa.` : `"${type.name}" no tiene butacas numeradas.`,
         );
       }
-      if (item.quantity > type.maxPerOrder) {
-        throw new DomainError("INVALID_ITEMS", `Máximo ${type.maxPerOrder} entradas "${type.name}" por compra.`);
+      if (item.quantity > perOrderLimit(type, channel)) {
+        throw new DomainError("INVALID_ITEMS", `Máximo ${perOrderLimit(type, channel)} ${type.kind === "TABLE" ? "mesas" : "entradas"} "${type.name}" por compra.`);
       }
       // Consumo extra: solo un paquete que el organizador definió para este tipo, y solo en mesas o entradas con consumo.
       const extra = item.extraConsumption ?? 0;

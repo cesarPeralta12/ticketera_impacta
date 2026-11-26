@@ -102,7 +102,7 @@ export function PosForm({
     if (current.includes(seatId)) {
       setPicked({ ...seats, [ticketTypeId]: current.filter((id) => id !== seatId) });
     } else if (current.length >= type.maxPerOrder) {
-      setNotice(`Máximo ${type.maxPerOrder} butacas de ${type.name} por venta.`);
+      setNotice(`Máximo ${type.maxPerOrder} ${type.table ? "mesas" : "butacas"} de ${type.name} por venta.`);
     } else if (totalTickets >= MAX_TICKETS_PER_ORDER) {
       setNotice(`Máximo ${MAX_TICKETS_PER_ORDER} entradas por venta: cobra estas y haz otra venta.`);
     } else {
