@@ -1,4 +1,4 @@
-import { isTablesLayout } from "@ticketera/core";
+import { isTablesLayout, isWholeTablesLayout } from "@ticketera/core";
 import { AccessMethodsField } from "@/components/access-methods-field";
 import { ActionForm } from "@/components/action-form";
 import { TicketModels } from "@/components/ticket-models";
@@ -36,7 +36,7 @@ export function TicketTypeForm({
         <select name="sectionId" required className="field">
           {sectionOptions.map((s) => (
             <option key={s.id} value={s.id}>
-              {s.name} — {s.seatingMode === "RESERVED" ? `${s.seats.length} ${isTablesLayout(s.layout) ? "lounges" : "butacas"}` : `aforo ${s.capacity}`}
+              {s.name} — {s.seatingMode === "RESERVED" ? `${s.seats.length} ${isWholeTablesLayout(s.layout) ? `mesas de ${s.layout.people} personas` : isTablesLayout(s.layout) ? "lounges" : "butacas"}` : `aforo ${s.capacity}`}
               {pricedSections.has(s.id) ? " (ya tiene precio)" : " (sin precio)"}
             </option>
           ))}

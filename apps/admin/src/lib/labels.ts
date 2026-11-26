@@ -1,4 +1,4 @@
-import { isSeatedTablesLayout, isTablesLayout } from "@ticketera/core";
+import { isSeatedTablesLayout, isTablesLayout, isWholeTablesLayout } from "@ticketera/core";
 
 /** Etiquetas de estado del panel. */
 export const EVENT_STATUS = {
@@ -10,8 +10,9 @@ export const EVENT_STATUS = {
 
 export const SEATING_LABEL = { GENERAL_ADMISSION: "Entrada general", RESERVED: "Butacas numeradas" } as const;
 
-/** Tipo de sección para mostrar: los lounges del boliche y las mesas con sillas son numerados pero no son butacas. */
+/** Tipo de sección para mostrar: los lounges, las mesas completas y las mesas con sillas son numerados pero no son butacas. */
 export function seatingLabel(section: { seatingMode: keyof typeof SEATING_LABEL; layout: unknown }): string {
+  if (isWholeTablesLayout(section.layout)) return `Mesas completas · ${section.layout.people} personas por mesa`;
   if (isTablesLayout(section.layout)) return "Lounges en el plano";
   if (isSeatedTablesLayout(section.layout)) return `Mesas con sillas · ${section.layout.tables.length} mesas`;
   return SEATING_LABEL[section.seatingMode];

@@ -1,7 +1,8 @@
 /**
  * Mesas con sillas alrededor (redondas o rectangulares): cada silla es una butaca de una sección numerada cuyo `layout`
  * es `{ type: "seated" }`. La mesa se vende de una de tres formas:
- *  - WHOLE: la mesa completa (todas sus sillas en la misma compra);
+ *  - WHOLE: la mesa completa. Las nuevas se guardan como mesas en círculo con un precio por mesa (`parseWholeTables` en
+ *    club-map.ts); las secciones viejas con este modo cobran por silla y siguen funcionando igual;
  *  - SEAT: por silla, como una butaca;
  *  - RANGE: de N a M sillas de una misma mesa por compra.
  * Puro (sin DOM): lo usan el editor del panel, los mapas y la validación de la compra.
@@ -12,7 +13,7 @@ export const TABLE_SALE_MODES = ["WHOLE", "SEAT", "RANGE"] as const;
 export type TableSaleMode = (typeof TABLE_SALE_MODES)[number];
 
 export const TABLE_SALE_MODE_LABEL: Record<TableSaleMode, string> = {
-  WHOLE: "Mesa completa",
+  WHOLE: "Mesa completa (precio por mesa)",
   SEAT: "Por silla",
   RANGE: "De N a M sillas",
 };

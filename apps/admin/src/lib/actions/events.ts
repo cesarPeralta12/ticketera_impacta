@@ -10,6 +10,7 @@ import {
   entryDeadline,
   isSeatedTablesLayout,
   isTablesLayout,
+  isWholeTablesLayout,
   isTimeOfDay,
   normalizeImageUrl,
   parseExtraOptions,
@@ -519,11 +520,20 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
   if (!session || !section) return { error: "Función o sección no encontrada." };
 
   // Boliche: mesa para N personas, consumo incluido y horario de ingreso.
-  const table = Boolean(data.table);
-  const peoplePerUnit = table ? data.peoplePerUnit : 1;
+  // Mesas que se venden completas (creadas en «Mesas»): siempre son mesa, con las personas de la sección.
+  const whole = isWholeTablesLayout(section.layout) ? section.layout.people : null;
+  if (whole && data.table && data.peoplePerUnit && data.peoplePerUnit !== whole) {
+    return { fieldErrors: { peoplePerUnit: `Las mesas de "${section.name}" son de ${whole} personas: pon ${whole} o deja el campo vacío.` } };
+  }
+  const table = Boolean(data.table) || Boolean(whole);
+  const peoplePerUnit = table ? (whole ?? data.peoplePerUnit) : 1;
   if (table && !peoplePerUnit) return { fieldErrors: { peoplePerUnit: "Indica cuántas personas entran con cada mesa." } };
   if (table && isSeatedTablesLayout(section.layout)) {
-    return { fieldErrors: { table: `"${section.name}" son mesas con sillas: cada silla es una entrada (no marques "Es una mesa o lounge"). El precio es por silla.` } };
+    return {
+      fieldErrors: {
+        table: `"${section.name}" cobra por silla: cada silla es una entrada (no marques "Es una mesa o lounge"). Para cobrar la mesa completa, créala en Recintos → Mesas con «Mesa completa».`,
+      },
+    };
   }
   if (!table && isTablesLayout(section.layout)) {
     return { fieldErrors: { table: `"${section.name}" son lounges: marca "Es una mesa o lounge" y cuántas personas entran en cada uno.` } };

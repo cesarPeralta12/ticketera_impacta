@@ -89,7 +89,8 @@ export function SeatPicker({
     const free = s.seats.filter((seat) => !seat.taken).length;
     const price = `${s.presale ? "PREVENTA " : ""}${s.discountPercent ? `-${s.discountPercent}% ` : ""}${formatMoney(s.unitAmount, s.currency)}`;
     const detail = free === 0 ? "AGOTADO" : `${price} · ${free}/${s.seats.length} libres`;
-    return { name: s.name, color: s.color, x: midX, y: y - 36, detail };
+    // Una mesa en círculo es más grande que una butaca: la etiqueta sube su radio para no taparla.
+    return { name: s.name, color: s.color, x: midX, y: y - 36 - (s.round ? s.round.radius - 6 : 0), detail };
   });
 
   // Butacas muy juntas (una tribuna apretada): el punto se achica para que no se pisen.

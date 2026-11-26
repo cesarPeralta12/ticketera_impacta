@@ -10,8 +10,10 @@ import {
   computeSeatPositions,
   isSeatedTablesLayout,
   isTablesLayout,
+  isWholeTablesLayout,
   parseMapItems,
   parseTables,
+  parseWholeTables,
   parseZoneLayout,
   safeMapUrl,
   seatShapeProblem,
@@ -393,6 +395,8 @@ export async function addSeatedTablesSectionAction(_prev: FormState, formData: F
   } catch {
     return { error: "Las mesas no son válidas." };
   }
+  // Mesa completa: un círculo por mesa y un precio por mesa (se guarda como un grupo de lounges con sus personas).
+  if ((raw as { mode?: unknown } | null)?.mode === "WHOLE") return addWholeTablesSection(staff.id, venue.id, name, color, raw as Record<string, unknown>);
   const parsed = parseSeatedTablesLayout(raw);
   if (!parsed.ok) return { error: parsed.error };
   const seats = seatedTableSeats(parsed.layout);
@@ -423,6 +427,72 @@ export async function addSeatedTablesSectionAction(_prev: FormState, formData: F
   }
   revalidatePath(`/recintos/${venue.id}`);
   return { ok: true };
+}
+
+/**
+ * Mesas que se venden completas: cada mesa es un lugar numerado (como un lounge), con un precio por mesa y `people`
+ * entradas. En el mapa se ve un círculo por mesa, no sus sillas.
+ */
+async function addWholeTablesSection(staffId: string, venueId: string, name: string, color: string, raw: Record<string, unknown>): Promise<FormState> {
+  const parsed = parseWholeTables({ prefix: raw.prefix, shape: raw.shape, people: raw.chairs, tables: raw.tables });
+  if (!parsed.ok) return { error: parsed.error };
+  const { layout, tables } = parsed;
+  try {
+    const section = await prisma.section.create({
+      data: {
+        venueId,
+        name,
+        color,
+        seatingMode: "RESERVED",
+        capacity: tables.length,
+        layout,
+        sortOrder: await prisma.section.count({ where: { venueId } }),
+        seats: { createMany: { data: tables.map((t) => ({ row: "L", number: String(t.number), label: tableName(layout.prefix, t.number), x: t.x, y: t.y })) } },
+      },
+    });
+    await logAudit({ actorType: "staff", actorId: staffId, action: "section.whole_tables", entity: "Section", entityId: section.id, data: { tables: tables.length, people: layout.people } });
+  } catch (error) {
+    if (isUnique(error)) return { error: "Ya existe una sección con ese nombre." };
+    throw error;
+  }
+  revalidatePath(`/recintos/${venueId}`);
+  return { ok: true, message: `Listo: ${tables.length} mesas de ${layout.people} personas. Ahora ponles precio en cada función.` };
+}
+
+/** Recoloca o renombra las mesas que se venden completas (con o sin ventas): solo cambia dónde está cada una. */
+export async function moveWholeTablesAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor();
+  const section = await prisma.section.findFirst({
+    where: { id: String(formData.get("sectionId")), venue: { organizationId: staff.organization.id } },
+    select: { id: true, venueId: true, layout: true, seats: { select: { id: true, number: true } } },
+  });
+  if (!section || !isWholeTablesLayout(section.layout)) return { error: "Sección de mesas no encontrada." };
+  let moved: unknown;
+  try {
+    moved = JSON.parse(String(formData.get("tables") ?? ""));
+  } catch {
+    return { error: "Las mesas no son válidas." };
+  }
+  const name = formData.has("name") ? String(formData.get("name")).trim() : null;
+  if (name !== null && name.length < 2) return { error: "Ponle un nombre a la sección." };
+  const parsed = parseWholeTables({ ...section.layout, shape: section.layout.shape ?? "round", tables: moved });
+  if (!parsed.ok) return { error: parsed.error };
+  const numbers = new Set(section.seats.map((s) => s.number));
+  if (parsed.tables.length !== numbers.size || parsed.tables.some((t) => !numbers.has(String(t.number)))) {
+    return { error: "Las mesas cambiaron: recarga la página." };
+  }
+  try {
+    await prisma.$transaction(async (tx) => {
+      if (name) await tx.section.update({ where: { id: section.id }, data: { name } });
+      for (const t of parsed.tables) await tx.seat.updateMany({ where: { sectionId: section.id, number: String(t.number) }, data: { x: t.x, y: t.y } });
+    });
+  } catch (error) {
+    if (isUnique(error)) return { error: "Ya existe una sección con ese nombre." };
+    throw error;
+  }
+  await logAudit({ actorType: "staff", actorId: staff.id, action: "section.whole_tables_moved", entity: "Section", entityId: section.id, data: { tables: parsed.tables.length } });
+  revalidatePath(`/recintos/${section.venueId}`);
+  return { ok: true, message: "Cambios guardados." };
 }
 
 /**
@@ -770,7 +840,9 @@ export async function saveClubPlanAction(venueId: string, planJson: string): Pro
             await tx.seat.create({ data: { sectionId: section.id, ...seatData(t) } });
           }
         }
-        await tx.section.update({ where: { id: section.id }, data: { name: group.name, color: group.color, layout, capacity: group.tables.length } });
+        // Las mesas que se venden completas conservan sus personas.
+        const people = isWholeTablesLayout(section.layout) ? { people: section.layout.people } : {};
+        await tx.section.update({ where: { id: section.id }, data: { name: group.name, color: group.color, layout: { ...layout, ...people }, capacity: group.tables.length } });
         // En una sección numerada el cupo de cada precio es su cantidad de lugares (aquí, de lounges).
         await tx.ticketType.updateMany({ where: { sectionId: section.id }, data: { capacity: group.tables.length } });
       }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultMapItem, hasStage, isTablesLayout, mapItemLabel, nextTableNumber, parseMapItems, parseTables, tableName } from "./club-map";
+import { TABLE_RADIUS, defaultMapItem, hasStage, isTablesLayout, isWholeTablesLayout, mapItemLabel, nextTableNumber, parseMapItems, parseTables, parseWholeTables, tableName } from "./club-map";
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "./seat-geometry";
 
 describe("elementos del plano", () => {
@@ -68,5 +68,33 @@ describe("lounges en círculo", () => {
       ok: false,
       error: "Los lounges 1 y 2 están encimados: sepáralos un poco.",
     });
+  });
+});
+
+describe("mesas que se venden completas", () => {
+  const tables = [
+    { number: 1, x: 120, y: 120 },
+    { number: 2, x: 220, y: 120 },
+  ];
+
+  it("arma un grupo de mesas en círculo con sus personas", () => {
+    const result = parseWholeTables({ prefix: " Mesa ", shape: "round", people: 10, tables });
+    expect(result).toMatchObject({ ok: true, layout: { type: "tables", radius: TABLE_RADIUS, prefix: "Mesa", shape: "round", people: 10 } });
+    expect(result.ok && result.tables.map((t) => t.number)).toEqual([1, 2]);
+    expect(isWholeTablesLayout(result.ok && result.layout)).toBe(true);
+    expect(isWholeTablesLayout({ type: "tables", radius: 18, prefix: "Lounge" })).toBe(false);
+  });
+
+  it("pide personas válidas, forma y nombre, y avisa de mesas encimadas", () => {
+    expect(parseWholeTables({ prefix: "Mesa", shape: "round", people: 1, tables })).toMatchObject({ ok: false, error: "Cada mesa es para 2 a 50 personas." });
+    expect(parseWholeTables({ prefix: "Mesa", shape: "round", people: 51, tables })).toMatchObject({ ok: false });
+    expect(parseWholeTables({ prefix: "Mesa", shape: "oval", people: 10, tables })).toMatchObject({ ok: false });
+    expect(parseWholeTables({ prefix: " ", shape: "round", people: 10, tables })).toMatchObject({ ok: false });
+    expect(parseWholeTables({ prefix: "Mesa", shape: "round", people: 10, tables: [{ number: 1, x: 100, y: 100 }, { number: 2, x: 110, y: 100 }] })).toMatchObject({
+      ok: false,
+      error: "Las mesas 1 y 2 están encimadas: sepáralas un poco.",
+    });
+    // Los rectángulos son más anchos: lo que entra en círculos puede quedar encimado.
+    expect(parseWholeTables({ prefix: "Mesa", shape: "rect", people: 10, tables: [{ number: 1, x: 100, y: 100 }, { number: 2, x: 140, y: 100 }] })).toMatchObject({ ok: false });
   });
 });

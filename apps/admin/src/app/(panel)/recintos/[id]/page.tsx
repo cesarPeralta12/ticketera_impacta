@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { TABLE_RADIUS, isSeatedTablesLayout, isTablesLayout, isZoneLayout, mapItemsOf, type SectionShape, type ZoneShape } from "@ticketera/core";
+import { TABLE_RADIUS, isSeatedTablesLayout, isTablesLayout, isWholeTablesLayout, isZoneLayout, mapItemsOf, type SectionShape, type ZoneShape } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
 import {
@@ -23,7 +23,7 @@ import { seatingLabel } from "@/lib/labels";
 import { ROLES, isNightlife, requireStaff } from "@/lib/session";
 import { ClubMapDesigner, type DesignerTableGroup } from "./club-map-designer";
 import { SeatDesigner, type DesignerSection } from "./seat-designer";
-import { SeatedTablesDesigner } from "./seated-tables-designer";
+import { SeatedTablesDesigner, type ExistingTablesSection } from "./seated-tables-designer";
 import { ZoneDesigner, type DesignerZone } from "./zone-designer";
 import { Help } from "@/components/help";
 
@@ -97,7 +97,7 @@ export default async function VenuePage({ params, searchParams }: Props) {
   const plan = venue.planImage ? { url: `/recintos/${venue.id}/fondo?v=${venue.planImage.updatedAt.getTime()}`, opacity: venue.planImage.opacity } : null;
   const backgroundSeats = sections.flatMap((s) => (s.seatingMode === "RESERVED" ? positioned(s.seats).map((p) => ({ ...p, color: s.color, sectionId: s.id })) : []));
 
-  const tableSections = sections.filter((s) => isSeatedTablesLayout(s.layout)).length;
+  const tableSections = sections.filter((s) => isSeatedTablesLayout(s.layout) || isWholeTablesLayout(s.layout)).length;
   const doorNames = venue.accessPoints.map((g) => g.name);
   const editors: { key: EditorTab; label: string; count: number }[] = [
     isNightlife(staff)
@@ -105,7 +105,7 @@ export default async function VenuePage({ params, searchParams }: Props) {
       : { key: "plano", label: "Escenario y puertas", count: mapItems.length },
     { key: "zonas", label: "Zonas de pie", count: zones.length },
     { key: "butacas", label: "Butacas numeradas", count: seated.length },
-    { key: "mesas", label: "Mesas con sillas", count: tableSections },
+    { key: "mesas", label: "Mesas", count: tableSections },
   ];
   // Sin elegir: el editor de lo que el recinto ya tiene (en un boliche, su plano).
   const requested = (await searchParams).editor;
@@ -188,7 +188,7 @@ export default async function VenuePage({ params, searchParams }: Props) {
                 <span className="h-3 w-3 rounded-full" style={{ background: s.color }} />
                 <span className="flex-1 font-medium">{s.name}</span>
                 <span className="text-[var(--ink-muted)]">
-                  {seatingLabel(s)} · {s.seatingMode === "RESERVED" ? `${s.seats.length} ${isTablesLayout(s.layout) ? "lounges" : isSeatedTablesLayout(s.layout) ? "sillas" : "butacas"}` : `aforo ${s.capacity}`}
+                  {seatingLabel(s)} · {s.seatingMode === "RESERVED" ? `${s.seats.length} ${isWholeTablesLayout(s.layout) ? "mesas" : isTablesLayout(s.layout) ? "lounges" : isSeatedTablesLayout(s.layout) ? "sillas" : "butacas"}` : `aforo ${s.capacity}`}
                 </span>
                 {!s.sold ? (
                   <ActionForm
@@ -349,19 +349,26 @@ export default async function VenuePage({ params, searchParams }: Props) {
 
         {editor === "mesas" && (
           <section className="space-y-3">
-            <h2 className="eyebrow">Mesas con sillas</h2>
+            <h2 className="eyebrow">Mesas</h2>
             <p className="text-sm text-[var(--ink-muted)]">
-              Para cenas, galas o shows con mesas: cada silla es un lugar numerado. Elige si la mesa se vende completa, por silla
-              o de N a M sillas. Las secciones de mesas que ya creaste aparecen en &ldquo;Secciones&rdquo;.
+              <strong>Mesa completa</strong>: se vende la mesa entera con un solo precio. En el mapa se ve un círculo por mesa y
+              cada persona recibe su entrada; también puede llevar consumo. <strong>Por silla</strong> o <strong>de N a M
+              sillas</strong>: cada silla es un lugar con su precio, para cenas o galas.
             </p>
             <SeatedTablesDesigner
               venueId={venue.id}
               background={backgroundSeats}
               plan={plan}
               items={mapItems}
-              existing={sections.flatMap((s) =>
-                isSeatedTablesLayout(s.layout) ? [{ id: s.id, name: s.name, color: s.color, layout: s.layout, sold: s.sold, priced: s.priced }] : [],
-              )}
+              existing={sections.flatMap((s): ExistingTablesSection[] => {
+                if (isSeatedTablesLayout(s.layout)) return [{ id: s.id, name: s.name, color: s.color, layout: s.layout, sold: s.sold, priced: s.priced, whole: false }];
+                if (!isWholeTablesLayout(s.layout)) return [];
+                // Mesas completas: sus mesas son los lugares de la sección (su centro), sin sillas.
+                const { prefix, people } = s.layout;
+                const tables = s.seats.flatMap((seat) => (seat.x !== null && seat.y !== null ? [{ number: Number(seat.number), x: seat.x, y: seat.y }] : []));
+                const layout = { type: "seated" as const, prefix, shape: s.layout.shape === "rect" ? ("rect" as const) : ("round" as const), chairs: people, mode: "WHOLE" as const, min: people, max: people, size: TABLE_RADIUS, tables };
+                return [{ id: s.id, name: s.name, color: s.color, layout, sold: s.sold, priced: s.priced, whole: true }];
+              })}
             />
           </section>
         )}
