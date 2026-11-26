@@ -49,7 +49,7 @@ export async function getLiveAccess(sessionId: string) {
           timezone: true,
           mapItems: true,
           accessPoints: { orderBy: { name: "asc" }, select: { id: true, name: true } },
-          sections: { orderBy: { sortOrder: "asc" }, include: { seats: { select: { id: true, x: true, y: true, label: true, number: true } } } },
+          sections: { where: { archivedAt: null }, orderBy: { sortOrder: "asc" }, include: { seats: { select: { id: true, x: true, y: true, label: true, number: true } } } },
         },
       },
     },

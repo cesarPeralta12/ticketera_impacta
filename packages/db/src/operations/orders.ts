@@ -53,7 +53,7 @@ export async function getZoneAvailability(sessionId: string, now = new Date()) {
   const [lines, sections] = await Promise.all([
     loadInventory(prisma, sessionId, now),
     prisma.section.findMany({
-      where: { seatingMode: "GENERAL_ADMISSION", ticketTypes: { some: { sessionId } } },
+      where: { seatingMode: "GENERAL_ADMISSION", archivedAt: null, ticketTypes: { some: { sessionId } } },
       orderBy: { sortOrder: "asc" },
       select: { id: true, name: true, color: true, capacity: true },
     }),

@@ -8,7 +8,6 @@ import {
   MAX_DISCOUNT_PERCENT,
   MIN_AGE_OPTIONS,
   entryDeadline,
-  isSeatedTablesLayout,
   isTablesLayout,
   isWholeTablesLayout,
   isTimeOfDay,
@@ -519,25 +518,18 @@ export async function addTicketTypeAction(_prev: FormState, formData: FormData):
   });
   if (!session || !section) return { error: "Función o sección no encontrada." };
 
-  // Boliche: mesa para N personas, consumo incluido y horario de ingreso.
-  // Mesas que se venden completas (creadas en «Mesas»): siempre son mesa, con las personas de la sección.
+  // Mesa: una sola forma. El precio de una sección de mesas (Recintos → Mesas) es por mesa, con las personas de la
+  // sección; las mesas no se arman dentro de una sección de pie ni por silla.
+  const table = isTablesLayout(section.layout);
   const whole = isWholeTablesLayout(section.layout) ? section.layout.people : null;
-  if (whole && data.table && data.peoplePerUnit && data.peoplePerUnit !== whole) {
-    return { fieldErrors: { peoplePerUnit: `Las mesas de "${section.name}" son de ${whole} personas: pon ${whole} o deja el campo vacío.` } };
+  if (data.table && !table) {
+    return { fieldErrors: { sectionId: "Las mesas se crean en Recintos → Mesas: elige esa sección para el precio de la mesa." } };
   }
-  const table = Boolean(data.table) || Boolean(whole);
+  if (whole && data.peoplePerUnit && data.peoplePerUnit !== whole) {
+    return { fieldErrors: { peoplePerUnit: `Las mesas de "${section.name}" son de ${whole} personas: deja el campo vacío.` } };
+  }
   const peoplePerUnit = table ? (whole ?? data.peoplePerUnit) : 1;
   if (table && !peoplePerUnit) return { fieldErrors: { peoplePerUnit: "Indica cuántas personas entran con cada mesa." } };
-  if (table && isSeatedTablesLayout(section.layout)) {
-    return {
-      fieldErrors: {
-        table: `"${section.name}" cobra por silla: cada silla es una entrada (no marques "Es una mesa o lounge"). Para cobrar la mesa completa, créala en Recintos → Mesas con «Mesa completa».`,
-      },
-    };
-  }
-  if (!table && isTablesLayout(section.layout)) {
-    return { fieldErrors: { table: `"${section.name}" son lounges: marca "Es una mesa o lounge" y cuántas personas entran en cada uno.` } };
-  }
   const extra = parseExtraOptions(data.extra ?? "");
   if (!extra.ok) return { fieldErrors: { extra: extra.error } };
   if (extra.options.length > 0 && !table && !data.consumption) {

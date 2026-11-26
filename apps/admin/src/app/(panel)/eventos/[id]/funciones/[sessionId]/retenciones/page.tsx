@@ -26,7 +26,7 @@ export default async function HoldsPage({ params }: Props) {
           timezone: true,
           mapItems: true,
           sections: {
-            where: { seatingMode: "RESERVED" },
+            where: { seatingMode: "RESERVED", archivedAt: null },
             orderBy: { sortOrder: "asc" },
             select: { name: true, color: true, layout: true, seats: { select: { id: true, label: true, row: true, number: true, x: true, y: true } } },
           },

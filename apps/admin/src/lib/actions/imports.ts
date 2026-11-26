@@ -354,7 +354,7 @@ export async function createImportTypeAction(formData: FormData): Promise<{ erro
   const sessions = await prisma.eventSession.findMany({
     where: { eventId: event.id, cancelledAt: null },
     orderBy: { startsAt: "asc" },
-    select: { id: true, venue: { select: { id: true, sections: { select: { id: true, name: true, seatingMode: true, capacity: true } } } }, ticketTypes: { select: { name: true } } },
+    select: { id: true, venue: { select: { id: true, sections: { where: { archivedAt: null }, select: { id: true, name: true, seatingMode: true, capacity: true } } } }, ticketTypes: { select: { name: true } } },
   });
   if (sessions.length === 0) return { error: "El evento no tiene funciones activas." };
   const wanted = sessions.map((s) => ({ session: s, section: s.venue.sections.find((x) => x.name === sectionName) }));

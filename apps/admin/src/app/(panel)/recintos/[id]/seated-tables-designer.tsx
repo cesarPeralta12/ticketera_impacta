@@ -255,9 +255,10 @@ function NewTables({ venueId, background, plan, items }: { venueId: string; back
   const [prefix, setPrefix] = useState("Mesa");
   const [shape, setShape] = useState<TableShape>("round");
   const [chairs, setChairs] = useState(6);
+  // Mesa completa (precio por mesa) o de N a M sillas (precio por silla). La venta por silla suelta ya no está.
   const [mode, setMode] = useState<TableSaleMode>("WHOLE");
   const [min, setMin] = useState(2);
-  const [max, setMax] = useState(6);
+  const [max, setMax] = useState(4);
   const [count, setCount] = useState(8);
   const [perRow, setPerRow] = useState(4);
   const [x, setX] = useState(180);
@@ -314,16 +315,12 @@ function NewTables({ venueId, background, plan, items }: { venueId: string; back
         <label className="label">
           Se vende
           <select value={mode} onChange={(e) => setMode(e.target.value as TableSaleMode)} className="field">
-            {(Object.keys(TABLE_SALE_MODE_LABEL) as TableSaleMode[]).map((m) => (
+            {(["WHOLE", "RANGE"] as const).map((m) => (
               <option key={m} value={m}>
                 {TABLE_SALE_MODE_LABEL[m]}
               </option>
             ))}
           </select>
-        </label>
-        <label className="label">
-          Color
-          <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-[38px] w-full cursor-pointer rounded border border-[var(--border)]" />
         </label>
         {mode === "RANGE" && (
           <>
@@ -337,6 +334,10 @@ function NewTables({ venueId, background, plan, items }: { venueId: string; back
             </label>
           </>
         )}
+        <label className="label">
+          Color
+          <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-[38px] w-full cursor-pointer rounded border border-[var(--border)]" />
+        </label>
         <label className="label">
           Cantidad de mesas
           <input type="number" min={1} max={120} value={count} onChange={num(setCount)} className="field" />
@@ -361,10 +362,9 @@ function NewTables({ venueId, background, plan, items }: { venueId: string; back
         </label>
       </div>
       <p className="text-xs text-[var(--ink-dim)]">
-        {whole &&
-          `Mesa completa: el comprador elige la mesa y paga un solo precio por ella. En el mapa se ve un círculo por mesa y salen ${chairs} entradas, una por persona. El precio y el consumo se ponen en cada función.`}
-        {mode === "SEAT" && "Por silla: el comprador elige sillas sueltas, como butacas. El precio es por silla."}
-        {mode === "RANGE" && `De N a M: por compra, entre ${min} y ${max} sillas de cada mesa que elija. El precio es por silla.`} Cada persona recibe su QR.
+        {whole
+          ? `Mesa completa: cada mesa se vende entera con un solo precio. En el mapa se ve un círculo por mesa y salen ${chairs} entradas, una por persona, más su QR de consumo si lo tiene. El precio y el consumo se ponen en cada función.`
+          : `De N a M sillas: en el mapa se ven las sillas y por compra se llevan entre ${min} y ${max} sillas de una misma mesa. El precio que pongas en cada función es por silla.`}
       </p>
 
       <TablesCanvas layout={draft} whole={whole} color={color} background={background} plan={plan} items={items} onMove={(number, at) => setMoved((m) => ({ ...m, [number]: at }))} />
@@ -406,12 +406,14 @@ function MoveTables({
   const [tables, setTables] = useState<SeatedTable[]>(section.layout.tables);
   const [size, setSize] = useState(section.layout.size);
   const [name, setName] = useState(section.name);
+  const [people, setPeople] = useState(section.layout.chairs);
   const { whole } = section;
-  const layout = { ...section.layout, size, tables };
+  const layout = { ...section.layout, size, tables, chairs: people };
   const parsed = checkLayout(layout, whole);
   const changed =
     name.trim() !== section.name ||
     size !== section.layout.size ||
+    people !== section.layout.chairs ||
     tables.some((t, i) => t.x !== section.layout.tables[i]?.x || t.y !== section.layout.tables[i]?.y);
   // Sin las sillas de esta sección en el fondo (se dibujan arriba, siguiendo a sus mesas).
   const others = background.filter((b) => b.sectionId !== section.id);
@@ -431,6 +433,21 @@ function MoveTables({
           <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className="field" />
         </label>
         {!whole && <TableSizeField value={size} onChange={setSize} />}
+        {whole && (
+          <label className="label">
+            Personas por mesa
+            <input
+              type="number"
+              min={MIN_CHAIRS}
+              max={MAX_TABLE_PEOPLE}
+              value={people}
+              onChange={(e) => setPeople(Number(e.target.value))}
+              disabled={section.sold}
+              title={section.sold ? "Ya tiene ventas: no se puede cambiar" : undefined}
+              className="field"
+            />
+          </label>
+        )}
       </div>
       <TablesCanvas
         whole={whole}
@@ -446,6 +463,7 @@ function MoveTables({
           <input type="hidden" name="sectionId" value={section.id} />
           <input type="hidden" name="tables" value={JSON.stringify(tables)} />
           {!whole && <input type="hidden" name="size" value={size} />}
+          {whole && <input type="hidden" name="people" value={people} />}
           <input type="hidden" name="name" value={name} />
           <button type="submit" disabled={!parsed.ok || !changed} className="btn btn-dark disabled:cursor-not-allowed disabled:opacity-50">
             Guardar cambios
@@ -457,6 +475,7 @@ function MoveTables({
             setTables(section.layout.tables);
             setSize(section.layout.size);
             setName(section.name);
+            setPeople(section.layout.chairs);
           }}
           disabled={!changed}
           className="btn text-sm disabled:opacity-50"
@@ -464,7 +483,7 @@ function MoveTables({
           Deshacer cambios
         </button>
         <button type="button" onClick={onDone} className="text-sm text-[var(--ink-muted)] hover:underline">
-          Volver a crear mesas
+          Crear mesas nuevas
         </button>
         {section.sold ? (
           <span className="ml-auto text-xs text-[var(--ink-dim)]">Tiene entradas vendidas o reservadas: no se puede borrar.</span>

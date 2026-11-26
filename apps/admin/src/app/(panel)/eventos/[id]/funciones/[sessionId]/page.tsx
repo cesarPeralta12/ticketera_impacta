@@ -117,7 +117,7 @@ export default async function SessionPage({ params, searchParams }: Props) {
       event: true,
       venue: {
         include: {
-          sections: { orderBy: { sortOrder: "asc" }, include: { seats: { select: { x: true, y: true, number: true } } } },
+          sections: { where: { archivedAt: null }, orderBy: { sortOrder: "asc" }, include: { seats: { select: { x: true, y: true, number: true } } } },
           zones: { orderBy: [{ level: "asc" }, { name: "asc" }], select: { id: true, name: true, color: true } },
           accessPoints: { where: { direction: { not: "IN" } }, select: { id: true } },
         },

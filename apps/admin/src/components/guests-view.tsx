@@ -29,7 +29,7 @@ export async function GuestsView({
     where: { id: sessionId, eventId },
     include: {
       event: true,
-      venue: { include: { sections: { where: { seatingMode: "GENERAL_ADMISSION" }, orderBy: { sortOrder: "asc" } } } },
+      venue: { include: { sections: { where: { seatingMode: "GENERAL_ADMISSION", archivedAt: null }, orderBy: { sortOrder: "asc" } } } },
       ticketTypes: { orderBy: { sortOrder: "asc" }, include: { section: true } },
     },
   });

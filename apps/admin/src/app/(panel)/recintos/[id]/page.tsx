@@ -41,13 +41,14 @@ export default async function VenuePage({ params, searchParams }: Props) {
     where: { id: (await params).id, organizationId: staff.organization.id },
     include: {
       sections: {
+        where: { archivedAt: null },
         orderBy: { sortOrder: "asc" },
         include: {
           seats: { select: { id: true, number: true, x: true, y: true, _count: { select: { orderItems: true } } } },
-          ticketTypes: { select: { _count: { select: { orderItems: true } } } },
+          ticketTypes: { select: { _count: { select: { orderItems: true, tickets: { where: { status: { in: ["VALID", "USED"] } } } } } } },
         },
       },
-      accessPoints: { orderBy: { name: "asc" }, include: { sections: { select: { id: true } }, _count: { select: { scans: true } } } },
+      accessPoints: { orderBy: { name: "asc" }, include: { sections: { where: { archivedAt: null }, select: { id: true } }, _count: { select: { scans: true } } } },
       zones: { orderBy: [{ level: "asc" }, { name: "asc" }], include: { _count: { select: { inside: true, gates: true } } } },
       planImage: { select: { opacity: true, mimeType: true, updatedAt: true } },
     },
@@ -55,10 +56,12 @@ export default async function VenuePage({ params, searchParams }: Props) {
   if (!venue) notFound();
   const usedBy = await prisma.eventSession.count({ where: { venueId: venue.id } });
 
-  // Con ventas (cualquier orden, incluso vencida) la sección no se puede borrar ni rehacer.
+  // Con ventas (cualquier orden, incluso vencida) la sección no se puede rehacer. Se puede borrar si todas sus entradas
+  // están anuladas: deja de verse y su historial queda.
   const sections = venue.sections.map((s) => ({
     ...s,
     sold: s.ticketTypes.some((t) => t._count.orderItems > 0),
+    live: s.ticketTypes.some((t) => t._count.tickets > 0),
     priced: s.ticketTypes.length,
   }));
   // Lounges en círculo: los edita el plano del boliche, no el editor de butacas.
@@ -190,10 +193,14 @@ export default async function VenuePage({ params, searchParams }: Props) {
                 <span className="text-[var(--ink-muted)]">
                   {seatingLabel(s)} · {s.seatingMode === "RESERVED" ? `${s.seats.length} ${isWholeTablesLayout(s.layout) ? "mesas" : isTablesLayout(s.layout) ? "lounges" : isSeatedTablesLayout(s.layout) ? "sillas" : "butacas"}` : `aforo ${s.capacity}`}
                 </span>
-                {!s.sold ? (
+                {!s.live ? (
                   <ActionForm
                     action={deleteSectionAction}
-                    confirm={`¿Borrar la sección "${s.name}"?${s.priced ? ` También se quitará su precio en ${s.priced} función(es).` : ""}`}
+                    confirm={
+                      s.sold
+                        ? `¿Borrar la sección "${s.name}"? Sus ventas están anuladas: deja de verse y de venderse, y esas ventas anuladas siguen en los reportes.`
+                        : `¿Borrar la sección "${s.name}"?${s.priced ? ` También se quitará su precio en ${s.priced} función(es).` : ""}`
+                    }
                   >
                     <input type="hidden" name="sectionId" value={s.id} />
                     <button type="submit" className="text-xs text-[var(--danger)] hover:underline">
@@ -201,7 +208,7 @@ export default async function VenuePage({ params, searchParams }: Props) {
                     </button>
                   </ActionForm>
                 ) : (
-                  <span className="eyebrow" title="Tiene entradas vendidas o reservadas">con ventas</span>
+                  <span className="eyebrow" title="Tiene entradas vigentes: anúlalas en Ventas para poder borrarla">con ventas</span>
                 )}
               </li>
             ))}
@@ -351,9 +358,9 @@ export default async function VenuePage({ params, searchParams }: Props) {
           <section className="space-y-3">
             <h2 className="eyebrow">Mesas</h2>
             <p className="text-sm text-[var(--ink-muted)]">
-              <strong>Mesa completa</strong>: se vende la mesa entera con un solo precio. En el mapa se ve un círculo por mesa y
-              cada persona recibe su entrada; también puede llevar consumo. <strong>Por silla</strong> o <strong>de N a M
-              sillas</strong>: cada silla es un lugar con su precio, para cenas o galas.
+              <strong>Mesa completa</strong>: cada mesa se vende entera con un solo precio y se ve como un círculo; cada persona
+              recibe su entrada y la mesa puede llevar consumo. <strong>De N a M sillas</strong>: varias personas comparten una
+              mesa, cada una paga su silla. Arma las mesas aquí y después ponles precio en cada función.
             </p>
             <SeatedTablesDesigner
               venueId={venue.id}
@@ -361,13 +368,13 @@ export default async function VenuePage({ params, searchParams }: Props) {
               plan={plan}
               items={mapItems}
               existing={sections.flatMap((s): ExistingTablesSection[] => {
-                if (isSeatedTablesLayout(s.layout)) return [{ id: s.id, name: s.name, color: s.color, layout: s.layout, sold: s.sold, priced: s.priced, whole: false }];
+                if (isSeatedTablesLayout(s.layout)) return [{ id: s.id, name: s.name, color: s.color, layout: s.layout, sold: s.live, priced: s.priced, whole: false }];
                 if (!isWholeTablesLayout(s.layout)) return [];
                 // Mesas completas: sus mesas son los lugares de la sección (su centro), sin sillas.
                 const { prefix, people } = s.layout;
                 const tables = s.seats.flatMap((seat) => (seat.x !== null && seat.y !== null ? [{ number: Number(seat.number), x: seat.x, y: seat.y }] : []));
                 const layout = { type: "seated" as const, prefix, shape: s.layout.shape === "rect" ? ("rect" as const) : ("round" as const), chairs: people, mode: "WHOLE" as const, min: people, max: people, size: TABLE_RADIUS, tables };
-                return [{ id: s.id, name: s.name, color: s.color, layout, sold: s.sold, priced: s.priced, whole: true }];
+                return [{ id: s.id, name: s.name, color: s.color, layout, sold: s.live, priced: s.priced, whole: true }];
               })}
             />
           </section>

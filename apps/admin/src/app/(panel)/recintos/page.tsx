@@ -42,7 +42,7 @@ export default async function VenuesPage({ searchParams }: { searchParams: Promi
     take: PAGE_SIZE,
     skip: (page - 1) * PAGE_SIZE,
     include: {
-      sections: { select: { seatingMode: true, capacity: true, color: true, layout: true, seats: { select: { x: true, y: true } } } },
+      sections: { where: { archivedAt: null }, select: { seatingMode: true, capacity: true, color: true, layout: true, seats: { select: { x: true, y: true } } } },
       sessions: { select: { event: { select: { id: true, title: true, status: true } } }, orderBy: { startsAt: "desc" } },
       _count: { select: { sessions: true } },
     },

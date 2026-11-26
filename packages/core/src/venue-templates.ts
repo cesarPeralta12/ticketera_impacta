@@ -11,7 +11,7 @@ import type { ZoneShape } from "./zone-geometry";
 export type TemplateSection =
   | { kind: "zone"; name: string; color: string; capacity: number; zone: ZoneShape }
   | { kind: "seats"; name: string; color: string; shape: SectionShape }
-  | { kind: "lounges"; name: string; color: string; prefix: string; shape: "round" | "rect"; tables: { number: number; x: number; y: number }[] }
+  | { kind: "lounges"; name: string; color: string; prefix: string; shape: "round" | "rect"; people: number; tables: { number: number; x: number; y: number }[] }
   | { kind: "seated"; name: string; color: string; layout: SeatedTablesLayout };
 
 export type VenueTemplate = {
@@ -57,6 +57,7 @@ export const VENUE_TEMPLATES: VenueTemplate[] = [
         color: "#FF7A3D",
         prefix: "Reservado",
         shape: "rect",
+        people: 6,
         tables: [
           { number: 1, x: 150, y: 140 },
           { number: 2, x: 150, y: 230 },
@@ -95,7 +96,7 @@ export const VENUE_TEMPLATES: VenueTemplate[] = [
   {
     key: "salon",
     label: "Salón de eventos",
-    description: "12 mesas redondas de 8 (se venden completas), pista de baile, escenario y barra.",
+    description: "12 mesas redondas de 8 personas (un precio por mesa), pista de baile, escenario y barra.",
     items: [
       item("escenario", "STAGE", "Escenario", 740, 36, 190, 56),
       item("barra", "BAR", "Barra", 60, 566, 220, 44),
@@ -103,20 +104,13 @@ export const VENUE_TEMPLATES: VenueTemplate[] = [
     ],
     sections: [
       {
-        kind: "seated",
+        kind: "lounges",
         name: "Mesas",
         color: "#B98CFF",
-        layout: {
-          type: "seated",
-          prefix: "Mesa",
-          shape: "round",
-          chairs: 8,
-          mode: "WHOLE",
-          min: 8,
-          max: 8,
-          size: 22,
-          tables: Array.from({ length: 12 }, (_, i) => ({ number: i + 1, x: 140 + (i % 4) * 140, y: 150 + Math.floor(i / 4) * 140 })),
-        },
+        prefix: "Mesa",
+        shape: "round",
+        people: 8,
+        tables: Array.from({ length: 12 }, (_, i) => ({ number: i + 1, x: 140 + (i % 4) * 140, y: 150 + Math.floor(i / 4) * 140 })),
       },
       { kind: "zone", name: "Pista de baile", color: "#35C48F", capacity: 120, zone: { type: "zone", shape: "rect", x: 720, y: 140, width: 230, height: 320 } },
     ],

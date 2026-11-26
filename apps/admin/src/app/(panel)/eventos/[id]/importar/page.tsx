@@ -26,7 +26,7 @@ export default async function ImportPage({ params }: Props) {
   // Secciones generales (sin butaca) del lugar de cada función: el tipo nuevo del asistente va en una de ellas.
   const generalSections = [
     ...new Set(
-      (await prisma.section.findMany({ where: { seatingMode: "GENERAL_ADMISSION", venue: { sessions: { some: { eventId: event.id, cancelledAt: null } } } }, select: { name: true }, orderBy: { name: "asc" } })).map((s) => s.name),
+      (await prisma.section.findMany({ where: { seatingMode: "GENERAL_ADMISSION", archivedAt: null, venue: { sessions: { some: { eventId: event.id, cancelledAt: null } } } }, select: { name: true }, orderBy: { name: "asc" } })).map((s) => s.name),
     ),
   ];
   // Para emparejar las entradas de otro proveedor: cada tipo (por nombre) con lo que define en la puerta.

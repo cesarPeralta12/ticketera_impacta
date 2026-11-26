@@ -309,7 +309,7 @@ export async function createVenueFromTemplateAction(_prev: FormState, formData: 
           : section.kind === "seats"
             ? section.shape
             : section.kind === "lounges"
-              ? { type: "tables" as const, radius: TABLE_RADIUS, prefix: section.prefix, shape: section.shape }
+              ? { type: "tables" as const, radius: TABLE_RADIUS, prefix: section.prefix, shape: section.shape, people: section.people }
               : section.layout;
       await tx.section.create({
         data: {
@@ -395,8 +395,14 @@ export async function addSeatedTablesSectionAction(_prev: FormState, formData: F
   } catch {
     return { error: "Las mesas no son válidas." };
   }
-  // Mesa completa: un círculo por mesa y un precio por mesa (se guarda como un grupo de lounges con sus personas).
-  if ((raw as { mode?: unknown } | null)?.mode === "WHOLE") return addWholeTablesSection(staff.id, venue.id, name, color, raw as Record<string, unknown>);
+  if (typeof raw !== "object" || raw === null) return { error: "Las mesas no son válidas." };
+  // Mesa completa: un círculo por mesa y un precio por mesa (un grupo de mesas con sus personas).
+  const mode = (raw as { mode?: unknown }).mode;
+  if (mode !== "RANGE") {
+    if (mode === "SEAT") return { error: "La venta por silla suelta ya no está: usa «Mesa completa» o «De N a M sillas»." };
+    return addWholeTablesSection(staff.id, venue.id, name, color, raw as Record<string, unknown>);
+  }
+  // De N a M sillas: cada silla es un lugar con su precio y por compra se lleva entre N y M sillas de una mesa.
   const parsed = parseSeatedTablesLayout(raw);
   if (!parsed.ok) return { error: parsed.error };
   const seats = seatedTableSeats(parsed.layout);
@@ -419,14 +425,14 @@ export async function addSeatedTablesSectionAction(_prev: FormState, formData: F
       action: "section.seated_tables",
       entity: "Section",
       entityId: section.id,
-      data: { tables: parsed.layout.tables.length, chairs: parsed.layout.chairs, mode: parsed.layout.mode },
+      data: { tables: parsed.layout.tables.length, chairs: parsed.layout.chairs, mode: parsed.layout.mode, min: parsed.layout.min, max: parsed.layout.max },
     });
   } catch (error) {
     if (isUnique(error)) return { error: "Ya existe una sección con ese nombre." };
     throw error;
   }
   revalidatePath(`/recintos/${venue.id}`);
-  return { ok: true };
+  return { ok: true, message: `Listo: ${parsed.layout.tables.length} mesas de ${parsed.layout.chairs} sillas. El precio que pongas en cada función es por silla.` };
 }
 
 /**
@@ -475,15 +481,22 @@ export async function moveWholeTablesAction(_prev: FormState, formData: FormData
   }
   const name = formData.has("name") ? String(formData.get("name")).trim() : null;
   if (name !== null && name.length < 2) return { error: "Ponle un nombre a la sección." };
-  const parsed = parseWholeTables({ ...section.layout, shape: section.layout.shape ?? "round", tables: moved });
+  // Las personas por mesa se cambian solo sin ventas: las entradas ya emitidas no cambian.
+  const before = section.layout.people;
+  const people = formData.get("people") ? Number(formData.get("people")) : before;
+  const parsed = parseWholeTables({ ...section.layout, people, shape: section.layout.shape ?? "round", tables: moved });
   if (!parsed.ok) return { error: parsed.error };
   const numbers = new Set(section.seats.map((s) => s.number));
   if (parsed.tables.length !== numbers.size || parsed.tables.some((t) => !numbers.has(String(t.number)))) {
     return { error: "Las mesas cambiaron: recarga la página." };
   }
+  if (people !== before && (await sectionSales(section.id)) > 0) {
+    return { error: "Estas mesas ya tienen ventas: no se puede cambiar cuántas personas traen." };
+  }
   try {
     await prisma.$transaction(async (tx) => {
-      if (name) await tx.section.update({ where: { id: section.id }, data: { name } });
+      await tx.section.update({ where: { id: section.id }, data: { ...(name ? { name } : {}), layout: parsed.layout } });
+      if (people !== before) await tx.ticketType.updateMany({ where: { sectionId: section.id }, data: { peoplePerUnit: people } });
       for (const t of parsed.tables) await tx.seat.updateMany({ where: { sectionId: section.id, number: String(t.number) }, data: { x: t.x, y: t.y } });
     });
   } catch (error) {
@@ -554,6 +567,15 @@ async function sectionSales(sectionId: string) {
   return prisma.orderItem.count({ where: { ticketType: { sectionId } } });
 }
 
+/** Lo que todavía vale de una sección: entradas sin anular y compras en curso (reservas que no vencieron). */
+async function liveSectionSales(sectionId: string) {
+  const [tickets, pending] = await Promise.all([
+    prisma.ticket.count({ where: { ticketType: { sectionId }, status: { in: ["VALID", "USED"] } } }),
+    prisma.order.count({ where: { status: "PENDING_PAYMENT", expiresAt: { gt: new Date() }, items: { some: { ticketType: { sectionId } } } } }),
+  ]);
+  return { tickets, pending };
+}
+
 /**
  * Borra una sección con sus butacas. Si tenía precio en funciones pero ninguna venta,
  * también se quitan esos tipos de entrada. Con ventas no se puede: hay entradas emitidas
@@ -564,9 +586,22 @@ export async function deleteSectionAction(_prev: FormState, formData: FormData):
   const section = await prisma.section.findFirst({
     where: { id: String(formData.get("sectionId")), venue: { organizationId: staff.organization.id } },
   });
-  if (!section) return { error: "Sección no encontrada." };
+  if (!section || section.archivedAt) return { error: "Sección no encontrada." };
   if ((await sectionSales(section.id)) > 0) {
-    return { error: `"${section.name}" ya tiene entradas vendidas o reservadas: no se puede borrar.` };
+    // Tuvo ventas: si todas están anuladas, se borra de la vista y su historial queda (las ventas anuladas no se pierden).
+    const live = await liveSectionSales(section.id);
+    if (live.tickets > 0) return { error: `"${section.name}" tiene ${live.tickets} entrada(s) vigente(s): anúlalas primero en Ventas.` };
+    if (live.pending > 0) return { error: `"${section.name}" tiene una compra en curso: espera unos minutos y vuelve a intentar.` };
+    const now = new Date();
+    // El nombre queda libre para una sección nueva; la borrada conserva el suyo con la fecha.
+    const stamp = now.toISOString().slice(0, 16).replace("T", " ");
+    await prisma.$transaction([
+      prisma.ticketType.updateMany({ where: { sectionId: section.id, OR: [{ salesEndAt: null }, { salesEndAt: { gt: now } }] }, data: { salesEndAt: now } }),
+      prisma.section.update({ where: { id: section.id }, data: { archivedAt: now, name: `${section.name.slice(0, 60)} · borrada ${stamp}` } }),
+    ]);
+    await logAudit({ actorType: "staff", actorId: staff.id, action: "section.archive", entity: "Section", entityId: section.id, data: { name: section.name } });
+    revalidatePath(`/recintos/${section.venueId}`);
+    return { ok: true, message: `"${section.name}" se borró. Sus ventas anuladas siguen en los reportes.` };
   }
   await prisma.$transaction([
     prisma.ticketType.deleteMany({ where: { sectionId: section.id } }),

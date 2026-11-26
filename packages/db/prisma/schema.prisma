@@ -414,6 +414,8 @@ model Section {
   color       String      @default("#F5B700")
   /// Receta de la forma (grilla o arco) con la que el editor generó las butacas.
   layout      Json?
+  /// Borrada cuando solo le quedaban ventas anuladas: no se muestra ni se vende, y su historial queda en los reportes.
+  archivedAt  DateTime?
 
   venue        Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
   seats        Seat[]

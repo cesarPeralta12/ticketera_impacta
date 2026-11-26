@@ -10,6 +10,8 @@ import { TICKET_MODELS, type TicketModel } from "@ticketera/core";
 export function TicketModels({ presaleEnd }: { presaleEnd: string | null }) {
   const ref = useRef<HTMLDivElement>(null);
   const [picked, setPicked] = useState<TicketModel | null>(null);
+  // Se eligió «Mesa» y el recinto todavía no tiene una sección de mesas.
+  const [noTables, setNoTables] = useState(false);
 
   function apply(model: TicketModel) {
     const form = ref.current?.closest("form");
@@ -26,8 +28,11 @@ export function TicketModels({ presaleEnd }: { presaleEnd: string | null }) {
     set("name", model.name);
     set("price", model.price ?? "");
     set("maxPerOrder", String(model.maxPerOrder));
-    check("table", Boolean(model.table));
-    set("peoplePerUnit", model.table ? String(model.table.peoplePerUnit) : "");
+    set("peoplePerUnit", "");
+    // Mesa: se vende en una sección de mesas; se elige la primera (las personas vienen de la sección).
+    const tables = form.querySelector<HTMLOptionElement>('select[name="sectionId"] option[data-tables]');
+    if (model.table && tables) tables.selected = true;
+    setNoTables(Boolean(model.table) && !tables);
     set("entryUntil", model.entryUntil ?? "");
     check("presale", Boolean(model.presale));
     check("exclusive", true);
@@ -55,6 +60,11 @@ export function TicketModels({ presaleEnd }: { presaleEnd: string | null }) {
         ))}
       </div>
       <p className="text-xs text-[var(--ink-dim)]">{picked ? picked.hint : "Elige uno y completa lo que falte (precio, cupo). Todo se puede cambiar."}</p>
+      {noTables && (
+        <p className="text-xs text-[var(--warn)]">
+          Este recinto todavía no tiene mesas: créalas en Recintos → Mesas y vuelve a esta página.
+        </p>
+      )}
     </div>
   );
 }

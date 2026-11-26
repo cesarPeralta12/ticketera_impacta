@@ -12,7 +12,8 @@ export type TicketModel = {
   /** Precio sugerido (Bs), solo cuando el modelo lo define (la Free es 0). */
   price?: string;
   maxPerOrder: number;
-  table?: { peoplePerUnit: number };
+  /** Mesa: se vende en una sección de mesas (Recintos → Mesas), con un precio por mesa. */
+  table?: boolean;
   /** Válida para entrar hasta esta hora (la free de un boliche). */
   entryUntil?: string;
   presale?: boolean;
@@ -24,10 +25,10 @@ export const TICKET_MODELS: TicketModel[] = [
   {
     key: "mesa",
     label: "Mesa",
-    hint: "Para un grupo: el precio es por mesa y cada persona recibe su QR.",
+    hint: "Para un grupo: elige la sección de mesas (se crean en Recintos → Mesas). El precio es por mesa y cada persona recibe su QR.",
     name: "Mesa",
     maxPerOrder: 2,
-    table: { peoplePerUnit: 6 },
+    table: true,
   },
   {
     key: "free",

@@ -35,7 +35,7 @@ export function TicketTypeForm({
         Sección
         <select name="sectionId" required className="field">
           {sectionOptions.map((s) => (
-            <option key={s.id} value={s.id}>
+            <option key={s.id} value={s.id} data-tables={isTablesLayout(s.layout) ? "1" : undefined}>
               {s.name} — {s.seatingMode === "RESERVED" ? `${s.seats.length} ${isWholeTablesLayout(s.layout) ? `mesas de ${s.layout.people} personas` : isTablesLayout(s.layout) ? "lounges" : "butacas"}` : `aforo ${s.capacity}`}
               {pricedSections.has(s.id) ? " (ya tiene precio)" : " (sin precio)"}
             </option>
@@ -53,7 +53,7 @@ export function TicketTypeForm({
       <label className="label">
         Cupo
         <input name="capacity" type="number" min={1} placeholder="ej. 200" className="field w-28" />
-        <span className="text-xs font-normal text-[var(--ink-dim)]">En butacas y lounges, el del mapa.</span>
+        <span className="text-xs font-normal text-[var(--ink-dim)]">En mesas y butacas, el del mapa.</span>
       </label>
       <fieldset className="label">
         <legend className="mb-1.5">Reingreso</legend>
@@ -68,14 +68,12 @@ export function TicketTypeForm({
         <span className="text-xs font-normal text-[var(--ink-dim)]">Sí: sale (al baño) y vuelve con el mismo QR.</span>
       </fieldset>
       <details data-section="club" open={nightlife} className="basis-full">
-        <summary className="cursor-pointer text-sm font-medium text-[var(--accent)]">Mesa, consumo incluido u horario de ingreso (opcional)</summary>
+        <summary className="cursor-pointer text-sm font-medium text-[var(--accent)]">Consumo incluido u horario de ingreso (opcional)</summary>
         <div className="mt-3 flex flex-wrap items-end gap-3 rounded-md border border-dashed border-[var(--accent)]/50 bg-[var(--accent-soft)]/40 p-3">
-          <label className="flex items-center gap-2 self-center text-sm">
-            <input type="checkbox" name="table" className="h-4 w-4" /> Es una mesa o lounge
-          </label>
+          {/* Solo para mesas antiguas del plano del boliche, que no guardan cuántas personas traen. */}
           <label className="label">
             Personas por mesa
-            <input name="peoplePerUnit" type="number" min={2} max={50} placeholder="ej. 6" className="field w-28" />
+            <input name="peoplePerUnit" type="number" min={2} max={50} placeholder="la de la sección" className="field w-36" />
           </label>
           <label className="label">
             Consumo incluido (Bs)
@@ -91,8 +89,8 @@ export function TicketTypeForm({
           </label>
           <ul className="basis-full space-y-0.5 text-xs text-[var(--ink-dim)]">
             <li>
-              <strong>Mesa o lounge</strong>: marca la casilla, personas, consumo y el precio de la mesa. Con los
-              lounges del plano, el comprador elige el suyo; en una zona sin mapa, pon en Cupo cuántas mesas hay.
+              <strong>Mesa</strong>: elige la sección de mesas (se crean en Recintos → Mesas). El precio es por mesa, cada
+              persona recibe su QR y el consumo incluido va en un QR por mesa. Las personas ya vienen de la sección.
             </li>
             <li>
               <strong>Consumo extra</strong>: paquetes que el comprador puede sumar (ej. 100, 200, 500). El QR de consumo

@@ -18,7 +18,7 @@ export async function venueChoices(organizationId: string): Promise<VenueChoice[
       city: true,
       timezone: true,
       mapItems: true,
-      sections: { select: { seatingMode: true, capacity: true, color: true, layout: true, seats: { select: { x: true, y: true } } } },
+      sections: { where: { archivedAt: null }, select: { seatingMode: true, capacity: true, color: true, layout: true, seats: { select: { x: true, y: true } } } },
       _count: { select: { sessions: true } },
     },
   });

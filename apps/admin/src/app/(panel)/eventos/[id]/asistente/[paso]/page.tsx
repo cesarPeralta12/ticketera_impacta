@@ -42,7 +42,7 @@ export default async function WizardPage({ params }: Props) {
         where: { cancelledAt: null },
         orderBy: { startsAt: "asc" },
         include: {
-          venue: { include: { sections: { orderBy: { sortOrder: "asc" }, include: { seats: { select: { id: true } } } } } },
+          venue: { include: { sections: { where: { archivedAt: null }, orderBy: { sortOrder: "asc" }, include: { seats: { select: { id: true } } } } } },
           ticketTypes: { orderBy: { sortOrder: "asc" }, include: { section: { select: { name: true } } } },
         },
       },

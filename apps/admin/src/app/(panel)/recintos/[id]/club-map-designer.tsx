@@ -9,7 +9,6 @@ import {
   MAP_ITEM_KINDS,
   MAP_ITEM_LABEL,
   MIN_ITEM_SIZE,
-  SECTION_COLORS,
   TABLE_RADIUS,
   reservadoSize,
   defaultMapItem,
@@ -484,23 +483,6 @@ function PlanEditor({
     changed();
   }
 
-  function addGroup() {
-    const n = groups.length + 1;
-    const group: GroupState = {
-      key: newKey("g"),
-      name: n === 1 ? "Lounges VIP" : `Lounges ${n}`,
-      color: SECTION_COLORS[(n + 3) % SECTION_COLORS.length]!,
-      prefix: "Lounge",
-      shape: "round",
-      tables: [],
-    };
-    remember();
-    setGroups((gs) => [...gs, group]);
-    setPlacing(group.key);
-    clearSelection();
-    changed();
-  }
-
   function updateGroup(key: string, patch: Partial<GroupState>) {
     remember();
     setGroups((gs) => gs.map((g) => (g.key === key ? { ...g, ...patch } : g)));
@@ -912,7 +894,7 @@ function PlanEditor({
       {lounges && (
       <div className="space-y-2">
         <p className="text-sm font-medium">Lounges y mesas (cada círculo es uno; el comprador elige el suyo en el mapa)</p>
-        {groups.length === 0 && <p className="text-sm text-[var(--ink-muted)]">Todavía no hay lounges en el plano.</p>}
+        {groups.length === 0 && <p className="text-sm text-[var(--ink-muted)]">Todavía no hay mesas en el plano: créalas en la pestaña «Mesas».</p>}
         {groups.map((g) => (
           <div key={g.key} className={`flex flex-wrap items-end gap-3 rounded-md border p-3 ${placing === g.key ? "border-[var(--accent)]" : "border-[var(--border)]"}`}>
             <label className="label">
@@ -949,9 +931,8 @@ function PlanEditor({
             </button>
           </div>
         ))}
-        <button type="button" onClick={addGroup} className="btn text-sm">
-          + Nuevo grupo de lounges
-        </button>
+        {/* Una sola forma de mesa: los grupos nuevos se crean en la pestaña «Mesas» (con sus personas); aquí se acomodan. */}
+        <p className="text-xs text-[var(--ink-dim)]">Las mesas nuevas se crean en la pestaña «Mesas», con cuántas personas trae cada una. Aquí las acomodas en el plano.</p>
       </div>
       )}
 
@@ -968,9 +949,8 @@ function PlanEditor({
       </div>
       {lounges && (
         <p className="text-xs text-[var(--ink-dim)]">
-          Después, en los precios de cada noche, elige el grupo (ej. &ldquo;Lounges VIP&rdquo;) como sección, marca &ldquo;Es una mesa o
-          lounge&rdquo; con cuántas personas entran y el consumo incluido: cada lounge se vende una vez y su gente entra con un QR por
-          persona.
+          Después, en los precios de cada noche, usa el modelo &ldquo;Mesa&rdquo; y elige el grupo como sección: el precio es por mesa,
+          cada mesa se vende una vez y su gente entra con un QR por persona.
         </p>
       )}
     </div>

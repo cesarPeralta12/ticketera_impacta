@@ -44,7 +44,7 @@ export async function getTableStates(sessionId: string, now = new Date()): Promi
   if (!session) return [];
   const sections = (
     await prisma.section.findMany({
-      where: { venueId: session.venueId, seatingMode: "RESERVED" },
+      where: { venueId: session.venueId, seatingMode: "RESERVED", archivedAt: null },
       orderBy: { sortOrder: "asc" },
       select: { id: true, name: true, color: true, layout: true, seats: { select: { id: true, label: true, row: true, number: true } } },
     })

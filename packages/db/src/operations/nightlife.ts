@@ -283,7 +283,8 @@ function loadTemplate(sessionId: string) {
   return prisma.eventSession.findUnique({
     where: { id: sessionId },
     include: {
-      ticketTypes: { orderBy: { sortOrder: "asc" }, include: { zones: { select: { id: true } } } },
+      // Los precios de secciones borradas no pasan a las noches nuevas.
+      ticketTypes: { where: { OR: [{ sectionId: null }, { section: { archivedAt: null } }] }, orderBy: { sortOrder: "asc" }, include: { zones: { select: { id: true } } } },
       doorAssignments: true,
       venue: { select: { timezone: true } },
     },

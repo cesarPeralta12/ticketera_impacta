@@ -15,7 +15,7 @@ export type TableSaleMode = (typeof TABLE_SALE_MODES)[number];
 export const TABLE_SALE_MODE_LABEL: Record<TableSaleMode, string> = {
   WHOLE: "Mesa completa (precio por mesa)",
   SEAT: "Por silla",
-  RANGE: "De N a M sillas",
+  RANGE: "De N a M sillas (precio por silla)",
 };
 
 export type TableShape = "round" | "rect";
