@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma, revokeDevice } from "@ticketera/db";
+import { prisma, revokeDevice, setDoorRedeemNfc } from "@ticketera/db";
 import { accountOrganizationId, organizationScope } from "@/lib/account-scope";
 import { logAudit } from "@/lib/audit";
 import type { FormState } from "@/lib/forms";
@@ -62,6 +62,19 @@ export async function unassignDoorAction(_prev: FormState, formData: FormData): 
   await prisma.doorAssignment.delete({ where: { id: assignment.id } });
   revalidatePath(`/usuarios/${assignment.userId}`);
   return { ok: true };
+}
+
+/** Si el portero puede, además de controlar la puerta, canjear entradas por tarjetas NFC en sus funciones asignadas. */
+export async function updateDoorRedeemAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireEditor(ROLES.users);
+  const userId = String(formData.get("userId") ?? "");
+  const organizationId = await accountOrganizationId(staff, userId);
+  if (!organizationId || !(await findOperator(userId, organizationId))) return { error: "Portero no encontrado." };
+  const canRedeemNfc = formData.get("canRedeemNfc") === "on";
+  await setDoorRedeemNfc({ organizationId, userId, canRedeemNfc });
+  await logAudit({ actorType: "staff", actorId: staff.id, action: "sales.settings", entity: "StaffUser", entityId: userId, data: { canRedeemNfc } });
+  revalidatePath(`/usuarios/${userId}`);
+  return { ok: true, message: "Guardado." };
 }
 
 /** Cierra la sesión de un teléfono: pierde el acceso en su siguiente llamada (por ejemplo, si lo perdieron). */

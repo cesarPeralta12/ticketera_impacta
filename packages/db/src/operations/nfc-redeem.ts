@@ -23,14 +23,14 @@ import { requireEnv } from "./shared";
 export type RedeemStaff = Pick<DoorStaff, "id" | "role" | "organizationId">;
 
 /**
- * ¿La cuenta puede canjear entradas por tarjeta? El dueño y los administradores, siempre; un cajero, solo si lo
- * habilitaron en Usuarios. Nadie más.
+ * ¿La cuenta puede canjear entradas por tarjeta? El dueño y los administradores, siempre; un cajero o un portero, solo
+ * si lo habilitaron en Usuarios. Nadie más.
  */
 export async function canRedeemNfc(staff: RedeemStaff) {
   if (staff.role === "OWNER" || staff.role === "ADMIN") return true;
-  if (staff.role !== "CASHIER") return false;
+  if (staff.role !== "CASHIER" && staff.role !== "OPERATOR") return false;
   const membership = await prisma.membership.findFirst({
-    where: { userId: staff.id, organizationId: staff.organizationId, role: "CASHIER", user: { active: true } },
+    where: { userId: staff.id, organizationId: staff.organizationId, role: staff.role, user: { active: true } },
     select: { canRedeemNfc: true },
   });
   return membership?.canRedeemNfc ?? false;
@@ -44,17 +44,24 @@ export async function canRedeemSession(staff: RedeemStaff, sessionId: string) {
     select: { id: true, eventId: true },
   });
   if (!session) return false;
+  // Un portero, solo en las funciones que tiene asignadas para la puerta.
+  if (staff.role === "OPERATOR") return (await prisma.doorAssignment.count({ where: { userId: staff.id, sessionId } })) > 0;
   if (staff.role !== "CASHIER") return true;
   return canSellSession(await salesAccess(prisma, staff.id, staff.organizationId), session);
 }
 
 /**
  * Funciones en las que la cuenta puede canjear: las recientes y próximas (publicadas o no) que tienen algún tipo de
- * entrada con NFC. Un cajero con «solo lo asignado» ve solo las suyas.
+ * entrada con NFC. Un cajero con «solo lo asignado» y un portero ven solo las suyas.
  */
 export async function redeemSessions(staff: RedeemStaff, now = new Date()) {
   if (!(await canRedeemNfc(staff))) return [];
-  const scope = staff.role === "CASHIER" ? sellableSessionsWhere(await salesAccess(prisma, staff.id, staff.organizationId, now)) : {};
+  const scope =
+    staff.role === "CASHIER"
+      ? sellableSessionsWhere(await salesAccess(prisma, staff.id, staff.organizationId, now))
+      : staff.role === "OPERATOR"
+        ? { doorAssignments: { some: { userId: staff.id } } }
+        : {};
   return prisma.eventSession.findMany({
     where: {
       ...scope,

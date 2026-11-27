@@ -9,7 +9,7 @@ import { createStaffUser } from "../src/operations/accounts";
 import { linkNfcCard } from "../src/operations/nfc-cards";
 import { canRedeemNfc, findTicketForRedeem, redeemSessions } from "../src/operations/nfc-redeem";
 import { sellAtBoxOffice } from "../src/operations/sales";
-import { setSalesAssignment, updateSalesSettings } from "../src/operations/sales-scope";
+import { setDoorRedeemNfc, setSalesAssignment, updateSalesSettings } from "../src/operations/sales-scope";
 import { createGeneralAdmissionEvent } from "./fixtures";
 
 afterAll(() => prisma.$disconnect());
@@ -77,10 +77,24 @@ describe("quién puede canjear", () => {
     expect((await linkNfcCard(cashier, { sessionId: session.id, code: ticket!.code, uid: UID })).ok).toBe(true);
   });
 
-  it("un portero no, aunque tenga la marca puesta", async () => {
-    const { operator } = await setup();
-    await prisma.membership.updateMany({ where: { userId: operator.id }, data: { canRedeemNfc: true } });
+  it("un portero habilitado, solo en sus funciones asignadas; y se le puede quitar", async () => {
+    const { session, orgId, cashier, operator, sell } = await setup();
+    const [ticket] = await sell();
+    const input = { sessionId: session.id, code: ticket!.code, uid: UID };
     expect(await canRedeemNfc(operator)).toBe(false);
+
+    await setDoorRedeemNfc({ organizationId: orgId, userId: operator.id, canRedeemNfc: true });
+    expect(await redeemSessions(operator)).toEqual([]);
+    expect(await linkNfcCard(operator, input)).toEqual({ ok: false, reason: "FORBIDDEN" });
+
+    await prisma.doorAssignment.create({ data: { userId: operator.id, sessionId: session.id } });
+    expect((await redeemSessions(operator)).map((s) => s.id)).toEqual([session.id]);
+    expect((await linkNfcCard(operator, input)).ok).toBe(true);
+
+    await setDoorRedeemNfc({ organizationId: orgId, userId: operator.id, canRedeemNfc: false });
+    expect(await linkNfcCard(operator, input)).toEqual({ ok: false, reason: "FORBIDDEN" });
+    // El permiso de portero no sirve para cambiar la cuenta de un cajero.
+    await expect(setDoorRedeemNfc({ organizationId: orgId, userId: cashier.id, canRedeemNfc: false })).rejects.toThrow();
   });
 
   it("no en la función de otra organización", async () => {

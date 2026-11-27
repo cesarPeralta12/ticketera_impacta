@@ -5,7 +5,7 @@ import { connection } from "next/server";
 import { formatDateTime, utcToZonedInput } from "@ticketera/core";
 import { prisma } from "@ticketera/db";
 import { ActionForm } from "@/components/action-form";
-import { assignDoorAction, revokeDeviceAction, unassignDoorAction } from "@/lib/actions/door";
+import { assignDoorAction, revokeDeviceAction, unassignDoorAction, updateDoorRedeemAction } from "@/lib/actions/door";
 import { revokeUserSessionsAction } from "@/lib/actions/users";
 import { DoorSessionPicker, type DoorPickSession } from "@/components/door-session-picker";
 import { SalesAccessCard } from "@/components/sales-access-card";
@@ -94,6 +94,25 @@ export default async function OperatorPage({ params }: { params: Promise<{ userI
           organizador (Forum Club, Lounge 360…), créale una cuenta <strong>para ese boliche</strong>: Usuarios → Crear cuenta →
           «Para».
         </p>
+      )}
+
+      {isOperator && (
+        <section className="card p-6">
+          <h2 className="eyebrow mb-1">Tarjetas y manillas NFC</h2>
+          <p className="mb-4 text-sm text-[var(--ink-muted)]">
+            Con este permiso el portero puede, desde la app iPass Canje, vincular una tarjeta o manilla a una entrada. Solo en
+            sus funciones asignadas.
+          </p>
+          <ActionForm key={String(member.canRedeemNfc)} action={updateDoorRedeemAction} className="flex flex-wrap items-center gap-4">
+            <input type="hidden" name="userId" value={userId} />
+            <label className="flex items-center gap-1.5 text-sm">
+              <input type="checkbox" name="canRedeemNfc" defaultChecked={member.canRedeemNfc} className="accent-[var(--accent)]" /> Puede canjear entradas por una tarjeta NFC
+            </label>
+            <button type="submit" className="btn">
+              Guardar
+            </button>
+          </ActionForm>
+        </section>
       )}
 
       {isOperator ? (

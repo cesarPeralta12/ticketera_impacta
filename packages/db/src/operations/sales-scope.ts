@@ -155,6 +155,15 @@ export async function updateSalesSettings(input: { organizationId: string; userI
   });
 }
 
+/** Habilita o quita a un portero el canje de entradas por tarjetas NFC (a los cajeros se les cambia con sus ajustes de venta). */
+export async function setDoorRedeemNfc(input: { organizationId: string; userId: string; canRedeemNfc: boolean }) {
+  const { count } = await prisma.membership.updateMany({
+    where: { userId: input.userId, organizationId: input.organizationId, role: "OPERATOR" },
+    data: { canRedeemNfc: input.canRedeemNfc },
+  });
+  if (count === 0) throw new DomainError("NOT_FOUND", "Portero no encontrado.");
+}
+
 /**
  * Quién puede vender una función: los cajeros que venden todo, y los cajeros y promotores que la tienen asignada (la
  * función o su evento completo), con su vigencia.
